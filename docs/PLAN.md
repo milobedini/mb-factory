@@ -22,9 +22,27 @@ _Last updated 2026-10-24._ **Current phase: 0 (Foundations).**
 
 ### Next (rest of Phase 0)
 
-1. You: install the Claude GitHub App on `milobedini/tastebook`, add the `CLAUDE_CODE_OAUTH_TOKEN` secret (from `claude setup-token`), and add the GitHub webhook to `/api/webhooks/github` with the `GITHUB_WEBHOOK_SECRET` value.
-2. Review and sign off the drafts in `plugin/agents/*.md` and `plugin/skills/*` (guide: [instructions-review.md](instructions-review.md)).
-3. Hello-world check for the Phase 0 exit: delegate an issue to `@Tastebook` and see the event in the console.
+_Hand-off, 2026-10-24._ The plugin drafts (`plugin/agents/*.md`, `plugin/skills/*`, `docs/instructions-review.md`) are **uncommitted** in the working tree, waiting for review. The local commit `Record the Tastebook repo and Notion pages` is **not pushed** (a push to `main` deploys the console).
+
+1. **You, not done yet:**
+   - Install the Claude GitHub App on `milobedini/tastebook` (<https://github.com/apps/claude>).
+   - Run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R milobedini/tastebook`.
+   - Add the GitHub webhook in your own terminal, so the secret stays out of agent sessions:
+
+     ```sh
+     read -s SECRET && gh api repos/milobedini/tastebook/hooks -f name=web -F active=true \
+       -f 'events[]=pull_request' -f 'events[]=pull_request_review' -f 'events[]=pull_request_review_comment' \
+       -f 'events[]=issue_comment' -f 'events[]=push' -f 'events[]=check_suite' -f 'events[]=workflow_run' \
+       -f config[url]=https://mb-factory-console.vercel.app/api/webhooks/github \
+       -f config[content_type]=json -f config[secret]="$SECRET"
+     ```
+
+2. **Instruction review.** You agreed with all eight recommendations in [instructions-review.md](instructions-review.md) (2026-10-24). Still to do: your read of the drafts themselves, then sign-off.
+3. **Questions waiting for your answer:**
+   - Should the agent record the eight recommendations as signed off in `instructions-review.md` and this plan, update the drafts to match, and commit them?
+   - Should the plan's evidence open question take the upload order: (1) test `gh --attach` with `GITHUB_TOKEN` and the Claude App token in a throwaway workflow, (2) otherwise a classic token as an Actions secret used only in a separate, agent-free upload step, (3) otherwise Vercel Blob?
+4. **Unverified in the drafts:** whether an agent's `skills:` list needs the `mb-factory:` prefix; the arguments for `agentSessionUpdate` in `plugin/skills/linear-reporting/scripts/linear.py`; how the stage workflow passes the brief and uploads evidence.
+5. **Phase 0 exit check:** delegate a test issue to `@Tastebook` and see the event in the console.
 
 ### Things learnt during setup
 
@@ -39,6 +57,7 @@ _Last updated 2026-10-24._ **Current phase: 0 (Foundations).**
 - MSW 3 renamed `onUnhandledRequest` to `onUnhandledFrame`. `openapi-fetch` keeps the `fetch` it saw at creation, so the client passes `fetch: (request) => globalThis.fetch(request)` for MSW to intercept it in tests.
 - Biome formats YAML. Exclude generated files (`backend/schema.yml`) or the contract check fails.
 - `astral-sh/setup-uv` publishes no major tags: pin the full version (`@v10.3.2`).
+- Reading a secret out of Vercel inside an agent session (even without printing it) is blocked as credential materialisation. Secrets that external services need go in through your own terminal.
 
 ## Decisions
 
@@ -299,7 +318,7 @@ mb-factory/
 
 - Linear token delivery to Actions: the router refreshes the app token and passes it masked in the dispatch payload (to be validated in Phase 1).
 - Usage readings: confirm that `claude-code-action`'s execution output includes `rate_limit_event`; if not, the stage workflow runs the probe at the end of each stage instead. Confirm the probe's utilisation figures against `/usage`.
-- Evidence hosting from CI: whether `gh --attach` works with the Actions token; otherwise Playwright videos and screenshots go to Vercel Blob, or as Actions artifacts, and are linked in the PR.
+- Evidence hosting from CI: `gh --attach` (gh 2.99+) is the choice. The docs list only the `gh auth login` OAuth token and classic personal access tokens; `GITHUB_TOKEN` and GitHub App tokens are undocumented. Proposed order (waiting for your answer, see Status): test the existing tokens, then a classic token in an agent-free upload step, then Vercel Blob.
 - Tastebook hosting (Vercel for the frontend; backend host to be decided) and preview environments for verification.
 
 ## References
