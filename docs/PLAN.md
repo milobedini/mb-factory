@@ -17,12 +17,14 @@ _Last updated 2026-10-24._ **Current phase: 0 (Foundations).**
 - Linear: workspace "Tastebook", team key **`TAS`**, factory statuses and Triage set up. Agent app `@Tastebook` installed (`actor=app`, `app:assignable`, `app:mentionable`) through `/api/linear/oauth/start`. Delegating an issue records an `AgentSessionEvent` and posts a "Picked this up" thought within 10 s. Tokens refresh automatically (24 h expiry). Test issue: TAS-5.
 - Slack: app `@Tastebook` from `projects/tastebook/slack-manifest.yaml`, events verified, channel `#tastebook-factory` (`C0CBSE2Q6FQ`). Mentions are recorded.
 - Production env vars: `CONSOLE_URL`, `DATABASE_URL*` (Neon), `TOKEN_ENCRYPTION_KEY`, `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET`, `LINEAR_ALLOWED_ORGANIZATION_ID`, `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`, `GITHUB_WEBHOOK_SECRET`.
+- Tastebook repo: <https://github.com/milobedini/tastebook> (public). `frontend/` (React 19, Vite 8, TanStack Query, react-router 8, Vitest + MSW 3, Playwright), `backend/` (Django 6.1, DRF, drf-spectacular, Postgres 18 via `compose.yaml`, uv, ruff, pytest), `tools/openapi` (generates `frontend/src/api/schema.d.ts` from `backend/schema.yml`). CI jobs Frontend, Backend, API contract (fails on a stale schema or stale types) and End-to-end, all green. Branch protection on `main`: those four checks, one approving review, resolved conversations, no force pushes; admins can bypass so you can merge your own PRs. `AGENTS.md` (with `CLAUDE.md` importing it), `specs/_template.md`, `specs/lessons/README.md`, PR template. The old 2022 `TasteBook` repo was renamed to `tastebook-ga` and archived.
+- Notion: hub page **Tastebook** at the root of the Tastebook teamspace, with Vision (skeleton), PRD template, and the PRDs, Decisions, Weekly factory reports and Run log databases. IDs are in `projects/tastebook/factory.yaml` under `notion`.
 
 ### Next (rest of Phase 0)
 
-1. Notion pages: vision, PRDs, decisions, weekly factory reports, run-log database (location in Notion to be confirmed).
-2. `milobedini/tastebook` repo (public): lighter Xelix-style starter (`frontend/` React 19 + Vite + TanStack Query + react-router + Vitest + MSW + Playwright; `backend/` Django + DRF + Postgres, uv, ruff, pytest, drf-spectacular), Biome, CI, branch protection on `main`, `AGENTS.md`, `specs/` + `specs/lessons/`, PR template, Claude GitHub App, `CLAUDE_CODE_OAUTH_TOKEN` secret, GitHub webhook to the console.
-3. Draft `plugin/agents/*.md` and `plugin/skills/*` from Warp's default prompts and mb-skills (see [Instructions and conventions](#instructions-and-conventions)), then the user's review and sign-off.
+1. You: install the Claude GitHub App on `milobedini/tastebook`, add the `CLAUDE_CODE_OAUTH_TOKEN` secret (from `claude setup-token`), and add the GitHub webhook to `/api/webhooks/github` with the `GITHUB_WEBHOOK_SECRET` value.
+2. Review and sign off the drafts in `plugin/agents/*.md` and `plugin/skills/*` (guide: [instructions-review.md](instructions-review.md)).
+3. Hello-world check for the Phase 0 exit: delegate an issue to `@Tastebook` and see the event in the console.
 
 ### Things learnt during setup
 
@@ -33,6 +35,10 @@ _Last updated 2026-10-24._ **Current phase: 0 (Foundations).**
 - pnpm 12 fails installs on unapproved build scripts: list them in `pnpm-workspace.yaml` `allowBuilds`.
 - Vercel Marketplace installs add provider agent skills; the Neon one told agents to send feedback silently and was removed. Review any auto-installed skill before committing.
 - Linear also offers client-credentials tokens (app actor, ~30 days, no refresh). Candidate for giving Actions runs their own token (Phase 1).
+- `openapi-typescript` needs the TypeScript JS API, which TypeScript 7 doesn't ship, and pnpm overrides don't reach peer dependencies. It lives in its own workspace package (`tools/openapi`) with `typescript` aliased to `@typescript/typescript6`, as in the Xelix front end.
+- MSW 3 renamed `onUnhandledRequest` to `onUnhandledFrame`. `openapi-fetch` keeps the `fetch` it saw at creation, so the client passes `fetch: (request) => globalThis.fetch(request)` for MSW to intercept it in tests.
+- Biome formats YAML. Exclude generated files (`backend/schema.yml`) or the contract check fails.
+- `astral-sh/setup-uv` publishes no major tags: pin the full version (`@v10.3.2`).
 
 ## Decisions
 

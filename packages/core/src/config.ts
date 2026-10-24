@@ -2,6 +2,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 
 const fraction = z.number().min(0).max(1);
+const notionId = z.string().regex(/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/);
 
 export const usagePolicySchema = z.object({
   fiveHour: z.object({
@@ -36,7 +37,20 @@ export const factoryConfigSchema = z.object({
     })
   }),
   slack: z.object({ channel: z.string().min(1) }).optional(),
-  notion: z.object({ productPageUrl: z.url() }).optional(),
+  notion: z
+    .object({
+      teamspace: z.string().min(1),
+      hubPage: notionId,
+      visionPage: notionId,
+      prdTemplatePage: notionId,
+      dataSources: z.object({
+        prds: notionId,
+        decisions: notionId,
+        weeklyReports: notionId,
+        runLog: notionId
+      })
+    })
+    .optional(),
   models: z.object({
     triage: z.string().min(1),
     spec: z.string().min(1),
