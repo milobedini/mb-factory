@@ -4,6 +4,36 @@ A reusable software factory, modelled on [Warp Factories](https://docs.warp.dev/
 
 Demo project: **Tastebook** (recipe hub). The project itself is defined later; the factory comes first.
 
+## Status
+
+_Last updated 2026-10-24._ **Current phase: 0 (Foundations).**
+
+### Done
+
+- Monorepo: `apps/console` (Next.js 16), `packages/core` (config, usage governor, stage machine, webhook verification, secret encryption; Vitest). Tooling: Biome 2.6 + TypeScript 7, Husky + lint-staged, VS Code workspace settings.
+- GitHub: <https://github.com/milobedini/mb-factory> (public). Pushes to `main` deploy the console.
+- Vercel: project `mb-factory-console` (Hobby, team `milobedinis-projects`), root directory `apps/console`, link at the repo root (`.vercel/`). Console: <https://mb-factory-console.vercel.app>.
+- Neon Postgres `mb-factory-db` via the Marketplace. Drizzle schema in `apps/console/db`; tables `events` (one row per delivery) and `linear_installations` (tokens AES-256-GCM encrypted). Migrations: `pnpm --filter @mb-factory/console db:generate` / `db:migrate` (source `apps/console/.env.local` first).
+- Linear: workspace "Tastebook", team key **`TAS`**, factory statuses and Triage set up. Agent app `@Tastebook` installed (`actor=app`, `app:assignable`, `app:mentionable`) through `/api/linear/oauth/start`. Delegating an issue records an `AgentSessionEvent` and posts a "Picked this up" thought within 10 s. Tokens refresh automatically (24 h expiry). Test issue: TAS-5.
+- Slack: app `@Tastebook` from `projects/tastebook/slack-manifest.yaml`, events verified, channel `#tastebook-factory` (`C0CBSE2Q6FQ`). Mentions are recorded.
+- Production env vars: `CONSOLE_URL`, `DATABASE_URL*` (Neon), `TOKEN_ENCRYPTION_KEY`, `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET`, `LINEAR_ALLOWED_ORGANIZATION_ID`, `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`, `GITHUB_WEBHOOK_SECRET`.
+
+### Next (rest of Phase 0)
+
+1. Notion pages: vision, PRDs, decisions, weekly factory reports, run-log database (location in Notion to be confirmed).
+2. `milobedini/tastebook` repo (public): lighter Xelix-style starter (`frontend/` React 19 + Vite + TanStack Query + react-router + Vitest + MSW + Playwright; `backend/` Django + DRF + Postgres, uv, ruff, pytest, drf-spectacular), Biome, CI, branch protection on `main`, `AGENTS.md`, `specs/` + `specs/lessons/`, PR template, Claude GitHub App, `CLAUDE_CODE_OAUTH_TOKEN` secret, GitHub webhook to the console.
+3. Draft `plugin/agents/*.md` and `plugin/skills/*` from Warp's default prompts and mb-skills (see [Instructions and conventions](#instructions-and-conventions)), then the user's review and sign-off.
+
+### Things learnt during setup
+
+- Linear's "Agent session events" options appear only after the OAuth app is first saved.
+- One Slack mention arrives as both `message` and `app_mention`. Start work only on `app_mention`; use `message` only for replies in a thread that already has a work item.
+- Vercel Hobby: crons run at most once a day. The usage probe and queue release run as scheduled GitHub Actions instead.
+- Vercel Standard Protection does not cover the production `*.vercel.app` alias: the console is public. Add a login (Sign in with Vercel or a password in `proxy.ts`) before the dashboard shows real data (Phase 1).
+- pnpm 12 fails installs on unapproved build scripts: list them in `pnpm-workspace.yaml` `allowBuilds`.
+- Vercel Marketplace installs add provider agent skills; the Neon one told agents to send feedback silently and was removed. Review any auto-installed skill before committing.
+- Linear also offers client-credentials tokens (app actor, ~30 days, no refresh). Candidate for giving Actions runs their own token (Phase 1).
+
 ## Decisions
 
 | Area            | Decision                                                                                                                                                                                                                                       |
