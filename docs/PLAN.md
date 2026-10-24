@@ -27,15 +27,7 @@ _Hand-off, 2026-10-24._ The plugin drafts (`plugin/agents/*.md`, `plugin/skills/
 1. **You, not done yet:**
    - Install the Claude GitHub App on `milobedini/tastebook` (<https://github.com/apps/claude>).
    - Run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R milobedini/tastebook`.
-   - Add the GitHub webhook in your own terminal, so the secret stays out of agent sessions:
-
-     ```sh
-     read -s SECRET && gh api repos/milobedini/tastebook/hooks -f name=web -F active=true \
-       -f 'events[]=pull_request' -f 'events[]=pull_request_review' -f 'events[]=pull_request_review_comment' \
-       -f 'events[]=issue_comment' -f 'events[]=push' -f 'events[]=check_suite' -f 'events[]=workflow_run' \
-       -f 'config[url]=https://mb-factory-console.vercel.app/api/webhooks/github' \
-       -f 'config[content_type]=json' -f "config[secret]=$SECRET"
-     ```
+   - ~~GitHub webhook~~: done 2026-10-24 (hook `702633536`, ping returns 200).
 
 2. **Instruction review: signed off 2026-10-24.** The eight recommendations and the drafts are committed (see [instructions-review.md](instructions-review.md)).
 3. **Unverified in the drafts:** whether an agent's `skills:` list needs the `mb-factory:` prefix; the arguments for `agentSessionUpdate` in `plugin/skills/linear-reporting/scripts/linear.py`; how the stage workflow passes the brief and uploads evidence.
@@ -54,6 +46,8 @@ _Hand-off, 2026-10-24._ The plugin drafts (`plugin/agents/*.md`, `plugin/skills/
 - MSW 3 renamed `onUnhandledRequest` to `onUnhandledFrame`. `openapi-fetch` keeps the `fetch` it saw at creation, so the client passes `fetch: (request) => globalThis.fetch(request)` for MSW to intercept it in tests.
 - Biome formats YAML. Exclude generated files (`backend/schema.yml`) or the contract check fails.
 - `astral-sh/setup-uv` publishes no major tags: pin the full version (`@v10.3.2`).
+- zsh treats `config[url]=…` as a glob: quote bracketed `gh api -f` fields.
+- `vercel env update` asks for confirmation even with a value on stdin; pass `--yes`. A hidden secret can't be read back, so rotating means generating a new value and setting it in both places from one shell.
 - Reading a secret out of Vercel inside an agent session (even without printing it) is blocked as credential materialisation. Secrets that external services need go in through your own terminal.
 
 ## Decisions
