@@ -10,3 +10,5 @@ dist
 *.tsbuildinfo
 next-env.d.ts
 .worktrees
+.agents/
+skills-lock.json

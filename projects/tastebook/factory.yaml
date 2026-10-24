@@ -7,7 +7,7 @@ repositories:
     name: tastebook
 
 linear:
-  teamKey: TB
+  teamKey: TAS
   statuses:
     researching: Researching
     spec: Spec
