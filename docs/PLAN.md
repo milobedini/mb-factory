@@ -22,7 +22,7 @@ _Last updated 2026-10-24._ **Current phase: 0 (Foundations).**
 
 ### Next (rest of Phase 0)
 
-_Hand-off, 2026-10-24._ The plugin drafts (`plugin/agents/*.md`, `plugin/skills/*`, `docs/instructions-review.md`) are **uncommitted** in the working tree, waiting for review. The local commit `Record the Tastebook repo and Notion pages` is **not pushed** (a push to `main` deploys the console).
+_Hand-off, 2026-10-24._ The plugin drafts (`plugin/agents/*.md`, `plugin/skills/*`) are signed off and committed.
 
 1. **You, not done yet:**
    - Install the Claude GitHub App on `milobedini/tastebook` (<https://github.com/apps/claude>).
@@ -37,12 +37,9 @@ _Hand-off, 2026-10-24._ The plugin drafts (`plugin/agents/*.md`, `plugin/skills/
        -f config[content_type]=json -f config[secret]="$SECRET"
      ```
 
-2. **Instruction review.** You agreed with all eight recommendations in [instructions-review.md](instructions-review.md) (2026-10-24). Still to do: your read of the drafts themselves, then sign-off.
-3. **Questions waiting for your answer:**
-   - Should the agent record the eight recommendations as signed off in `instructions-review.md` and this plan, update the drafts to match, and commit them?
-   - Should the plan's evidence open question take the upload order: (1) test `gh --attach` with `GITHUB_TOKEN` and the Claude App token in a throwaway workflow, (2) otherwise a classic token as an Actions secret used only in a separate, agent-free upload step, (3) otherwise Vercel Blob?
-4. **Unverified in the drafts:** whether an agent's `skills:` list needs the `mb-factory:` prefix; the arguments for `agentSessionUpdate` in `plugin/skills/linear-reporting/scripts/linear.py`; how the stage workflow passes the brief and uploads evidence.
-5. **Phase 0 exit check:** delegate a test issue to `@Tastebook` and see the event in the console.
+2. **Instruction review: signed off 2026-10-24.** The eight recommendations and the drafts are committed (see [instructions-review.md](instructions-review.md)).
+3. **Unverified in the drafts:** whether an agent's `skills:` list needs the `mb-factory:` prefix; the arguments for `agentSessionUpdate` in `plugin/skills/linear-reporting/scripts/linear.py`; how the stage workflow passes the brief and uploads evidence.
+4. **Phase 0 exit check:** delegate a test issue to `@Tastebook` and see the event in the console.
 
 ### Things learnt during setup
 
@@ -318,7 +315,7 @@ mb-factory/
 
 - Linear token delivery to Actions: the router refreshes the app token and passes it masked in the dispatch payload (to be validated in Phase 1).
 - Usage readings: confirm that `claude-code-action`'s execution output includes `rate_limit_event`; if not, the stage workflow runs the probe at the end of each stage instead. Confirm the probe's utilisation figures against `/usage`.
-- Evidence hosting from CI: `gh --attach` (gh 2.99+) is the choice. The docs list only the `gh auth login` OAuth token and classic personal access tokens; `GITHUB_TOKEN` and GitHub App tokens are undocumented. Proposed order (waiting for your answer, see Status): test the existing tokens, then a classic token in an agent-free upload step, then Vercel Blob.
+- Evidence hosting from CI: `gh --attach` (gh 2.99+) is the choice. The docs list only the `gh auth login` OAuth token and classic personal access tokens; `GITHUB_TOKEN` and GitHub App tokens are undocumented. Agreed order (2026-10-24): (1) test `gh --attach` with `GITHUB_TOKEN` and the Claude App token in a throwaway workflow, (2) otherwise a classic token as an Actions secret used only in a separate, agent-free upload step, (3) otherwise Vercel Blob.
 - Tastebook hosting (Vercel for the frontend; backend host to be decided) and preview environments for verification.
 
 ## References

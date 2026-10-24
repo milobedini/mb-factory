@@ -1,6 +1,6 @@
 {
   "name": "mb-factory",
-  "description": "Stage agents and skills for the mb-factory software factory: triage, spec, implement and review.",
+  "description": "Stage agents and skills for the mb-factory software factory: triage, spec, implement, verify and review.",
   "version": "0.1.0",
   "author": {
     "name": "Milo Bedini"
