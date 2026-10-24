@@ -1,13 +1,33 @@
 import { verifyLinearWebhook } from '@mb-factory/core';
+import { after } from 'next/server';
 
 import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
+import { createAgentActivity } from '@/lib/linear-api';
 import { log } from '@/lib/log';
 
 type LinearWebhook = {
   type: string;
   action?: string;
+  organizationId: string;
   agentSession?: { id: string; issue?: { identifier?: string } };
+};
+
+const ACKNOWLEDGEMENT =
+  'Picked this up. The factory is still being set up, so no stages run yet. This session is recorded in the console.';
+
+const acknowledgeSession = async (event: LinearWebhook): Promise<void> => {
+  if (event.type !== 'AgentSessionEvent' || event.action !== 'created' || !event.agentSession) {
+    return;
+  }
+  try {
+    await createAgentActivity(event.organizationId, event.agentSession.id, { type: 'thought', body: ACKNOWLEDGEMENT });
+  } catch (error) {
+    log('error', 'linear acknowledgement failed', {
+      agentSessionId: event.agentSession.id,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
 };
 
 export const POST = async (request: Request) => {
@@ -41,6 +61,10 @@ export const POST = async (request: Request) => {
     agentSessionId: event.agentSession?.id,
     issue: event.agentSession?.issue?.identifier
   });
+
+  if (isNew) {
+    after(() => acknowledgeSession(event));
+  }
 
   return new Response(null, { status: 200 });
 };
