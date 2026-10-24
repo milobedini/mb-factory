@@ -1,6 +1,7 @@
 import { verifyGitHubWebhook } from '@mb-factory/core';
 
 import { requireEnv } from '@/lib/env';
+import { recordEvent } from '@/lib/events';
 import { log } from '@/lib/log';
 
 type GitHubWebhook = {
@@ -23,9 +24,19 @@ export const POST = async (request: Request) => {
   }
 
   const event = JSON.parse(rawBody) as GitHubWebhook;
+  const delivery = request.headers.get('x-github-delivery');
+  const eventName = request.headers.get('x-github-event') ?? 'unknown';
+  const isNew = await recordEvent({
+    source: 'github',
+    deliveryId: delivery,
+    type: eventName,
+    action: event.action,
+    payload: event
+  });
   log('info', 'github webhook received', {
-    delivery: request.headers.get('x-github-delivery'),
-    event: request.headers.get('x-github-event'),
+    delivery,
+    duplicate: !isNew,
+    event: eventName,
     action: event.action,
     repository: event.repository?.full_name,
     pullRequest: event.pull_request?.number,

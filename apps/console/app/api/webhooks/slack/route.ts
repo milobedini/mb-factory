@@ -1,6 +1,7 @@
 import { verifySlackRequest } from '@mb-factory/core';
 
 import { requireEnv } from '@/lib/env';
+import { recordEvent } from '@/lib/events';
 import { log } from '@/lib/log';
 
 type SlackPayload =
@@ -27,8 +28,15 @@ export const POST = async (request: Request) => {
     return Response.json({ challenge: payload.challenge });
   }
 
+  const isNew = await recordEvent({
+    source: 'slack',
+    deliveryId: payload.event_id,
+    type: payload.event.type,
+    payload
+  });
   log('info', 'slack event received', {
     eventId: payload.event_id,
+    duplicate: !isNew,
     type: payload.event.type,
     channel: payload.event.channel,
     retry: request.headers.get('x-slack-retry-num')

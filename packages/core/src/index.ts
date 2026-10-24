@@ -11,6 +11,7 @@ export type {
   UsageWindow
 } from './governor';
 export { decideDispatch } from './governor';
+export { decryptSecret, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
 export type { AgentRole, Stage, StageContext, StageEvent, Transition } from './stages';
