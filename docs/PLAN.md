@@ -1,0 +1,275 @@
+# mb-factory — Plan
+
+A reusable software factory, modelled on [Warp Factories](https://docs.warp.dev/factories), that runs on a Claude **subscription** rather than paid API usage. Work arrives from Linear or Slack, moves through triage → spec → implement → review, and comes back as a pull request for a human to merge.
+
+Demo project: **Tastebook** (recipe hub). The project itself is defined later; the factory comes first.
+
+## Decisions
+
+| Area            | Decision                                                                                                                                                                                                                                       |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude plan     | Max 20x                                                                                                                                                                                                                                        |
+| Tracker         | Linear, using its Agents API: the factory is an app user (`@Tastebook`). The user is a workspace admin                                                                                                                                         |
+| Chat            | Slack app; the factory's handle and the threads it reports back to. The user is a workspace admin                                                                                                                                              |
+| Docs            | Notion for vision, PRDs, decision records and weekly factory reports; tech specs live in the repo                                                                                                                                              |
+| Stage runner    | GitHub Actions + `anthropics/claude-code-action@v1` using `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`)                                                                                                                                |
+| Scheduled loops | Claude Code cloud scheduled tasks (formerly Routines), using the claude.ai Linear/Notion/Slack connectors. They are **API-triggered by the console's cron**, not by a schedule trigger, so every factory run passes through the usage governor |
+| Usage governor  | The console reads the 5-hour and weekly usage before every dispatch and holds, throttles or queues work against the policy in `factory.yaml`                                                                                                   |
+| Console         | One Next.js app on Vercel: webhook routes (the router) and the factory dashboard                                                                                                                                                               |
+| Factory data    | Postgres from the Vercel Marketplace: work items, runs, events, scores                                                                                                                                                                         |
+| Repos           | `mb-factory` (this repo) and `tastebook`, both **public** (unlimited Actions minutes)                                                                                                                                                          |
+| Tastebook stack | A lighter version of the Xelix stack in one repo: `frontend/` (React 19, Vite, TanStack Query, react-router, Biome, Vitest, MSW, Playwright) and `backend/` (Django, DRF, Postgres, uv, ruff, pytest, drf-spectacular → typed client)          |
+
+## Concepts mapped from Warp
+
+| Warp                                      | mb-factory                                                                                                                             |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Work item                                 | Linear issue: the durable record. Every stage writes its findings to it                                                                |
+| Foreman                                   | Split in two. The **router** handles deterministic routing on Linear state and events; the **stage agents** handle judgement           |
+| Foreman's conversation                    | Linear agent session (activities, plan checklist, `externalUrls`) mirrored to the Slack thread                                         |
+| Triage / Spec / Implement / Review agents | Claude Code subagent and skill definitions in the factory **plugin**, one GitHub Actions run per stage                                 |
+| Checkpoints                               | Spec Review and Awaiting Merge statuses (human only); merging is enforced by branch protection                                         |
+| Questions to humans                       | Linear `elicitation` activity, which puts the session in `awaitingInput`; the reply triggers `prompted`, which re-runs the stage       |
+| Factory-as-code                           | `factory.yaml` per project, plus the plugin (agents, skills) and reusable workflows in this repo                                       |
+| Automations                               | Router rules (events → stage) + cloud scheduled tasks                                                                                  |
+| Runners                                   | GitHub-hosted runners (free on public repos); your Mac as an optional self-hosted runner                                               |
+| Dashboard, Runs, Inbox                    | Factory console (see [Factory console](#factory-console))                                                                              |
+| Scorers / Self-improvement / Benchmarks   | Scheduled LLM-judge scorers, PRs that improve the plugin's own prompts and skills, and a fixed task suite rerun against config changes |
+
+## Architecture
+
+```text
+ Slack @Tastebook ──┐                                    ┌─► Linear agent session + issue updates
+ Linear agent event ┼─► Console /api (Next.js, Vercel) ──┼─► GitHub repository_dispatch → stage workflow
+ GitHub webhook ────┘    • verify signatures             │     (claude-code-action, plugin agents/skills)
+                         • ack Linear < 5s, thought < 10s├─► Slack thread replies
+                         • stage state machine, WIP cap  └─► Postgres: work items, runs, events, scores
+                         • refresh Linear app token → pass to run (masked)
+                                         ▲
+ Stage workflow end ── run report (usage, duration, outcome, transcript artifact) ─┘
+
+ Cloud scheduled tasks: health check · dependency audit · docs drift · backlog grooming · scorers
+```
+
+The router logic lives in a framework-agnostic `core` package, so the Next.js route handlers stay thin and the logic can be tested on its own.
+
+### Principles
+
+- **Stateless stages.** Each run rebuilds its context from the Linear issue, its comments, the linked PR and the branch. Nothing depends on session memory.
+- **Briefs, not rediscovery.** Each stage records its findings and references on the issue so the next stage doesn't have to collect them again (Warp's triage rule).
+- **One voice.** Only the router and foreman layer talk to humans; stage agents report to the issue and session.
+- **Humans merge.** Branch protection on `main`; agents never merge.
+- **Capped loops.** Review → revise runs at most twice, then hands to a human.
+- **Usage-aware.** Plan limits (5-hour and weekly) are the real constraint, and the factory shares them with your own Claude use. Every dispatch goes through the [usage governor](#usage-governor).
+- **Measure from day one.** Every run is recorded from Phase 1, so later changes have a baseline to compare against.
+- **Public-repo hygiene.** Issue, PR and comment text is data, not instructions (as in Warp's reviewer prompt). Only Linear workspace members and allow-listed Slack users can start work. Secrets stay in Actions and Vercel, never in run payloads that aren't masked.
+
+### Work structure in Linear
+
+Linear has no "epic" type. A **project** plays that role.
+
+| Linear                 | Used for                                                    | Factory role                                                   |
+| ---------------------- | ----------------------------------------------------------- | -------------------------------------------------------------- |
+| Initiative             | A goal spanning projects (e.g. "Tastebook MVP")             | None; for your planning                                        |
+| **Project** (= epic)   | A deliverable with a PRD (in Notion, linked) and milestones | Sliced into issues by the slice step                           |
+| Milestone              | A checkpoint inside a project                               | Slices are grouped under them                                  |
+| **Issue**              | One PR-sized slice (one ticket = one PR)                    | The work item the pipeline runs on                             |
+| Sub-issue              | Rare: only when a slice can't stand alone                   | Treated like an issue                                          |
+| Relations (blocked by) | Order between slices                                        | The router won't dispatch an issue until its blockers are Done |
+| Triage inbox           | Incoming issues from Slack, scheduled loops and others      | You accept or decline before anything is delegated             |
+
+**Slicing a project:**
+
+1. You write or link the PRD on the project.
+2. You create a "Slice <project>" issue in it and delegate it to `@Tastebook`.
+3. The triage agent, using the mb-slice rules, posts the risks and the proposed slices as one elicitation.
+4. When you approve, it creates the issues with milestones and blocked-by relations, undelegated.
+5. You delegate them, one at a time or "delegate all" in the session. The governor and the dependencies decide the order they run in.
+
+### Linear workflow (Tastebook team)
+
+`Triage inbox → Backlog / Todo (yours) → Researching → Spec → Spec Review (you) → Building → In Review → Awaiting Merge (you) → Done`, plus `Canceled`.
+Delegating an issue to `@Tastebook` is the gate that starts work; issues that aren't delegated are never touched. Questions use `awaitingInput` on the session, not a status.
+
+### Starting and taking over work
+
+**Give the factory work:**
+
+- **Linear:** create an issue (or pick one from the backlog) and delegate it to `@Tastebook`, or mention `@Tastebook` in a comment with an instruction ("address the review comments").
+- **Slack:** mention `@Tastebook` in a channel or DM. It files the issue and replies in the thread.
+- **Local Claude Code:** a `/factory` skill that creates and delegates an issue from your terminal, using the Linear MCP. This is the equivalent of Warp's Factory MCP.
+- **Console:** re-run or cancel a stage.
+
+**Do it yourself:**
+
+- **From the start:** assign the issue to yourself and don't delegate it. The factory ignores it, and the console still counts it for cycle time.
+- **Mid-flight:** remove the delegation. The router cancels any running stage, and you check out the issue's branch and work locally (your mb-skills still work there). Pushes you make to a factory PR count against autonomy, as in Warp.
+- **Hand back:** delegate again with a comment saying what you did and what's left. The factory continues from the branch's current state.
+
+### Specs
+
+Each spec is committed as `specs/<ISSUE-ID>.md` in a draft PR; implementation continues on that branch and PR. Lessons learned go in `specs/lessons/`, and agent rules in `AGENTS.md` / `CLAUDE.md` (the same convention as the Xelix repos). Template: Summary, Product behaviour, Technical design, Decisions, Assumptions, Out of scope, Validation criteria.
+
+## Instructions and conventions
+
+Every behaviour you'd want to tune is a Markdown file under version control. Changes go through a PR to this repo (factory-as-code). Later, self-improvement proposes changes the same way.
+
+| Layer                | Where                                                                                                                      | Examples                                                                                                                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Factory defaults  | `plugin/agents/*.md`, `plugin/skills/*/SKILL.md`                                                                           | How triage researches and sizes; when a spec is needed; the review rubric and severities; how agents report to Linear and Slack                       |
+| 2. Project overrides | `projects/<name>/instructions/<agent>.md` (appended to the default) and `factory.yaml` knobs                               | Tastebook-specific triage rules, gates on/off, review loop cap, models, labels                                                                        |
+| 3. Repo conventions  | In the project repo: `AGENTS.md` / `CLAUDE.md`, `.github/pull_request_template.md`, `specs/_template.md`, `specs/lessons/` | Code rules, PR format, spec format, commit style. Agents always prefer these over defaults (as Warp's implement agent prefers the repo's PR template) |
+| 4. Tracker templates | Linear issue templates                                                                                                     | Bug and feature issue shape that triage fills in                                                                                                      |
+
+Seeded from Warp's default agent prompts (for orchestration and handoffs), your global `CLAUDE.md`, the Xelix `AGENTS.md` / `specs/` conventions, `lint-environment`, and **mb-skills** (for the substance of each stage).
+
+### From mb-skills
+
+These are slimmer, project-agnostic forks. mb-skills itself stays as it is for Xelix work. What gets dropped everywhere: HTML review pages, overlays, `pbcopy`, `~/plans` and `~/builds` files, local stack and org-picking scripts, Shortcut wiring, and Xelix/Lexi/Panda specifics (those move to each project's `AGENTS.md`).
+
+| mb-skills                                         | Becomes                                                 | Keep                                                                                                                                                                                                                | Change                                                                                                                                  |
+| ------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `_mb-shared/ground-rules.md`                      | `skills/ground-rules` (read by spec, implement, review) | The five questions, Design and Code smells, tautology-test rules                                                                                                                                                    | Framework-specific bullets move to the project's `AGENTS.md`                                                                            |
+| `_mb-shared/git-text.md`                          | `skills/git-text`                                       | Commit, PR title and PR description rules, the Decisions block, the Evidence section, British English, no AI attribution                                                                                            | `sc-NNNNN` → Linear IDs (`TB-123`, magic words for linking); evidence uploaded from CI rather than local `gh --attach`                  |
+| `_mb-shared/house-notes.md`                       | `specs/lessons/` in each project + `skills/lessons`     | The entry format (Applies to, Rule, Why, Re-check by) and the expiry of project facts                                                                                                                               | Agents propose entries in their PRs; self-improvement curates them                                                                      |
+| House note "every question carries a default fix" | Rule for every Linear elicitation                       | "<issue>. Suggest: <fix>. Going with that unless someone objects."                                                                                                                                                  | Gates still need an explicit answer; auto-proceed on silence is a per-gate option, off by default                                       |
+| `mb-slice`                                        | **Triage** agent (and epic slicing for Linear projects) | Risks before slices, one ticket = one PR, vertical slices, size floor and ceiling, "keep it as one" is valid                                                                                                        | Writes Linear issues directly, but only after the spec or slicing gate                                                                  |
+| `mb-plan` + `plan-template.md`                    | **Spec** agent → `specs/<ID>.md` in the draft PR        | Required reading, one behaviour per acceptance criterion, Design rationale with `Asked:`, Blast radius, Not changing, steps with `Done when:`, tests with `asserts:`, Evidence (feature, bug or chore), Assumptions | Questions go through Linear in one batch; only GitHub-renderable exhibits (`mermaid`, `diff`, `ts`)                                     |
+| `mb-build` + `build-log-template.md`              | **Implement** agent                                     | Drift check, bug path (failing test first, on unchanged code), mechanical vs design deviations, the 3-attempts rule, commit discipline, evidence rules                                                              | No "ship it" step (the factory's gates take its place); the build log becomes the PR description, the Linear session and the run record |
+| `mb-review` + `scan_bypasses.py`                  | **Review** agent + a deterministic pre-review check     | Spec and Standards as separate axes; Blocking, Should fix, Nit (max 5) and Could cut; `Ref:` on every finding; suggestion blocks; tone rules; don't re-run CI; the bypass scanner                                   | Reports to the router; only findings that need a human are posted, as comments, never as an approval                                    |
+| `mb-testing-plan`                                 | **Announce** stage after merge or deploy (Phase 3–4)    | The "ready to test" Slack post: what it is, where it's live, what to check, known limitations                                                                                                                       | Triggered by merge or deploy, not run by hand                                                                                           |
+| `mb-clean`, `feature-flag-fe`                     | Not carried over                                        | —                                                                                                                                                                                                                   | A scheduled clean-up of stale branches and sessions later, if needed                                                                    |
+
+**Default on attribution:** factory commits, PRs and comments carry **no AI attribution**, as in your global rules. Traceability comes from a `factory` label and the console's run records, which the autonomy metric needs anyway.
+
+**Instruction review:** at the end of Phase 0, you review and edit the drafts before the first live run. You can keep changing them at any point after that.
+
+## Usage governor
+
+The factory runs on the same Max 20x limits as your own Claude Code, claude.ai chat and cloud sessions. Without a governor it could use up your 5-hour window mid-afternoon or your weekly allowance by Wednesday.
+
+### Reading usage
+
+| Source             | What it gives                                                                                                                                                                                                                      | When                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Run telemetry**  | `rate_limit_event` in Claude Code's `stream-json` output: `unifiedWindows.five_hour` / `seven_day` with `utilization` (0–1), `resetsAt` (epoch seconds), `status` (`allowed` / `allowed_warning` / `rejected`), and overage status | Every stage run reports its last reading to the console                                                        |
+| **Probe**          | A tiny headless call (`claude -p` with the cheapest model, `--output-format stream-json`) from a scheduled GitHub Actions job using the subscription token                                                                         | Every ~15 min, and before an expensive dispatch if the latest reading is stale                                 |
+| **Local reporter** | Your Mac's Claude Code status line script receives `rate_limits.five_hour` / `seven_day` (`used_percentage`, `resets_at`) and sends them to the console                                                                            | Whenever you use Claude Code interactively. This also measures your own usage, which competes with the factory |
+| **Estimate**       | Tokens per run from the `runs` table, used to project usage between readings                                                                                                                                                       | Continuously                                                                                                   |
+
+Verified on 2026-10-24 (Claude Code 2.1.310): a headless call returned both windows with `utilization` while `status` was `allowed`, and overage `rejected` (overage disabled). Fields for the status line are documented officially; the `stream-json` event is not documented, so the console reads it defensively and records which source each reading came from.
+
+### Policy (`factory.yaml`)
+
+```yaml
+usage:
+  fiveHour:
+    throttleAt: 0.60 # only continue in-flight work (review/revise, answers to questions)
+    pauseAt: 0.80 # nothing new dispatches; leaves headroom for you
+  sevenDay:
+    pacing: true # allowed use ≈ share of the week elapsed + slack
+    slack: 0.10
+    pauseAt: 0.85
+  staleAfterMinutes: 20 # probe before dispatching if the latest reading is older
+  downshift: # when throttled, swap to cheaper models
+    triage: haiku
+    review: sonnet
+```
+
+Work priority, from highest to lowest: `urgent`, `in_flight`, `feature`, `scheduled`. The headroom above `pauseAt` is left for you. The decision logic is in `packages/core/src/governor.ts`.
+
+### Behaviour
+
+- **Open:** dispatch normally.
+- **Throttled:** only in-flight work and `urgent` items; cheaper models; scheduled loops are skipped.
+- **Paused:** nothing dispatches. Each held item gets a Linear session update ("Queued until 11:30, usage limit") and moves to the console's queue. A console cron re-checks and releases work, highest priority first, once the window resets.
+- **Rejected mid-run:** the run is marked `limit_hit`, its branch is pushed, and the stage is queued to resume after `resetsAt`.
+- **Concurrency cap:** a maximum number of runs at once (default 2), separate from the thresholds.
+- **Manual controls:** pause/resume and "allow this one run anyway".
+- **No overage:** usage credits stay off, so the factory can never spend beyond the plan.
+
+## Factory console
+
+A web app for the factory, matching Warp's dashboard, Runs page and Inbox.
+
+### Data model
+
+| Table            | Holds                                                                                                                                           | Source                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `work_items`     | Linear issue, project, requester, origin (Slack thread or Linear), current stage, PR(s)                                                         | Router                                  |
+| `runs`           | Stage, agent, model, trigger, status, start/end, Actions run URL, transcript artifact, tokens, API-equivalent cost, Actions minutes, parent run | Dispatch + run report from the workflow |
+| `events`         | Every webhook and stage transition with timestamps (Linear status changes, PR opened/reviewed/merged, human pushes)                             | Router                                  |
+| `scores`         | Scorer, run, label, score, reasoning                                                                                                            | Scorer task                             |
+| `improvements`   | Self-improvement PRs and the failing runs they address                                                                                          | Self-improvement task                   |
+| `usage_readings` | Window, utilisation, resets at, status, source (run, probe, local, estimate), taken at                                                          | Run reports, probe, local reporter      |
+| `queue`          | Held dispatches with priority, reason and earliest release time                                                                                 | Governor                                |
+
+**Cost on a subscription:** there is no billed cost per run. `claude-code-action` reports token usage and an **API-equivalent cost**, so we track that, plus Actions minutes and the share of the 5-hour and weekly limits used. It works as a comparison metric, as Warp's cost per PR does ("not a billing figure").
+
+### Pages
+
+- **Dashboard** (for a chosen date range):
+  - **Autonomy:** share of merged PRs with no human-pushed commits.
+  - **PR cycle time:** median, with a median per stage, and human wait time at the gates broken out.
+  - **PRs opened vs merged.**
+  - **Run breakdown:** by stage, status, model and trigger.
+  - **Usage per PR:** tokens, API-equivalent cost, Actions minutes, by PR size (S/M/L/XL).
+  - **Most expensive work items.**
+  - **Review loop count** and **first-pass acceptance rate**.
+  - **Scorer cards** and the latest **self-improvement PRs**.
+- **Usage:**
+  - Gauges for the 5-hour and weekly windows, with reset countdowns, reading freshness and source.
+  - Governor state (Open / Throttled / Paused) and the policy thresholds.
+  - Usage over time, with factory runs overlaid, and a weekly pacing line.
+  - Estimated split between the factory and your own use.
+  - The queue of held work, with pause/resume and "allow once" controls.
+- **Runs:** runs grouped by work item, with a timeline, links to the Actions log, transcript, Linear session and PR. Actions: re-run a stage, cancel, score now, turn into a benchmark task.
+- **Inbox:** everything waiting on you, across projects: open questions, spec reviews, PR reviews, failed or blocked runs. Items clear automatically when they're resolved.
+- **Factory:** read-only view of each project's `factory.yaml`, the plugin's agents and skills, WIP limits, and the pause switch.
+- **Scorers / Benchmarks:** scorer definitions and results; benchmark suites comparing model and config choices.
+
+**Known gap compared with Warp:** you can't steer a GitHub Actions run live the way Warp's "View session" lets you. The equivalents are reading the transcript afterwards and replying in the Linear session or Slack thread, which re-runs the stage.
+
+Notion receives a **weekly factory report** generated from this data. Notion is not the store for it.
+
+## Repository layout (proposed)
+
+```text
+mb-factory/
+  docs/                      plan, architecture, runbooks
+  packages/core/             state machine, dispatch, Linear/Slack/GitHub clients, metrics queries
+  apps/console/              Next.js on Vercel: /api webhooks (router) + dashboard UI
+  plugin/                    Claude Code plugin (installed into project runs)
+    agents/                  triage.md, spec.md, implement.md, review.md, verify.md
+    skills/                  linear, slack-report, github-pr, code-review rubric, ui-verification, spec-writing
+  workflows/                 reusable GitHub workflows (stage.yml) called from project repos
+  cli/                       `factory init` / `factory doctor` for onboarding a project
+  projects/tastebook/        factory.yaml (repos, Linear team/status IDs, Slack channel, Notion IDs, models, limits)
+```
+
+## Phases
+
+| #   | Phase                                                                                                                                                                                                                                                                                              | Exit criteria                                                                                                                            |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | **Foundations**: monorepo skeleton; console deployed with webhook endpoints and DB; Linear team, statuses and agent OAuth app; Slack app; Notion workspace pages; `tastebook` repo with a minimal full-stack starter, CI and branch protection; draft all agent instructions, skills and templates | A hello-world issue can be delegated to `@Tastebook`; the console records the event; you've reviewed and signed off the instructions     |
+| 1   | **First loop, run log and governor**: delegate → implement run → PR → Linear session and Slack updates; every run writes to `runs` and `events`; probe + basic thresholds + Usage page                                                                                                             | A small real change lands as a PR; its run appears with usage and duration; a forced "paused" state queues and later releases a dispatch |
+| 2   | **All stages and the Runs page**: triage, spec + approval gate, review loop (max 2), merge → Done; Runs page with timeline                                                                                                                                                                         | A medium feature goes end to end with one spec approval and one merge, fully traceable in the console                                    |
+| 3   | **Slack intake, questions and Inbox**: mention creates an issue; elicitations relayed in the thread; Inbox page                                                                                                                                                                                    | Work started in Slack finishes in Slack; pending questions show in the Inbox                                                             |
+| 4   | **Dashboard and scheduled loops**: dashboard metrics; health, dependency, docs-drift and grooming loops, triggered through the governor; weekly pacing, priorities, model downshift, local status-line reporter                                                                                    | The dashboard shows a two-week baseline; loops file well-formed issues                                                                   |
+| 5   | **Scorers, self-improvement and benchmarks**: scorer task, self-improvement PRs on the plugin, a benchmark suite, weekly Notion report                                                                                                                                                             | At least one accepted self-improvement PR; one benchmarked config change                                                                 |
+| 6   | **Reusability**: `factory init` onboards a second project                                                                                                                                                                                                                                          | A second repo runs through the factory with config only                                                                                  |
+
+## Open questions
+
+- Linear token delivery to Actions: the router refreshes the app token and passes it masked in the dispatch payload (to be validated in Phase 1).
+- Usage readings: confirm that `claude-code-action`'s execution output includes `rate_limit_event`; if not, the stage workflow runs the probe at the end of each stage instead. Confirm the probe's utilisation figures against `/usage`.
+- Evidence hosting from CI: whether `gh --attach` works with the Actions token; otherwise Playwright videos and screenshots go to Vercel Blob, or as Actions artifacts, and are linked in the PR.
+- Tastebook hosting (Vercel for the frontend; backend host to be decided) and preview environments for verification.
+
+## References
+
+- Warp Factories docs and [warp-factory-examples](https://github.com/warpdotdev/warp-factory-examples) (default agent prompts in `00-warp-default-agents`)
+- [Building a software factory](https://www.piersonmarks.com/posts/building-a-software-factory) (Pierson Marks)
+- Claude Code: [cloud scheduled tasks](https://code.claude.com/docs/en/routines), [GitHub Actions](https://code.claude.com/docs/en/github-actions), [Projects](https://code.claude.com/docs/en/claude-projects)
+- Linear: [Agents API](https://linear.app/developers/agents), [agent interaction](https://linear.app/developers/agent-interaction)
+- [Agent SDK and claude -p on Claude plans](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)

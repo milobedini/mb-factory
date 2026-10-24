@@ -1,0 +1,110 @@
+import type { UsagePolicy } from './config';
+
+export type UsageWindow = 'fiveHour' | 'sevenDay';
+
+export type UsageSource = 'run' | 'probe' | 'local' | 'estimate';
+
+export type UsageReading = {
+  window: UsageWindow;
+  utilisation: number;
+  resetsAt: Date;
+  takenAt: Date;
+  source: UsageSource;
+};
+
+export type Priority = 'urgent' | 'in_flight' | 'feature' | 'scheduled';
+
+export type GovernorState = 'open' | 'throttled' | 'paused';
+
+export type HoldReason = 'concurrency' | 'five_hour_throttle' | 'five_hour_pause' | 'weekly_pacing' | 'weekly_pause';
+
+export type Decision =
+  | { kind: 'dispatch'; state: GovernorState; downshift: boolean }
+  | { kind: 'hold'; state: GovernorState; reason: HoldReason; releaseAt?: Date }
+  | { kind: 'probe'; stale: UsageWindow[] };
+
+export type DispatchRequest = {
+  policy: UsagePolicy;
+  readings: Partial<Record<UsageWindow, UsageReading>>;
+  priority: Priority;
+  runningCount: number;
+  maxRuns: number;
+  now: Date;
+};
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const WINDOWS: UsageWindow[] = ['fiveHour', 'sevenDay'];
+const THROTTLE_ALLOWS: Priority[] = ['urgent', 'in_flight'];
+
+const effectiveUtilisation = (reading: UsageReading, now: Date): number =>
+  now.getTime() >= reading.resetsAt.getTime() ? 0 : reading.utilisation;
+
+const isStale = (reading: UsageReading | undefined, now: Date, staleAfterMinutes: number): boolean =>
+  !reading ||
+  (now.getTime() < reading.resetsAt.getTime() &&
+    now.getTime() - reading.takenAt.getTime() > staleAfterMinutes * 60 * 1000);
+
+const weeklyPaceLimit = (reading: UsageReading, now: Date, slack: number): number => {
+  const windowStart = reading.resetsAt.getTime() - WEEK_MS;
+  const elapsed = Math.min(Math.max((now.getTime() - windowStart) / WEEK_MS, 0), 1);
+  return elapsed + slack;
+};
+
+const paceReleaseAt = (reading: UsageReading, slack: number): Date => {
+  const windowStart = reading.resetsAt.getTime() - WEEK_MS;
+  const neededElapsed = Math.max(reading.utilisation - slack, 0);
+  return new Date(windowStart + neededElapsed * WEEK_MS);
+};
+
+type Assessment = { state: GovernorState; reason?: HoldReason; releaseAt?: Date };
+
+const assess = (
+  policy: UsagePolicy,
+  fiveHour: UsageReading | undefined,
+  sevenDay: UsageReading | undefined,
+  now: Date
+): Assessment => {
+  const fiveHourUsed = fiveHour ? effectiveUtilisation(fiveHour, now) : 0;
+  const sevenDayUsed = sevenDay ? effectiveUtilisation(sevenDay, now) : 0;
+
+  if (sevenDay && sevenDayUsed >= policy.sevenDay.pauseAt) {
+    return { state: 'paused', reason: 'weekly_pause', releaseAt: sevenDay.resetsAt };
+  }
+  if (fiveHour && fiveHourUsed >= policy.fiveHour.pauseAt) {
+    return { state: 'paused', reason: 'five_hour_pause', releaseAt: fiveHour.resetsAt };
+  }
+  if (fiveHour && fiveHourUsed >= policy.fiveHour.throttleAt) {
+    return { state: 'throttled', reason: 'five_hour_throttle', releaseAt: fiveHour.resetsAt };
+  }
+  if (sevenDay && policy.sevenDay.pacing && sevenDayUsed > weeklyPaceLimit(sevenDay, now, policy.sevenDay.slack)) {
+    return { state: 'throttled', reason: 'weekly_pacing', releaseAt: paceReleaseAt(sevenDay, policy.sevenDay.slack) };
+  }
+  return { state: 'open' };
+};
+
+export const decideDispatch = ({
+  policy,
+  readings,
+  priority,
+  runningCount,
+  maxRuns,
+  now
+}: DispatchRequest): Decision => {
+  const stale = WINDOWS.filter((window) => isStale(readings[window], now, policy.staleAfterMinutes));
+  if (stale.length > 0) {
+    return { kind: 'probe', stale };
+  }
+
+  const { state, reason, releaseAt } = assess(policy, readings.fiveHour, readings.sevenDay, now);
+
+  if (runningCount >= maxRuns) {
+    return { kind: 'hold', state, reason: 'concurrency' };
+  }
+  if (state === 'paused' && reason) {
+    return { kind: 'hold', state, reason, releaseAt };
+  }
+  if (state === 'throttled' && reason && !THROTTLE_ALLOWS.includes(priority)) {
+    return { kind: 'hold', state, reason, releaseAt };
+  }
+  return { kind: 'dispatch', state, downshift: state === 'throttled' };
+};

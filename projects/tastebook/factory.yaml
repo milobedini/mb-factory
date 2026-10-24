@@ -1,0 +1,47 @@
+schemaVersion: 1
+name: tastebook
+alias: Tastebook
+
+repositories:
+  - owner: milobedini
+    name: tastebook
+
+linear:
+  teamKey: TB
+  statuses:
+    researching: Researching
+    spec: Spec
+    specReview: Spec Review
+    building: Building
+    inReview: In Review
+    awaitingMerge: Awaiting Merge
+    done: Done
+    canceled: Canceled
+
+slack:
+  channel: '#tastebook-factory'
+
+models:
+  triage: sonnet
+  spec: opus
+  implement: opus
+  review: sonnet
+
+review:
+  maxRounds: 2
+
+concurrency:
+  maxRuns: 2
+
+usage:
+  fiveHour:
+    throttleAt: 0.6
+    pauseAt: 0.8
+  sevenDay:
+    pacing: true
+    slack: 0.1
+    pauseAt: 0.85
+  staleAfterMinutes: 20
+  downshift:
+    triage: haiku
+    review: sonnet
