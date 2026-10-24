@@ -33,8 +33,8 @@ _Hand-off, 2026-10-24._ The plugin drafts (`plugin/agents/*.md`, `plugin/skills/
      read -s SECRET && gh api repos/milobedini/tastebook/hooks -f name=web -F active=true \
        -f 'events[]=pull_request' -f 'events[]=pull_request_review' -f 'events[]=pull_request_review_comment' \
        -f 'events[]=issue_comment' -f 'events[]=push' -f 'events[]=check_suite' -f 'events[]=workflow_run' \
-       -f config[url]=https://mb-factory-console.vercel.app/api/webhooks/github \
-       -f config[content_type]=json -f config[secret]="$SECRET"
+       -f 'config[url]=https://mb-factory-console.vercel.app/api/webhooks/github' \
+       -f 'config[content_type]=json' -f "config[secret]=$SECRET"
      ```
 
 2. **Instruction review: signed off 2026-10-24.** The eight recommendations and the drafts are committed (see [instructions-review.md](instructions-review.md)).
