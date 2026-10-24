@@ -6,7 +6,7 @@ Demo project: **Tastebook** (recipe hub). The project itself is defined later; t
 
 ## Status
 
-_Last updated 2026-10-24._ **Current phase: 0 (Foundations).**
+_Last updated 2026-10-24._ **Current phase: 1 (First loop, run log and governor).** Phase 0 closed 2026-10-24.
 
 ### Done
 
@@ -20,18 +20,11 @@ _Last updated 2026-10-24._ **Current phase: 0 (Foundations).**
 - Tastebook repo: <https://github.com/milobedini/tastebook> (public). `frontend/` (React 19, Vite 8, TanStack Query, react-router 8, Vitest + MSW 3, Playwright), `backend/` (Django 6.1, DRF, drf-spectacular, Postgres 18 via `compose.yaml`, uv, ruff, pytest), `tools/openapi` (generates `frontend/src/api/schema.d.ts` from `backend/schema.yml`). CI jobs Frontend, Backend, API contract (fails on a stale schema or stale types) and End-to-end, all green. Branch protection on `main`: those four checks, one approving review, resolved conversations, no force pushes; admins can bypass so you can merge your own PRs. `AGENTS.md` (with `CLAUDE.md` importing it), `specs/_template.md`, `specs/lessons/README.md`, PR template. The old 2022 `TasteBook` repo was renamed to `tastebook-ga` and archived.
 - Notion: hub page **Tastebook** at the root of the Tastebook teamspace, with Vision (skeleton), PRD template, and the PRDs, Decisions, Weekly factory reports and Run log databases. IDs are in `projects/tastebook/factory.yaml` under `notion`.
 
-### Next (rest of Phase 0)
+### Next (Phase 1)
 
-_Hand-off, 2026-10-24._ The plugin drafts (`plugin/agents/*.md`, `plugin/skills/*`) are signed off and committed.
+Phase 0 exit check passed 2026-10-24: delegating TAS-6 to `@Tastebook` recorded an `AgentSessionEvent` and posted "Picked this up". The plugin is signed off ([instructions-review.md](instructions-review.md)). The Claude GitHub App is installed on `tastebook`, `CLAUDE_CODE_OAUTH_TOKEN` is set there, and the GitHub webhook (hook `702633536`) delivers with a 200.
 
-1. **You, not done yet:**
-   - Install the Claude GitHub App on `milobedini/tastebook` (<https://github.com/apps/claude>).
-   - Run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R milobedini/tastebook`.
-   - ~~GitHub webhook~~: done 2026-10-24 (hook `702633536`, ping returns 200).
-
-2. **Instruction review: signed off 2026-10-24.** The eight recommendations and the drafts are committed (see [instructions-review.md](instructions-review.md)).
-3. **Unverified in the drafts:** whether an agent's `skills:` list needs the `mb-factory:` prefix; the arguments for `agentSessionUpdate` in `plugin/skills/linear-reporting/scripts/linear.py`; how the stage workflow passes the brief and uploads evidence.
-4. **Phase 0 exit check:** delegate a test issue to `@Tastebook` and see the event in the console.
+Verify first, while building the stage workflow: whether an agent's `skills:` list needs the `mb-factory:` prefix; the arguments for `agentSessionUpdate` in `plugin/skills/linear-reporting/scripts/linear.py`; how the stage workflow passes the brief and uploads evidence (upload order under Open questions).
 
 ### Things learnt during setup
 
