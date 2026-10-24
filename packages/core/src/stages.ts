@@ -1,5 +1,12 @@
 export type Stage =
-  'researching' | 'spec' | 'spec_review' | 'building' | 'in_review' | 'awaiting_merge' | 'done' | 'canceled';
+  | 'researching'
+  | 'spec'
+  | 'spec_review'
+  | 'building'
+  | 'in_review'
+  | 'awaiting_merge'
+  | 'done'
+  | 'canceled';
 
 export type AgentRole = 'triage' | 'spec' | 'implement' | 'review';
 

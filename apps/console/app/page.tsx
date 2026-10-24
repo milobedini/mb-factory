@@ -13,9 +13,9 @@ const Home = () => (
     </header>
     <ul className="grid gap-4 sm:grid-cols-2">
       {SECTIONS.map(({ title, detail }) => (
-        <li key={title} className="rounded-lg border border-foreground/15 p-4">
+        <li key={title} className="border-foreground/15 rounded-lg border p-4">
           <h2 className="font-medium">{title}</h2>
-          <p className="text-sm text-foreground/70">{detail}</p>
+          <p className="text-foreground/70 text-sm">{detail}</p>
         </li>
       ))}
     </ul>

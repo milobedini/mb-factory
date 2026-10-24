@@ -1,6 +1,7 @@
+import { verifySlackRequest } from '@mb-factory/core';
+
 import { requireEnv } from '@/lib/env';
 import { log } from '@/lib/log';
-import { verifySlackRequest } from '@mb-factory/core';
 
 type SlackPayload =
   | { type: 'url_verification'; challenge: string }

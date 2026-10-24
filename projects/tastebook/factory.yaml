@@ -19,7 +19,7 @@ linear:
     canceled: Canceled
 
 slack:
-  channel: '#tastebook-factory'
+  channel: "#tastebook-factory"
 
 models:
   triage: sonnet

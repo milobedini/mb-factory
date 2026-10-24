@@ -1,6 +1,7 @@
+import { verifyGitHubWebhook } from '@mb-factory/core';
+
 import { requireEnv } from '@/lib/env';
 import { log } from '@/lib/log';
-import { verifyGitHubWebhook } from '@mb-factory/core';
 
 type GitHubWebhook = {
   action?: string;

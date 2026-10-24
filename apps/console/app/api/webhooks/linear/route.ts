@@ -1,6 +1,7 @@
+import { verifyLinearWebhook } from '@mb-factory/core';
+
 import { requireEnv } from '@/lib/env';
 import { log } from '@/lib/log';
-import { verifyLinearWebhook } from '@mb-factory/core';
 
 type LinearWebhook = {
   type: string;
