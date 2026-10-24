@@ -1,0 +1,23 @@
+{
+  "editor.defaultFormatter": "biomejs.biome",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.biome": "explicit"
+  },
+  "[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[javascriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[typescript]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[typescriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[json]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[jsonc]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[css]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[yaml]": { "editor.defaultFormatter": "biomejs.biome" },
+  "[markdown]": { "editor.formatOnSave": false },
+  "eslint.enable": false,
+  "prettier.enable": false,
+  "js/ts.experimental.useTsgo": true,
+  "biome.requireConfiguration": true,
+  "tailwindCSS.experimental.configFile": "apps/console/app/globals.css",
+  "cSpell.language": "en-GB",
+  "cSpell.words": ["biomejs", "elicitation", "elicitations", "Pierson", "pytest", "Tastebook", "tsgo", "Xelix"]
+}
