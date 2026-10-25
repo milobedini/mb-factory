@@ -38,9 +38,9 @@ Signed off 2026-10-24: all eight decisions below as suggested, plus three from t
 7. **Comments in code.** mb-skills said "no comments unless asked"; the drafts say "a non-obvious why, in one line", matching the Tastebook repo. Suggest: keep that, and let a project's `AGENTS.md` tighten it.
 8. **React and TypeScript style in the plugin.** The drafts carry your global style into `ground-rules` so CI runs follow it. Suggest: keep it there rather than repeating it in every project's `AGENTS.md`.
 
-## Not verified yet (Phase 1)
+## Verified in Phase 1 (2026-10-25)
 
-- Whether a plugin agent's `skills:` list needs the `mb-factory:` prefix to preload the plugin's own skills (the drafts use it; the docs only show unprefixed names for standalone skills).
-- `agentSessionUpdate(id:, input: { plan, addedExternalUrls })` argument shape in `linear.py`. `agentActivityCreate` matches what the console already sends.
-- The upload method verify uses for evidence (open question in `PLAN.md`): the drafts say "the method the stage workflow provides".
-- How the stage workflow passes the brief and `FACTORY_REPORT_PATH` to `claude-code-action`.
+- `skills:` preloads the plugin's own skills with or without the `mb-factory:` prefix, but only when the agent runs as a subagent. The stage workflow therefore spawns the stage agent rather than running it with `--agent`. The prefixed names stay.
+- `linear.py`'s `agentSessionUpdate` calls match Linear's schema and agent docs.
+- The brief goes in through the action's `prompt`; job-level env (`FACTORY_REPORT_PATH`, `LINEAR_ACCESS_TOKEN`, `LINEAR_AGENT_SESSION_ID`) reaches the agent's Bash tool.
+- Still open: the upload method verify uses for evidence. `gh --attach` rejects `GITHUB_TOKEN`; see Open questions in `PLAN.md`.
