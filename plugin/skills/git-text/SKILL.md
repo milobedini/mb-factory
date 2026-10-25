@@ -44,7 +44,9 @@ Imperative, starting with a verb (Add, Fix, Update, Extract, Replace, Remove). S
 
 ## PR description
 
-Fill the repo's template in place, keeping every heading, checkbox and HTML comment marker. Leave checkboxes unticked: they are the human's.
+Fill the repo's template in place, keeping every heading and checkbox. Delete the template's HTML comments once you've followed them.
+
+Tick each checklist box the change satisfies. A box that doesn't apply is ticked too, with the reason in brackets: `- [x] Migrations are included for model changes (no model changes)`. Leave a box unticked only when the change falls short of it, and say why on the same line. A project's `AGENTS.md` can override this.
 
 - **Summary:** `Fixes TAS-123` on its own line, then 2–5 one-line bullets on what changed and why.
 - **Decisions** (when there are any): a `**Decisions**` line, then up to five bullets, each `<what was decided>, because <why>`, ending `(asked in spec)`, `(asked during the build)` or `(agent)`. Take them from the spec's Decisions marked `Asked:` and the judgement calls a reviewer would otherwise question.
