@@ -117,6 +117,8 @@ The GitHub webhook (`pull_request`, `push`, among others) and Linear's app webho
 - `factory init` must create the `factory` label in GitHub and Linear (both exist for Tastebook now).
 - Usage readings in hand-written SQL need `"window"` quoted (reserved word); Drizzle quotes it.
 - `db:migrate` can stall silently on Neon's websocket driver; stop it and run it again (2026-10-25: the second run applied `0005` in seconds).
+- Ad-hoc read queries against the factory database: from `apps/console`, `set -a && . ./.env.local && set +a`, then a few lines of Node using `neon(process.env.DATABASE_URL)` from `@neondatabase/serverless` (resolve it from `apps/console`; a throwaway copy lives at `apps/console/node_modules/.q.mjs`, gone after a reinstall). The HTTP driver doesn't stall the way `db:migrate` can. Quote `"window"` in `usage_readings`.
+- Changing the production database (a migration or a hand fix) needs the user's explicit go-ahead each time, and auto mode blocks it without one. Order: commit locally, apply the migration, fix data if needed, then push, because the code selects every column.
 
 ### Things learnt during setup
 
