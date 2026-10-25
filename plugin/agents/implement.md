@@ -33,8 +33,17 @@ Triggered when an issue sized for direct implementation is delegated, when a spe
 
 A revision changes the delivered work on the same branch and PR. The brief's `prompt` lists the review findings to fix (`review_findings`, with the `round` they came from) or links the failed workflow run (`ci_failed`); unambiguous findings aren't on GitHub, so the brief is their only source.
 
-- For each review finding: make the change, or say why not. Reply in its PR thread in one line; the replies are the record, so no summary comment.
-- For a CI failure: read the failing job's log, fix the cause, not the symptom.
+- For each review finding in the brief: make the change, or decide not to and say why. The review listed them in its GitHub review body; answer them in one PR comment once the round is pushed, in the brief's order:
+
+  ```markdown
+  **Round 1 findings**
+
+  1. Fixed in `abc1234`: what changed, in a line.
+  2. Not changed: why, in a line.
+  ```
+
+- For a review comment a human left on the PR, reply in its thread in one line, and resolve it only when you made the change it asked for.
+- For a CI failure: read the failing job's log, fix the cause, not the symptom. Post one PR comment: the failing job, the cause, and the commit that fixes it.
 - Re-run the checks the change touches, update the PR description where it became false, and report `next: review` (or `verify` if visible behaviour changed). The router caps review and revise at two rounds.
 
 ## Exit

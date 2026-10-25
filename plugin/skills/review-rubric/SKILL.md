@@ -54,7 +54,7 @@ Classify each finding as **unambiguous** (the fix needs no human judgement) or *
 
 ## Writing a finding
 
-Each finding is paste-ready as a GitHub inline comment:
+Each finding is written so it can go in a GitHub inline comment as it stands; the `review` agent decides which go inline and which in the review body:
 
 - Anchor it to a code line inside the diff whenever the finding allows.
 - Open with the problem; the fix comes second, and it's the laziest fix that works: an existing repo helper, then a language built-in, then an installed dependency, then new code.

@@ -24,9 +24,28 @@ Triggered when the implement stage delivers a PR (`trigger: delivered`), again a
 4. **Re-review** (`round` 2 or later): check each finding from round 1 against the new commits (resolved, open, or declined with a reason that holds), and look for new findings only on lines changed since, plus anything Blocking. Code visible last round and not flagged stays unflagged unless it's Blocking.
 5. **Report.**
    - **Verdict:** `accepted` (no findings beyond Nits and Could cut), `revision_needed` (only unambiguous findings), or `human_decision_needed` (at least one finding needs a human).
-   - Findings that **need a human**: post them yourself as one GitHub review with event `COMMENT`, each as an inline comment written per the rubric, and no summary, verdict or approval in the review body. Never `APPROVE` or `REQUEST_CHANGES`.
-   - **Unambiguous** findings stay off GitHub: they go in the stage report for the implement stage to fix.
-   - Post one `response` on the session: the verdict, the counts per tier, and the PR link. Nothing more; the findings are on the PR and in the report.
+   - **Post one GitHub review every round**, with event `COMMENT` on the head commit, so the PR shows what was found and why. Never `APPROVE` or `REQUEST_CHANGES`: a human approves. Send it in one call, `gh api repos/<owner>/<repo>/pulls/<n>/reviews --input review.json`, with `commit_id`, `event`, `body` and `comments`.
+   - **The body** lists every finding, grouped by what happens to it, leaving out empty groups:
+
+     ```markdown
+     **Factory review, round 1: Revision needed**
+
+     One-line summary of the change against the spec and standards.
+
+     **Fixing in the next round**
+     - **Should fix** [`backend/recipes/views.py:42`](https://github.com/<owner>/<repo>/blob/<head sha>/backend/recipes/views.py#L42): one-sentence summary. Fix: the fix in a line.
+
+     **Needs your decision** (inline below)
+     - **Blocking** [`path:line`](…): summary.
+
+     **Optional, not fixed**
+     - **Nit** [`path:line`](…): summary.
+     ```
+
+     The heading's verdict reads `Accepted`, `Revision needed` or `Needs your decision`. With no findings, the body is the heading, the summary and "No findings." Unambiguous findings go under "Fixing in the next round" only for `revision_needed` with a round left; otherwise they sit under "Optional, not fixed" (Nits and Could cut) or "Needs your decision".
+   - **Inline comments** (`comments`, each `{path, line, side: "RIGHT", body}`) only for findings that need a human, written per the rubric: they open conversations that must be resolved before the PR can merge, which is the point. Everything else stays in the body, so a Nit never blocks a merge.
+   - Every finding also goes in the stage report: the router sends the unambiguous ones to the implement stage.
+   - Post one `response` on the session: the verdict, the counts per tier, and a link to the GitHub review (`html_url` from the API's answer).
 
 The stage report carries `verdict` and `findings`; the router reads both:
 
