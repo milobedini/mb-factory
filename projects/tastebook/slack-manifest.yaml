@@ -28,6 +28,9 @@ oauth_config:
       - users:read
       - users:read.email
 settings:
+  interactivity:
+    is_enabled: true
+    request_url: https://mb-factory-console.vercel.app/api/webhooks/slack/interactions
   event_subscriptions:
     request_url: https://mb-factory-console.vercel.app/api/webhooks/slack
     bot_events:

@@ -1,12 +1,24 @@
 import { verifySlackRequest } from '@mb-factory/core';
+import { after } from 'next/server';
 
 import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
 import { log } from '@/lib/log';
+import { handleSlackMessage } from '@/lib/router';
 
 type SlackPayload =
   | { type: 'url_verification'; challenge: string }
   | { type: 'event_callback'; event_id: string; event: { type: string; channel?: string; user?: string } };
+
+const routeMessage = async (payload: SlackPayload): Promise<void> => {
+  try {
+    await handleSlackMessage(payload);
+  } catch (error) {
+    log('error', 'slack message routing failed', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+};
 
 export const POST = async (request: Request) => {
   const rawBody = await request.text();
@@ -41,6 +53,11 @@ export const POST = async (request: Request) => {
     channel: payload.event.channel,
     retry: request.headers.get('x-slack-retry-num')
   });
+
+  // Thread replies steer work; a mention arrives as `message` too, which is the one acted on.
+  if (isNew && payload.event.type === 'message') {
+    after(() => routeMessage(payload));
+  }
 
   return new Response(null, { status: 200 });
 };

@@ -7,8 +7,7 @@ import {
   applyAnswer,
   MAX_QUESTIONS,
   questionElicitation,
-  readQuestions,
-  slackQuestionText
+  readQuestions
 } from './questions';
 
 const storage = {
@@ -213,18 +212,5 @@ describe('answersPrompt', () => {
       priority: 'in_flight',
       prompt: answersPrompt(round)
     });
-  });
-});
-
-describe('slackQuestionText', () => {
-  it('shows the question, the suggestion, the alternatives and what follows, escaped, with a link to answer', () => {
-    const round = [
-      { position: 1, prompt: 'Earlier?', topic: null, options: ['A', 'B'] },
-      { position: 2, prompt: 'Store <img> tags?', topic: null, options: ['Yes', 'No & strip'] },
-      { position: 3, prompt: 'Sizes?', topic: 'Image <sizes>', options: ['Small', 'Large'] }
-    ];
-    expect(round[1] && slackQuestionText(round[1], round, 'https://linear.app/t/TAS-1')).toBe(
-      'Question 2 of 3: Store &lt;img&gt; tags? Suggested: Yes. Or: No &amp; strip. Then, as suggested: 3. Image &lt;sizes&gt; (Small). <https://linear.app/t/TAS-1|Answer in Linear>'
-    );
   });
 });

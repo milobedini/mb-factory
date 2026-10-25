@@ -46,8 +46,7 @@ export {
   applyAnswer,
   MAX_QUESTIONS,
   questionElicitation,
-  readQuestions,
-  slackQuestionText
+  readQuestions
 } from './questions';
 export type {
   CiFailureAction,
@@ -117,6 +116,23 @@ export {
 export { decryptSecret, deriveKey, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
+export type { SlackAction, SlackBlock, SlackMessage, SlackThreadReply } from './slack';
+export {
+  escapeSlack,
+  isAllowedSlackUser,
+  linearSlackReplyText,
+  notAllowedText,
+  parseSlackAction,
+  parseSlackThreadReply,
+  SPEC_APPROVE,
+  SPEC_CHANGE,
+  SPEC_GATE_GONE,
+  slackPlainText,
+  slackQuestionMessage,
+  slackQuestionSettled,
+  slackSpecGateMessage,
+  slackSpecGateSettled
+} from './slack';
 export type { AgentRole, Stage, StageContext, StageEvent, Transition } from './stages';
 export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, STAGES, TERMINAL_STAGES, transition } from './stages';
 export type { UsageSummary, WindowSummary } from './usage';

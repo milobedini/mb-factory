@@ -15,10 +15,10 @@ const MAX_PROMPT_LENGTH = 1000;
 const MAX_TOPIC_LENGTH = 60;
 const MAX_ANSWER_LENGTH = 2000;
 
-const FOR_ALL = 'Use the defaults for all';
-const FOR_THE_REST = 'Use the defaults for the rest';
+export const FOR_ALL = 'Use the defaults for all';
+export const FOR_THE_REST = 'Use the defaults for the rest';
 // Marks the suggested option in a select; a tap sends the label back with it, so replies are read without it.
-const RECOMMENDED = '(R) ';
+export const RECOMMENDED = '(R) ';
 const RECOMMENDED_MARK = /^\(r\)\s*/;
 const DEFAULTS_REPLIES = [FOR_ALL, FOR_THE_REST, 'use the defaults', 'use defaults', 'defaults'].map((reply) =>
   reply.toLowerCase()
@@ -71,7 +71,7 @@ export type PositionedQuestion = Question & { position: number };
 
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
-const topicOf = ({ topic, prompt }: Question): string => {
+export const topicOf = ({ topic, prompt }: Question): string => {
   const flat = oneLine(topic ?? prompt);
   return flat.length > MAX_TOPIC_LENGTH ? `${flat.slice(0, MAX_TOPIC_LENGTH)}…` : flat;
 };
@@ -176,26 +176,3 @@ export const answeredRequest = (agent: AgentRole, round: AskedQuestion[]): RunRe
   priority: 'in_flight',
   prompt: answersPrompt(round)
 });
-
-const escapeSlack = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-// The question as it appears in the work item's thread, until the thread can answer it itself.
-export const slackQuestionText = (
-  question: PositionedQuestion,
-  round: PositionedQuestion[],
-  issueUrl: string
-): string => {
-  const heading = round.length > 1 ? `Question ${question.position} of ${round.length}` : 'Question';
-  const [suggested, ...others] = question.options.map(escapeSlack);
-  const later = laterThan(question, round).map(
-    (next) => `${next.position}. ${escapeSlack(topicOf(next))} (${escapeSlack(next.options[0] ?? '')})`
-  );
-  return [
-    `${heading}: ${escapeSlack(oneLine(question.prompt))}`,
-    `Suggested: ${suggested}${others.length > 0 ? `. Or: ${others.join(' · ')}` : ''}.`,
-    later.length > 0 ? `Then, as suggested: ${later.join(' · ')}.` : undefined,
-    `<${issueUrl}|Answer in Linear>`
-  ]
-    .filter((part) => part !== undefined)
-    .join(' ');
-};

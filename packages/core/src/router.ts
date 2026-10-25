@@ -124,7 +124,7 @@ export const CHANGES_QUESTION = 'What should change? Reply here with the changes
 // New work starts at triage; a reply carries the human's message to the agent for the work item's stage. In Spec Review
 // an approval starts implement on the spec's branch; undefined means the router should ask what to change.
 export const runRequestFor = (
-  event: Exclude<SessionEvent, { kind: 'stop' }>,
+  event: { kind: 'created' } | { kind: 'prompted'; body: string },
   stage: Stage | undefined
 ): RunRequest | undefined => {
   const agent = stage ? AGENT_TO_CONTINUE[stage] : 'triage';

@@ -47,7 +47,14 @@ export const factoryConfigSchema = z.object({
       canceled: z.string().min(1)
     })
   }),
-  slack: z.object({ channel: z.string().min(1), channelId: z.string().regex(/^[CG][A-Z0-9]+$/) }).optional(),
+  slack: z
+    .object({
+      channel: z.string().min(1),
+      channelId: z.string().regex(/^[CG][A-Z0-9]+$/),
+      // Slack members who may answer questions and gates, and steer the work, from a thread.
+      allowedUserIds: z.array(z.string().regex(/^[UW][A-Z0-9]+$/)).default([])
+    })
+    .optional(),
   notion: z
     .object({
       teamspace: z.string().min(1),

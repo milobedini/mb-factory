@@ -23,6 +23,8 @@ timeZone: Europe/London
 slack:
   channel: "#tastebook-factory"
   channelId: C0CBSE2Q6FQ
+  allowedUserIds:
+    - U0CBS3FN806 # Milo
 
 notion:
   teamspace: Tastebook

@@ -8,6 +8,7 @@ import type {
   RunRequest,
   RunStatus,
   SessionEvent,
+  SlackMessage,
   Stage,
   StopCause
 } from '@mb-factory/core';
@@ -25,25 +26,34 @@ import {
   decideCiFailure,
   decideIssueUpdate,
   governDispatch,
+  isAllowedSlackUser,
   isOpenRun,
+  linearSlackReplyText,
   linearStatusFor,
   modelFor,
   nextStepAfterRun,
+  notAllowedText,
   orderQueue,
   parseGitHubEvent,
   parseIssueUpdate,
   parseSessionEvent,
+  parseSlackAction,
+  parseSlackThreadReply,
   prClosedText,
   questionElicitation,
   queuedThought,
   resumeRequestFor,
   runRequestFor,
+  SPEC_GATE_GONE,
   STOPPED_RESPONSE,
   shouldMoveIssue,
   shouldResume,
   slackFinishedText,
-  slackQuestionText,
+  slackQuestionMessage,
+  slackQuestionSettled,
   slackReplyText,
+  slackSpecGateMessage,
+  slackSpecGateSettled,
   slackStartedText,
   slackThreadText,
   stageAfterPrClosed,
@@ -66,7 +76,7 @@ import { currentPause } from './pause';
 import { findProject, findProjectByTeamKey, repositoryOf } from './projects';
 import type { RunWithWorkItem } from './runs';
 import { findRun } from './runs';
-import { postSlackMessage } from './slack-api';
+import { postSlackEphemeral, postSlackMessage, respondToSlackAction, slackUserName } from './slack-api';
 import { latestReadings } from './usage';
 
 type WorkItem = typeof workItems.$inferSelect;
@@ -96,11 +106,14 @@ const postActivity = (workItem: WorkItem, content: AgentActivityContent, select?
     : Promise.resolve();
 };
 
-const replyInThread = (project: FactoryConfig, workItem: WorkItem, text: string) => {
+const replyInThread = (project: FactoryConfig, workItem: WorkItem, message: string | SlackMessage) => {
   const channel = workItem.slackChannelId ?? project.slack?.channelId;
   const threadTs = workItem.slackThreadTs;
+  const content = typeof message === 'string' ? { text: message } : message;
   return channel && threadTs
-    ? attempt('slack reply', { issue: workItem.issueIdentifier }, () => postSlackMessage({ channel, text, threadTs }))
+    ? attempt('slack reply', { issue: workItem.issueIdentifier }, () =>
+        postSlackMessage({ channel, threadTs, ...content })
+      )
     : Promise.resolve();
 };
 
@@ -335,7 +348,7 @@ const askQuestion = async (
   const { body, options } = questionElicitation(question, round);
   await Promise.all([
     postActivity(workItem, { type: 'elicitation', body }, options),
-    replyInThread(project, workItem, slackQuestionText(question, round, workItem.issueUrl)),
+    replyInThread(project, workItem, slackQuestionMessage(question, round, workItem.issueUrl)),
     getDb().update(questions).set({ askedAt: new Date() }).where(eq(questions.id, question.id))
   ]);
 };
@@ -686,11 +699,21 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
     await stopWorkItem(project, workItem);
     return;
   }
-  await replyInThread(project, workItem, slackReplyText(event.body, workItem.issueUrl));
-  if (await answerQuestion(project, workItem, event.body)) {
+  await handleReply(project, workItem, event.body, { via: 'linear' });
+};
+
+type ReplyFrom = { via: 'linear' } | { via: 'slack'; name: string };
+
+// A human's reply, from the Linear session or the Slack thread: mirrored to the other, then it answers the open
+// question, or the spec gate, or goes to the agent for the work item's stage.
+const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: string, from: ReplyFrom) => {
+  await (from.via === 'linear'
+    ? replyInThread(project, workItem, slackReplyText(body, workItem.issueUrl))
+    : postActivity(workItem, { type: 'thought', body: linearSlackReplyText(from.name, body) }));
+  if (await answerQuestion(project, workItem, body)) {
     return;
   }
-  const request = runRequestFor(event, workItem.stage);
+  const request = runRequestFor({ kind: 'prompted', body }, workItem.stage);
   if (!request) {
     // The Change something option on its own: ask what to change, and keep waiting in Spec Review.
     await Promise.all([
@@ -700,6 +723,104 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
     return;
   }
   await dispatchRun(project, await createRun(project, workItem, request));
+};
+
+// A person's reply in a work item's thread steers the work like a reply in Linear, if they're on the allow-list.
+export const handleSlackMessage = async (payload: unknown): Promise<void> => {
+  const reply = parseSlackThreadReply(payload);
+  if (!reply) {
+    return;
+  }
+  const [workItem] = await getDb()
+    .select()
+    .from(workItems)
+    .where(and(eq(workItems.slackChannelId, reply.channel), eq(workItems.slackThreadTs, reply.threadTs)))
+    .limit(1);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project) {
+    return;
+  }
+  if (!isAllowedSlackUser(project, reply.userId)) {
+    log('info', 'slack reply from someone not allowed', { issue: workItem.issueIdentifier, user: reply.userId });
+    await attempt('slack ephemeral', { issue: workItem.issueIdentifier }, () =>
+      postSlackEphemeral({
+        channel: reply.channel,
+        user: reply.userId,
+        text: notAllowedText(project),
+        threadTs: reply.threadTs
+      })
+    );
+    return;
+  }
+  const name = await slackUserName(reply.userId).catch(() => reply.userId);
+  log('info', 'slack reply', { issue: workItem.issueIdentifier, user: reply.userId });
+  await handleReply(project, workItem, reply.body, { via: 'slack', name });
+};
+
+const findQuestionWithWorkItem = async (questionId: string) => {
+  const [found] = await getDb()
+    .select({ question: questions, workItem: workItems })
+    .from(questions)
+    .innerJoin(runs, eq(questions.runId, runs.id))
+    .innerJoin(workItems, eq(runs.workItemId, workItems.id))
+    .where(eq(questions.id, questionId))
+    .limit(1);
+  return found;
+};
+
+const findWorkItemById = async (id: string): Promise<WorkItem | undefined> => {
+  const [workItem] = await getDb().select().from(workItems).where(eq(workItems.id, id)).limit(1);
+  return workItem;
+};
+
+// A tap on a question's or the spec gate's button. Only the current question and a spec still in review take an
+// answer; a stale button is replaced by what happened to it.
+export const handleSlackAction = async (payload: unknown): Promise<void> => {
+  const action = parseSlackAction(payload);
+  if (!action) {
+    return;
+  }
+  const respond = (message: SlackMessage | { text: string }, mode: 'replace' | 'ephemeral') =>
+    attempt('slack action response', { user: action.userId }, () =>
+      respondToSlackAction(action.responseUrl, message, mode)
+    );
+  const tapped = action.kind === 'question' ? await findQuestionWithWorkItem(action.questionId) : undefined;
+  const workItem = action.kind === 'question' ? tapped?.workItem : await findWorkItemById(action.workItemId);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project) {
+    return;
+  }
+  if (!isAllowedSlackUser(project, action.userId)) {
+    log('info', 'slack tap from someone not allowed', { issue: workItem.issueIdentifier, user: action.userId });
+    await respond({ text: notAllowedText(project) }, 'ephemeral');
+    return;
+  }
+  const name = await slackUserName(action.userId).catch(() => action.userId);
+  log('info', 'slack tap', { issue: workItem.issueIdentifier, user: action.userId, kind: action.kind });
+  if (action.kind === 'spec_gate') {
+    if (workItem.stage !== 'spec_review') {
+      await respond({ text: SPEC_GATE_GONE }, 'replace');
+      return;
+    }
+    await respond(slackSpecGateSettled(action.body, name), 'replace');
+    await handleReply(project, workItem, action.body, { via: 'slack', name });
+    return;
+  }
+  if (!tapped) {
+    return;
+  }
+  const open = await openRound(workItem);
+  const round = open?.round ?? [];
+  const current = round.filter(({ answer }) => answer === null).toSorted((a, b) => a.position - b.position)[0];
+  if (current?.id !== action.questionId) {
+    const { question } = tapped;
+    const total = await getDb().$count(questions, eq(questions.runId, question.runId));
+    await respond(slackQuestionSettled({ ...toAsked(question), closed: question.closedAt !== null }, total), 'replace');
+    return;
+  }
+  const answer = applyAnswer(round, action.body)?.answered.find(({ id }) => id === current.id);
+  await respond(slackQuestionSettled({ ...current, ...answer, closed: false }, round.length, name), 'replace');
+  await handleReply(project, workItem, action.body, { via: 'slack', name });
 };
 
 // After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a
@@ -744,6 +865,9 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   ]);
   if (next.questions) {
     await startQuestions(project, workItem, run, next.questions);
+  }
+  if (next.stage === 'spec_review') {
+    await replyInThread(project, workItem, slackSpecGateMessage(workItem.id, { prUrl, issueUrl: workItem.issueUrl }));
   }
   if (next.request) {
     await dispatchRun(project, await createRun(project, workItem, next.request, run.id));
