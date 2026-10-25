@@ -15,6 +15,7 @@ import {
   governDispatch,
   linearStatusFor,
   modelFor,
+  nextStepAfterRun,
   orderQueue,
   parseGitHubEvent,
   parseIssueUpdate,
@@ -30,7 +31,6 @@ import {
   slackStartedText,
   slackThreadText,
   stageAfterPrClosed,
-  stageAfterRun,
   stageForAgent,
   startedThought,
   stoppedText
@@ -384,7 +384,13 @@ const startFromSession = async (event: Extract<SessionEvent, { kind: 'created' }
     });
     return;
   }
-  const request = runRequestFor(event);
+  // A new delegation on an issue the factory already worked on carries on from where it stood.
+  const [existing] = await getDb()
+    .select({ stage: workItems.stage })
+    .from(workItems)
+    .where(eq(workItems.linearIssueId, event.issue.id))
+    .limit(1);
+  const request = runRequestFor(event, existing?.stage);
   const workItem = await upsertWorkItem(project, event, request);
   await openSlackThread(project, workItem, event.issue.title);
   await dispatchRun(project, await createRun(project, workItem, request));
@@ -477,10 +483,11 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
     await stopWorkItem(project, workItem);
     return;
   }
-  await dispatchRun(project, await createRun(project, workItem, runRequestFor(event)));
+  await dispatchRun(project, await createRun(project, workItem, runRequestFor(event, workItem.stage)));
 };
 
-// After a run reports: close the session if the agent didn't, mirror to Slack, resume a limit-hit run, free its slot.
+// After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a
+// limit-hit run, free its slot.
 export const handleRunFinished = async (runId: string): Promise<void> => {
   const found = await findRun(runId);
   const project = found && findProject(found.workItem.project);
@@ -500,13 +507,16 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
       : false;
   const closing = closingActivity(run, { agentClosed, resuming });
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
-  const nextStage = stageAfterRun(run, workItem.prNumber !== null);
+  const next = nextStepAfterRun(run, workItem.prNumber !== null);
 
   await Promise.all([
     closing ? postActivity(workItem, closing) : undefined,
     replyInThread(project, workItem, slackFinishedText({ ...run, prUrl, actionsRunUrl: run.actionsRunUrl })),
-    nextStage ? moveWorkItem(project, workItem, nextStage) : undefined
+    next.stage ? moveWorkItem(project, workItem, next.stage) : undefined
   ]);
+  if (next.request) {
+    await dispatchRun(project, await createRun(project, workItem, next.request, run.id));
+  }
   if (resuming) {
     await dispatchRun(project, await createRun(project, workItem, resumeRequestFor(run.agent), run.id));
   }

@@ -81,11 +81,26 @@ export type RunRequest = {
   prompt: string | null;
 };
 
-// Phase 1 has no triage: delegation goes straight to implement, and a reply re-runs it with the reply as the prompt.
-export const runRequestFor = (event: Exclude<SessionEvent, { kind: 'stop' }>): RunRequest =>
-  event.kind === 'created'
-    ? { agent: 'implement', trigger: 'delegated', priority: 'feature', prompt: null }
-    : { agent: 'implement', trigger: 'prompted', priority: 'in_flight', prompt: event.body };
+// Which agent picks the work up from each stage, on a reply or a new delegation. Settled work starts again at triage.
+// In Review goes to implement until the review stage is wired (Phase 2 step 4).
+const AGENT_TO_CONTINUE: Record<Stage, AgentRole> = {
+  researching: 'triage',
+  spec: 'spec',
+  spec_review: 'spec',
+  building: 'implement',
+  in_review: 'implement',
+  awaiting_merge: 'implement',
+  done: 'triage',
+  canceled: 'triage'
+};
+
+// New work starts at triage; a reply carries the human's message to the agent for the work item's stage.
+export const runRequestFor = (event: Exclude<SessionEvent, { kind: 'stop' }>, stage: Stage | undefined): RunRequest => {
+  const agent = stage ? AGENT_TO_CONTINUE[stage] : 'triage';
+  return event.kind === 'created'
+    ? { agent, trigger: 'delegated', priority: 'feature', prompt: null }
+    : { agent, trigger: 'prompted', priority: 'in_flight', prompt: event.body };
+};
 
 // A run cut short by the usage limit resumes ahead of new work once the window allows it.
 export const resumeRequestFor = (agent: AgentRole): RunRequest => ({
@@ -162,14 +177,40 @@ export const linearStatusFor = (config: FactoryConfig, stage: Stage): string =>
 export const shouldMoveIssue = (currentStateType: string): boolean =>
   currentStateType !== 'completed' && currentStateType !== 'canceled';
 
-// Phase 1 has no review stage, so a delivered PR goes straight to the human merge gate. Phase 2 sends it to review.
-export const stageAfterRun = (
-  run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null },
+export type NextStep = { stage?: Stage; request?: RunRequest };
+
+const triageReportSchema = z.looseObject({ next: z.string().nullish() });
+
+// Triage's `next` picks the stage after it; the follow-on run is still `delegated`, as the agents expect.
+// No verify stage yet: a UI bug triage wants reproduced goes to implement, whose bug path starts with a failing test.
+const agentAfterTriage = (report: unknown): AgentRole | undefined => {
+  const next = triageReportSchema.safeParse(report).data?.next;
+  if (next === 'spec') {
+    return 'spec';
+  }
+  return next === 'implement' || next === 'verify' ? 'implement' : undefined;
+};
+
+// What follows a run that finished its stage. Anything else (a question, `next: human`, a failure) waits for a human.
+// Phase 2 step 4 sends a delivered PR to review instead of straight to the human merge gate.
+export const nextStepAfterRun = (
+  run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null; report: unknown },
   hasPr: boolean
-): Stage | undefined =>
-  run.agent === 'implement' && run.status === 'finished' && run.outcome === 'done' && hasPr
-    ? 'awaiting_merge'
-    : undefined;
+): NextStep => {
+  if (run.status !== 'finished' || run.outcome !== 'done') {
+    return {};
+  }
+  if (run.agent === 'implement') {
+    return hasPr ? { stage: 'awaiting_merge' } : {};
+  }
+  const agent = run.agent === 'triage' ? agentAfterTriage(run.report) : undefined;
+  return agent
+    ? {
+        stage: stageForAgent(agent),
+        request: { agent, trigger: 'delegated', priority: 'feature', prompt: null }
+      }
+    : {};
+};
 
 export type QueueEntry = { runId: string; priority: Priority; heldAt: Date };
 

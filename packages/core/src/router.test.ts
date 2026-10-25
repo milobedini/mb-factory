@@ -10,6 +10,7 @@ import {
   governDispatch,
   linearStatusFor,
   modelFor,
+  nextStepAfterRun,
   orderQueue,
   parseSessionEvent,
   queuedThought,
@@ -18,7 +19,6 @@ import {
   shouldResume,
   slackFinishedText,
   slackThreadText,
-  stageAfterRun,
   stageForAgent
 } from './router';
 
@@ -101,24 +101,42 @@ describe('parseSessionEvent', () => {
 });
 
 describe('runRequestFor', () => {
-  it('runs implement as feature work on delegation, and as in-flight work with the reply on a prompt', () => {
-    const created = parseSessionEvent(createdEvent);
-    const prompted = parseSessionEvent(promptedEvent({ content: { body: 'Rename the button.' } }));
-    if (created?.kind !== 'created' || prompted?.kind !== 'prompted') {
-      throw new Error('fixtures did not parse');
-    }
-    expect(runRequestFor(created)).toEqual({
-      agent: 'implement',
+  const created = parseSessionEvent(createdEvent);
+  const prompted = parseSessionEvent(promptedEvent({ content: { body: 'Rename the button.' } }));
+  if (created?.kind !== 'created' || prompted?.kind !== 'prompted') {
+    throw new Error('fixtures did not parse');
+  }
+
+  it('starts new work at triage, as feature work', () => {
+    expect(runRequestFor(created, undefined)).toEqual({
+      agent: 'triage',
       trigger: 'delegated',
       priority: 'feature',
       prompt: null
     });
-    expect(runRequestFor(prompted)).toEqual({
+  });
+
+  it('sends a reply to the agent for the work item’s stage, as in-flight work with the reply', () => {
+    expect(runRequestFor(prompted, 'building')).toEqual({
       agent: 'implement',
       trigger: 'prompted',
       priority: 'in_flight',
       prompt: 'Rename the button.'
     });
+  });
+
+  it.each([
+    ['researching', 'triage'],
+    ['spec', 'spec'],
+    ['spec_review', 'spec'],
+    ['building', 'implement'],
+    ['in_review', 'implement'],
+    ['awaiting_merge', 'implement'],
+    ['done', 'triage'],
+    ['canceled', 'triage']
+  ] as const)('continues from %s with %s', (stage, agent) => {
+    expect(runRequestFor(prompted, stage).agent).toBe(agent);
+    expect(runRequestFor(created, stage)).toMatchObject({ agent, trigger: 'delegated' });
   });
 });
 
@@ -300,18 +318,42 @@ describe('closingActivity', () => {
   });
 });
 
-describe('stageAfterRun', () => {
-  const done = { agent: 'implement' as const, status: 'finished' as const, outcome: 'done' as const };
-
-  it('hands a delivered PR to the human merge gate', () => {
-    expect(stageAfterRun(done, true)).toBe('awaiting_merge');
+describe('nextStepAfterRun', () => {
+  const finished = { status: 'finished' as const, outcome: 'done' as const };
+  const triaged = (next: string | null) => ({
+    ...finished,
+    agent: 'triage' as const,
+    report: { stage: 'triage', outcome: 'done', summary: 'Size S.', next }
   });
 
-  it('leaves the stage alone without a PR, for other outcomes, and for other agents', () => {
-    expect(stageAfterRun(done, false)).toBeUndefined();
-    expect(stageAfterRun({ ...done, outcome: 'needs_input' }, true)).toBeUndefined();
-    expect(stageAfterRun({ ...done, status: 'limit_hit', outcome: null }, true)).toBeUndefined();
-    expect(stageAfterRun({ ...done, agent: 'spec' }, true)).toBeUndefined();
+  it('hands a delivered PR to the human merge gate', () => {
+    expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, true)).toEqual({
+      stage: 'awaiting_merge'
+    });
+  });
+
+  it.each([
+    ['implement', 'building', 'implement'],
+    ['verify', 'building', 'implement'],
+    ['spec', 'spec', 'spec']
+  ] as const)('follows triage’s next: %s with the %s stage and a %s run', (next, stage, agent) => {
+    expect(nextStepAfterRun(triaged(next), false)).toEqual({
+      stage,
+      request: { agent, trigger: 'delegated', priority: 'feature', prompt: null }
+    });
+  });
+
+  it('waits for a human when triage says so, says nothing, or the report is unreadable', () => {
+    expect(nextStepAfterRun(triaged('human'), false)).toEqual({});
+    expect(nextStepAfterRun(triaged(null), false)).toEqual({});
+    expect(nextStepAfterRun({ ...triaged('implement'), report: 'not json' }, false)).toEqual({});
+  });
+
+  it('does nothing after a run that didn’t finish its stage', () => {
+    expect(nextStepAfterRun({ ...triaged('implement'), outcome: 'needs_input' }, false)).toEqual({});
+    expect(nextStepAfterRun({ ...triaged('implement'), status: 'limit_hit', outcome: null }, false)).toEqual({});
+    expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, false)).toEqual({});
+    expect(nextStepAfterRun({ ...finished, agent: 'spec', report: null }, true)).toEqual({});
   });
 });
 

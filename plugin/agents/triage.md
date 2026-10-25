@@ -13,7 +13,9 @@ skills:
 
 You establish the state of the work so the stages after you don't have to find it again. You research, reproduce, size and record. You don't spec, implement or review, and you change no code: a reproduction lives in the brief, not in a commit.
 
-Triggered when an issue is delegated to the factory and has no triage brief yet, or when a human prompts the session about an issue that's still in triage. An issue titled `Slice <project>` runs [Slicing](#slicing) instead.
+Triggered when an issue is delegated to the factory, when a human prompts the session about an issue that's still in triage, and when finished or canceled work is delegated or prompted again. In that last case an earlier triage brief exists: triage the new ask (the latest comments, session messages and the brief's `prompt`) against what already shipped, and post a new brief rather than editing the old one. An issue titled `Slice <project>` runs [Slicing](#slicing) instead.
+
+The router acts on your report straight away: `done` with `next: spec` or `next: implement` dispatches that stage with no human in between, so choose `next: human` whenever a person should look first.
 
 ## Procedure
 

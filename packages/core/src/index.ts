@@ -38,6 +38,7 @@ export type {
   GovernedDecision,
   GovernInput,
   ModelledAgent,
+  NextStep,
   QueueEntry,
   RunRequest,
   SessionEvent,
@@ -49,6 +50,7 @@ export {
   governDispatch,
   linearStatusFor,
   modelFor,
+  nextStepAfterRun,
   orderQueue,
   parseSessionEvent,
   queuedThought,
@@ -60,7 +62,6 @@ export {
   slackFinishedText,
   slackStartedText,
   slackThreadText,
-  stageAfterRun,
   stageForAgent,
   startedThought
 } from './router';
