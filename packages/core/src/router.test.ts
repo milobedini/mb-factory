@@ -630,7 +630,7 @@ describe('canRerun', () => {
 describe('slack timeline', () => {
   it.each([
     [{ agent: 'triage', trigger: 'delegated' }, undefined, 'Started the triage run.'],
-    [{ agent: 'implement', trigger: 'prompted' }, undefined, 'Started the implement run for the reply in Linear.'],
+    [{ agent: 'implement', trigger: 'prompted' }, undefined, 'Started the implement run for your reply.'],
     [
       { agent: 'implement', trigger: 'spec_approved' },
       undefined,
@@ -701,11 +701,14 @@ describe('Slack text', () => {
       prUrl: null,
       actionsRunUrl: 'https://github.com/milobedini/tastebook/actions/runs/2'
     };
-    expect(slackFinishedText(asked, 6)).toBe(
+    expect(slackFinishedText(asked, { questions: 6 })).toBe(
       'The spec run has 6 questions for you below. <https://github.com/milobedini/tastebook/actions/runs/2|run log>'
     );
-    expect(slackFinishedText(asked, 1)).toMatch(/^The spec run has a question for you below\./);
+    expect(slackFinishedText(asked, { questions: 1 })).toMatch(/^The spec run has a question for you below\./);
     expect(slackFinishedText(asked)).toMatch(/^The spec run needs an answer\. Six questions/);
+    expect(slackFinishedText({ ...asked, summary: 'Spec in PR #12.' }, { specReview: true })).toBe(
+      'The spec run finished: the spec is ready for review below. Spec in PR #12. <https://github.com/milobedini/tastebook/actions/runs/2|run log>'
+    );
   });
 
   it('says a limit-hit run will resume', () => {

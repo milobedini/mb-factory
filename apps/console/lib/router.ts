@@ -935,7 +935,10 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
     replyInThread(
       project,
       workItem,
-      slackFinishedText({ ...run, prUrl, actionsRunUrl: run.actionsRunUrl }, next.questions?.length)
+      slackFinishedText(
+        { ...run, prUrl, actionsRunUrl: run.actionsRunUrl },
+        { questions: next.questions?.length, specReview: next.stage === 'spec_review' }
+      )
     ),
     next.stage ? moveWorkItem(project, workItem, next.stage) : undefined
   ]);

@@ -532,7 +532,7 @@ export const slackThreadText = (issue: { identifier: string; url: string; title:
 
 const STARTED_BECAUSE: Record<RunTrigger, (round: number | undefined) => string> = {
   delegated: () => '',
-  prompted: () => ' for the reply in Linear',
+  prompted: () => ' for your reply',
   spec_approved: () => ' now the spec is approved',
   delivered: () => ' on the PR',
   review_findings: (round) => ` to fix the review findings${round ? ` from round ${round}` : ''}`,
@@ -565,19 +565,22 @@ const OUTCOME_COPY: Record<RunOutcome, string> = {
   stopped: 'stopped'
 };
 
-// A run that asked questions points at them instead of repeating its summary, which only says it has questions.
+// A run that asked questions points at them instead of repeating its summary, which only says it has questions; a spec
+// waiting for approval points at the approval message.
 export const slackFinishedText = (
   run: FinishedRun & { prUrl: string | null; actionsRunUrl: string | null },
-  questions = 0
+  { questions = 0, specReview = false }: { questions?: number; specReview?: boolean } = {}
 ): string => {
   const verdict =
     run.status === 'limit_hit'
       ? 'hit the usage limit; it resumes once the window resets'
       : questions > 0
         ? `has ${questions === 1 ? 'a question' : `${questions} questions`} for you below`
-        : run.outcome
-          ? OUTCOME_COPY[run.outcome]
-          : run.status;
+        : specReview
+          ? 'finished: the spec is ready for review below'
+          : run.outcome
+            ? OUTCOME_COPY[run.outcome]
+            : run.status;
   const links = [
     run.prUrl ? slackLink(run.prUrl, 'PR') : undefined,
     run.actionsRunUrl ? slackLink(run.actionsRunUrl, 'run log') : undefined
