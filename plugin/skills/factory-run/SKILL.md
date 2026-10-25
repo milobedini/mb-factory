@@ -14,8 +14,8 @@ Your prompt is the brief. It carries:
 - `stage`: triage, spec, implement, review or verify.
 - `issue`: the Linear issue ID (`TAS-123`) and URL.
 - `session`: the Linear agent session ID. Also in `LINEAR_AGENT_SESSION_ID`.
-- `trigger`: why this run exists (`delegated`, `prompted`, `review_findings`, `ci_failed`, `spec_approved`, `rerun`).
-- `prompt`: the human's latest message in the session or thread, verbatim, when the trigger is `prompted`; with `spec_approved`, the suggestions the human approved the spec with, if any.
+- `trigger`: why this run exists (`delegated`, `prompted`, `spec_approved`, `delivered`, `review_findings`, `ci_failed`, `rerun`).
+- `prompt`: the human's latest message in the session or thread, verbatim, when the trigger is `prompted`; with `spec_approved`, the suggestions the human approved the spec with, if any; with `review_findings`, the findings to fix; with `ci_failed`, the failed workflow run.
 - `pr` and `branch`, once they exist.
 - `round`: the review round (1 or 2), for review and revise runs.
 

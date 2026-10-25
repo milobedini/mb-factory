@@ -8,6 +8,7 @@ export const RUN_TRIGGERS = [
   'review_findings',
   'ci_failed',
   'spec_approved',
+  'delivered',
   'rerun'
 ] as const;
 

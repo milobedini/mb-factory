@@ -5,7 +5,11 @@ import { describe, expect, it } from 'vitest';
 import { parseFactoryConfig } from './config';
 import type { UsageReading } from './governor';
 import {
+  briefRound,
   closingActivity,
+  consecutiveCiFixes,
+  decideCiFailure,
+  findingsPrompt,
   formatReleaseAt,
   governDispatch,
   linearStatusFor,
@@ -20,7 +24,8 @@ import {
   shouldResume,
   slackFinishedText,
   slackThreadText,
-  stageForAgent
+  stageForAgent,
+  startsReviewLoop
 } from './router';
 
 const config = parseFactoryConfig(
@@ -131,7 +136,7 @@ describe('runRequestFor', () => {
     ['spec', 'spec'],
     ['spec_review', 'spec'],
     ['building', 'implement'],
-    ['in_review', 'implement'],
+    ['in_review', 'review'],
     ['awaiting_merge', 'implement'],
     ['done', 'triage'],
     ['canceled', 'triage']
@@ -379,15 +384,17 @@ describe('closingActivity', () => {
 
 describe('nextStepAfterRun', () => {
   const finished = { status: 'finished' as const, outcome: 'done' as const };
+  const loop = { hasPr: false, reviewRounds: 0, maxReviewRounds: 2 };
   const triaged = (next: string | null) => ({
     ...finished,
     agent: 'triage' as const,
     report: { stage: 'triage', outcome: 'done', summary: 'Size S.', next }
   });
 
-  it('hands a delivered PR to the human merge gate', () => {
-    expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, true)).toEqual({
-      stage: 'awaiting_merge'
+  it('sends a delivered PR to review, as in-flight work', () => {
+    expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, { ...loop, hasPr: true })).toEqual({
+      stage: 'in_review',
+      request: { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null }
     });
   });
 
@@ -396,29 +403,150 @@ describe('nextStepAfterRun', () => {
     ['verify', 'building', 'implement'],
     ['spec', 'spec', 'spec']
   ] as const)('follows triage’s next: %s with the %s stage and a %s run', (next, stage, agent) => {
-    expect(nextStepAfterRun(triaged(next), false)).toEqual({
+    expect(nextStepAfterRun(triaged(next), loop)).toEqual({
       stage,
       request: { agent, trigger: 'delegated', priority: 'feature', prompt: null }
     });
   });
 
   it('waits for a human when triage says so, says nothing, or the report is unreadable', () => {
-    expect(nextStepAfterRun(triaged('human'), false)).toEqual({});
-    expect(nextStepAfterRun(triaged(null), false)).toEqual({});
-    expect(nextStepAfterRun({ ...triaged('implement'), report: 'not json' }, false)).toEqual({});
+    expect(nextStepAfterRun(triaged('human'), loop)).toEqual({});
+    expect(nextStepAfterRun(triaged(null), loop)).toEqual({});
+    expect(nextStepAfterRun({ ...triaged('implement'), report: 'not json' }, loop)).toEqual({});
   });
 
   it('does nothing after a run that didn’t finish its stage', () => {
-    expect(nextStepAfterRun({ ...triaged('implement'), outcome: 'needs_input' }, false)).toEqual({});
-    expect(nextStepAfterRun({ ...triaged('implement'), status: 'limit_hit', outcome: null }, false)).toEqual({});
-    expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, false)).toEqual({});
-    expect(nextStepAfterRun({ ...finished, agent: 'spec', report: null }, false)).toEqual({});
+    expect(nextStepAfterRun({ ...triaged('implement'), outcome: 'needs_input' }, loop)).toEqual({});
+    expect(nextStepAfterRun({ ...triaged('implement'), status: 'limit_hit', outcome: null }, loop)).toEqual({});
+    expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, loop)).toEqual({});
+    expect(nextStepAfterRun({ ...finished, agent: 'spec', report: null }, loop)).toEqual({});
   });
 
   it.each(['done', 'needs_input'] as const)('puts a spec with its PR open in Spec Review after %s', (outcome) => {
-    expect(nextStepAfterRun({ ...finished, outcome, agent: 'spec', report: null }, true)).toEqual({
+    expect(nextStepAfterRun({ ...finished, outcome, agent: 'spec', report: null }, { ...loop, hasPr: true })).toEqual({
       stage: 'spec_review'
     });
+  });
+
+  const fixable = {
+    tier: 'should_fix',
+    path: 'frontend/src/a.ts',
+    line: 4,
+    needsHuman: false,
+    summary: 'Drop the cast.'
+  };
+  const forHuman = { ...fixable, needsHuman: true, summary: 'Pick the copy.' };
+  const reviewed = (verdict: string | undefined, findings: unknown[] = []) => ({
+    ...finished,
+    agent: 'review' as const,
+    report: { stage: 'review', outcome: 'done', summary: 'Reviewed.', verdict, findings }
+  });
+
+  it('hands an accepted PR to the merge gate and counts the round', () => {
+    expect(nextStepAfterRun(reviewed('accepted'), { ...loop, hasPr: true })).toEqual({
+      stage: 'awaiting_merge',
+      reviewRounds: 1
+    });
+  });
+
+  it('sends unambiguous findings back to implement with only those findings in the brief', () => {
+    const step = nextStepAfterRun(reviewed('revision_needed', [fixable, forHuman, { junk: true }]), loop);
+    expect(step).toMatchObject({
+      stage: 'building',
+      reviewRounds: 1,
+      request: { agent: 'implement', trigger: 'review_findings', priority: 'in_flight' }
+    });
+    expect(step.request?.prompt).toBe(
+      'Review round 1 found these for you to fix:\n1. [should_fix] frontend/src/a.ts:4: Drop the cast.'
+    );
+  });
+
+  it('stops the loop at the round cap', () => {
+    expect(nextStepAfterRun(reviewed('revision_needed', [fixable]), { ...loop, reviewRounds: 1 })).toEqual({
+      stage: 'awaiting_merge',
+      reviewRounds: 2
+    });
+  });
+
+  it('gives a human the decision, a review with no verdict, and a revision with nothing to fix', () => {
+    const toHuman = { stage: 'awaiting_merge', reviewRounds: 1 };
+    expect(nextStepAfterRun(reviewed('human_decision_needed', [fixable]), loop)).toEqual(toHuman);
+    expect(nextStepAfterRun(reviewed(undefined, [fixable]), loop)).toEqual(toHuman);
+    expect(nextStepAfterRun(reviewed('revision_needed', [forHuman]), loop)).toEqual(toHuman);
+  });
+
+  it('leaves a review that failed in In Review', () => {
+    expect(nextStepAfterRun({ ...reviewed('accepted'), outcome: 'failed' }, loop)).toEqual({});
+  });
+});
+
+describe('findingsPrompt', () => {
+  it('lists each finding with its place and fix, clipped, and says how many it left out', () => {
+    const many = Array.from({ length: 27 }, (_, index) => ({ summary: `Finding ${index + 1}.`, fix: 'x'.repeat(700) }));
+    const prompt = findingsPrompt(2, many);
+    expect(prompt.split('\n')[0]).toBe('Review round 2 found these for you to fix:');
+    expect(prompt).toContain(`1. [finding]: Finding 1.\n   Fix: ${'x'.repeat(600)}…`);
+    expect(prompt).not.toContain('Finding 26.');
+    expect(prompt.endsWith("…and 2 more; the next review round checks what's left.")).toBe(true);
+  });
+});
+
+describe('review rounds', () => {
+  it('names the round a review does and the round a revision fixes', () => {
+    expect(briefRound({ agent: 'review', trigger: 'delivered' }, 0)).toBe(1);
+    expect(briefRound({ agent: 'implement', trigger: 'review_findings' }, 1)).toBe(1);
+    expect(briefRound({ agent: 'implement', trigger: 'ci_failed' }, 1)).toBeUndefined();
+  });
+
+  it('starts a fresh loop only for implement work a human asked for', () => {
+    const implement = { agent: 'implement' as const, priority: 'in_flight' as const, prompt: null };
+    expect(startsReviewLoop({ ...implement, trigger: 'spec_approved' })).toBe(true);
+    expect(startsReviewLoop({ ...implement, trigger: 'prompted' })).toBe(true);
+    expect(startsReviewLoop({ ...implement, trigger: 'review_findings' })).toBe(false);
+    expect(startsReviewLoop({ ...implement, trigger: 'rerun' })).toBe(false);
+    expect(startsReviewLoop({ ...implement, agent: 'review', trigger: 'prompted' })).toBe(false);
+  });
+});
+
+describe('CI failures', () => {
+  const failure = { workflow: 'CI', url: 'https://github.com/milobedini/tastebook/actions/runs/1' };
+
+  it('sends a failed check on a delivered PR back to implement with the run linked', () => {
+    expect(decideCiFailure(failure, { stage: 'awaiting_merge', openRuns: 0, ciFixes: 0 })).toEqual({
+      kind: 'fix',
+      request: {
+        agent: 'implement',
+        trigger: 'ci_failed',
+        priority: 'in_flight',
+        prompt: 'The CI workflow failed on the PR: https://github.com/milobedini/tastebook/actions/runs/1'
+      }
+    });
+  });
+
+  it('leaves it while a run is going or before a PR is delivered', () => {
+    expect(decideCiFailure(failure, { stage: 'in_review', openRuns: 1, ciFixes: 0 })).toEqual({ kind: 'ignore' });
+    expect(decideCiFailure(failure, { stage: 'building', openRuns: 0, ciFixes: 0 })).toEqual({ kind: 'ignore' });
+  });
+
+  it('hands over after the capped number of fixes in a row', () => {
+    expect(decideCiFailure(failure, { stage: 'in_review', openRuns: 0, ciFixes: 2 })).toEqual({ kind: 'hand_over' });
+  });
+
+  it('counts fixes since the last implement run something else asked for', () => {
+    const run = (agent: 'implement' | 'review', trigger: 'ci_failed' | 'delivered' | 'spec_approved') => ({
+      agent,
+      trigger
+    });
+    expect(
+      consecutiveCiFixes([
+        run('review', 'delivered'),
+        run('implement', 'ci_failed'),
+        run('implement', 'ci_failed'),
+        run('implement', 'spec_approved')
+      ])
+    ).toBe(2);
+    expect(consecutiveCiFixes([run('implement', 'spec_approved'), run('implement', 'ci_failed')])).toBe(0);
+    expect(consecutiveCiFixes([])).toBe(0);
   });
 });
 

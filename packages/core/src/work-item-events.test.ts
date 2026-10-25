@@ -96,6 +96,50 @@ describe('parseGitHubEvent', () => {
   });
 });
 
+// Trimmed from a real delivery (CI on tastebook PR #8, 2026-10-25), with the conclusion changed.
+const workflowRun = (overrides: Record<string, unknown>) => ({
+  action: 'completed',
+  repository: { full_name: 'milobedini/tastebook' },
+  workflow_run: {
+    name: 'CI',
+    event: 'pull_request',
+    conclusion: 'failure',
+    html_url: 'https://github.com/milobedini/tastebook/actions/runs/1',
+    head_branch: 'tas-11-keep-the-api-status-on-the-home-page-up-to-date',
+    head_repository: { full_name: 'milobedini/tastebook' },
+    pull_requests: [{ number: 8 }],
+    ...overrides
+  }
+});
+
+describe('parseGitHubEvent for workflow runs', () => {
+  it.each(['failure', 'timed_out'])('reads a pull request check that ended %s', (conclusion) => {
+    expect(parseGitHubEvent('workflow_run', workflowRun({ conclusion }))).toEqual({
+      kind: 'ci_failed',
+      repository: 'milobedini/tastebook',
+      prNumbers: [8],
+      workflow: 'CI',
+      url: 'https://github.com/milobedini/tastebook/actions/runs/1'
+    });
+  });
+
+  it.each([
+    ['a passing run', { conclusion: 'success' }],
+    ['a superseded run', { conclusion: 'cancelled' }],
+    ['a failed stage run', { name: 'Factory', event: 'repository_dispatch', pull_requests: [] }],
+    ['a failure on main', { event: 'push', pull_requests: [] }],
+    ['a fork’s pull request', { head_repository: { full_name: 'someone/tastebook' } }]
+  ])('ignores %s', (_label, overrides) => {
+    expect(parseGitHubEvent('workflow_run', workflowRun(overrides))).toBeUndefined();
+  });
+
+  it('ignores a run still in progress', () => {
+    expect(
+      parseGitHubEvent('workflow_run', { ...workflowRun({ conclusion: null }), action: 'in_progress' })
+    ).toBeUndefined();
+  });
+});
+
 describe('stageAfterPrClosed', () => {
   it('settles an active work item', () => {
     expect(stageAfterPrClosed('awaiting_merge', true)).toBe('done');

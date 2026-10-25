@@ -5,7 +5,7 @@ import type { Decision, DispatchRequest, HoldReason, Priority, UsageWindow } fro
 import { decideDispatch, PRIORITIES, USAGE_HOLD_REASONS } from './governor';
 import type { RunOutcome, RunStatus, RunTrigger } from './runs';
 import type { AgentRole, Stage } from './stages';
-import { AGENT_FOR_STAGE, STAGES } from './stages';
+import { AGENT_FOR_STAGE, STAGES, transition } from './stages';
 
 // Linear's AgentSessionEvent webhook: only the fields the router reads.
 const sessionEventSchema = z.looseObject({
@@ -82,13 +82,12 @@ export type RunRequest = {
 };
 
 // Which agent picks the work up from each stage, on a reply or a new delegation. Settled work starts again at triage.
-// In Review goes to implement until the review stage is wired (Phase 2 step 4).
 const AGENT_TO_CONTINUE: Record<Stage, AgentRole> = {
   researching: 'triage',
   spec: 'spec',
   spec_review: 'spec',
   building: 'implement',
-  in_review: 'implement',
+  in_review: 'review',
   awaiting_merge: 'implement',
   done: 'triage',
   canceled: 'triage'
@@ -217,7 +216,65 @@ export const linearStatusFor = (config: FactoryConfig, stage: Stage): string =>
 export const shouldMoveIssue = (currentStateType: string): boolean =>
   currentStateType !== 'completed' && currentStateType !== 'canceled';
 
-export type NextStep = { stage?: Stage; request?: RunRequest };
+// `reviewRounds` is set when a review finished, to the number of reviews completed in this loop.
+export type NextStep = { stage?: Stage; request?: RunRequest; reviewRounds?: number };
+
+// The review round a brief names: the one a review run is about to do, or the one a revision is fixing.
+export const briefRound = (
+  run: { agent: AgentRole; trigger: RunTrigger },
+  reviewRounds: number
+): number | undefined => {
+  if (run.agent === 'review') {
+    return reviewRounds + 1;
+  }
+  return run.agent === 'implement' && run.trigger === 'review_findings' ? reviewRounds : undefined;
+};
+
+const NEW_LOOP_TRIGGERS: RunTrigger[] = ['delegated', 'spec_approved', 'prompted'];
+
+// An implement run a human asked for starts a fresh review loop; revisions and resumes continue the current one.
+export const startsReviewLoop = (request: RunRequest): boolean =>
+  request.agent === 'implement' && NEW_LOOP_TRIGGERS.includes(request.trigger);
+
+export const MAX_CI_FIXES = 2;
+
+// Implement runs triggered by a failed check since the last implement run anything else asked for (newest first).
+export const consecutiveCiFixes = (runs: { agent: AgentRole; trigger: RunTrigger }[]): number => {
+  const implementRuns = runs.filter(({ agent }) => agent === 'implement');
+  const streak = implementRuns.findIndex(({ trigger }) => trigger !== 'ci_failed');
+  return streak === -1 ? implementRuns.length : streak;
+};
+
+export type CiFailureAction = { kind: 'fix'; request: RunRequest } | { kind: 'hand_over' } | { kind: 'ignore' };
+
+const CI_FIXABLE_STAGES: Stage[] = ['in_review', 'awaiting_merge'];
+
+// A failed check on a delivered PR goes back to implement, unless a run is already going (a review reads the checks
+// itself) or the last fixes didn't take.
+export const decideCiFailure = (
+  failure: { workflow: string; url: string | null },
+  { stage, openRuns, ciFixes }: { stage: Stage; openRuns: number; ciFixes: number }
+): CiFailureAction => {
+  if (!CI_FIXABLE_STAGES.includes(stage) || openRuns > 0) {
+    return { kind: 'ignore' };
+  }
+  if (ciFixes >= MAX_CI_FIXES) {
+    return { kind: 'hand_over' };
+  }
+  const where = failure.url ? `: ${failure.url}` : '.';
+  return {
+    kind: 'fix',
+    request: {
+      agent: 'implement',
+      trigger: 'ci_failed',
+      priority: 'in_flight',
+      prompt: `The ${failure.workflow} workflow failed on the PR${where}`
+    }
+  };
+};
+
+export const ciHandOverText = (workflow: string, url: string | null): string =>
+  `The ${workflow} workflow failed again after ${MAX_CI_FIXES} fixes, so I’ve stopped there; it needs a look${url ? `: ${url}` : '.'}`;
 
 const triageReportSchema = z.looseObject({ next: z.string().nullish() });
 
@@ -231,14 +288,100 @@ const agentAfterTriage = (report: unknown): AgentRole | undefined => {
   return next === 'implement' || next === 'verify' ? 'implement' : undefined;
 };
 
+export const REVIEW_VERDICTS = ['accepted', 'revision_needed', 'human_decision_needed'] as const;
+
+export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
+
+const findingSchema = z.looseObject({
+  tier: z.string().nullish(),
+  path: z.string().nullish(),
+  line: z.int().nullish(),
+  needsHuman: z.boolean().nullish(),
+  summary: z.string().min(1),
+  fix: z.string().nullish()
+});
+
+type Finding = z.infer<typeof findingSchema>;
+
+const reviewReportSchema = z.looseObject({
+  verdict: z.enum(REVIEW_VERDICTS).nullish(),
+  findings: z.array(z.unknown()).nullish()
+});
+
+// A review that doesn't say what it decided goes to a human, never back round the loop.
+const readReview = (report: unknown): { verdict: ReviewVerdict; fixable: Finding[] } => {
+  const parsed = reviewReportSchema.safeParse(report).data;
+  const findings = (parsed?.findings ?? []).flatMap((finding) => {
+    const read = findingSchema.safeParse(finding);
+    return read.success ? [read.data] : [];
+  });
+  return {
+    verdict: parsed?.verdict ?? 'human_decision_needed',
+    fixable: findings.filter(({ needsHuman }) => needsHuman !== true)
+  };
+};
+
+const MAX_FINDINGS_IN_BRIEF = 25;
+const MAX_FIELD_LENGTH = 600;
+
+const clip = (text: string): string => {
+  const flat = text.trim();
+  return flat.length > MAX_FIELD_LENGTH ? `${flat.slice(0, MAX_FIELD_LENGTH)}…` : flat;
+};
+
+// Unambiguous findings never reach GitHub, so the revision's brief carries them.
+export const findingsPrompt = (round: number, findings: Finding[]): string => {
+  const listed = findings.slice(0, MAX_FINDINGS_IN_BRIEF).map(({ tier, path, line, summary, fix }, index) => {
+    const where = path ? ` ${path}${line ? `:${line}` : ''}` : '';
+    const heading = `${index + 1}. [${tier ?? 'finding'}]${where}: ${clip(summary)}`;
+    return fix ? `${heading}\n   Fix: ${clip(fix)}` : heading;
+  });
+  const more = findings.length - listed.length;
+  return [
+    `Review round ${round} found these for you to fix:`,
+    ...listed,
+    more > 0 ? `…and ${more} more; the next review round checks what's left.` : undefined
+  ]
+    .filter((line) => line !== undefined)
+    .join('\n');
+};
+
+export type ReviewLoop = { reviewRounds: number; maxReviewRounds: number };
+
 const WAITING_ON_SPEC_REVIEW: (RunOutcome | null)[] = ['done', 'needs_input'];
+
+const afterReview = (report: unknown, { reviewRounds, maxReviewRounds }: ReviewLoop): NextStep => {
+  const round = reviewRounds + 1;
+  const { verdict, fixable } = readReview(report);
+  // Nothing the implement stage could act on is a decision for a human, whatever the verdict says.
+  const effective: ReviewVerdict =
+    verdict === 'revision_needed' && fixable.length === 0 ? 'human_decision_needed' : verdict;
+  const moved = transition(
+    'in_review',
+    { type: 'reviewed', verdict: effective },
+    { reviewRounds: round, maxReviewRounds }
+  );
+  const stage = moved.ok ? moved.stage : 'awaiting_merge';
+  return stage === 'building'
+    ? {
+        stage,
+        reviewRounds: round,
+        request: {
+          agent: 'implement',
+          trigger: 'review_findings',
+          priority: 'in_flight',
+          prompt: findingsPrompt(round, fixable)
+        }
+      }
+    : { stage, reviewRounds: round };
+};
 
 // What follows a run that finished its stage. Anything else (a question, `next: human`, a failure) waits for a human.
 // A spec run with its PR open is waiting on approval, whether it reports that as done or as needing input.
-// Phase 2 step 4 sends a delivered PR to review instead of straight to the human merge gate.
+// A delivered PR goes to review; the review's verdict sends it to the human merge gate or back for a revision.
 export const nextStepAfterRun = (
   run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null; report: unknown },
-  hasPr: boolean
+  { hasPr, ...loop }: ReviewLoop & { hasPr: boolean }
 ): NextStep => {
   if (run.agent === 'spec' && run.status === 'finished' && WAITING_ON_SPEC_REVIEW.includes(run.outcome) && hasPr) {
     return { stage: 'spec_review' };
@@ -247,7 +390,12 @@ export const nextStepAfterRun = (
     return {};
   }
   if (run.agent === 'implement') {
-    return hasPr ? { stage: 'awaiting_merge' } : {};
+    return hasPr
+      ? { stage: 'in_review', request: { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null } }
+      : {};
+  }
+  if (run.agent === 'review') {
+    return afterReview(run.report, loop);
   }
   const agent = run.agent === 'triage' ? agentAfterTriage(run.report) : undefined;
   return agent

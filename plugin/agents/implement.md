@@ -31,7 +31,7 @@ Triggered when an issue sized for direct implementation is delegated, when a spe
 
 ## Revising
 
-A revision changes the delivered work on the same branch and PR. The brief lists the findings or the failure.
+A revision changes the delivered work on the same branch and PR. The brief's `prompt` lists the review findings to fix (`review_findings`, with the `round` they came from) or links the failed workflow run (`ci_failed`); unambiguous findings aren't on GitHub, so the brief is their only source.
 
 - For each review finding: make the change, or say why not. Reply in its PR thread in one line; the replies are the record, so no summary comment.
 - For a CI failure: read the failing job's log, fix the cause, not the symptom.

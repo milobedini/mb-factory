@@ -27,14 +27,54 @@ const pushEventSchema = z.looseObject({
   commits: z.array(z.unknown()).nullish()
 });
 
+const workflowRunEventSchema = z.looseObject({
+  action: z.string(),
+  repository: repositorySchema,
+  workflow_run: z.looseObject({
+    name: z.string().min(1),
+    event: z.string(),
+    conclusion: z.string().nullish(),
+    html_url: z.url({ protocol: /^https$/ }).nullish(),
+    head_repository: repositorySchema.nullish(),
+    pull_requests: z.array(z.looseObject({ number: z.int().positive() }))
+  })
+});
+
 export type GitHubEvent =
   | { kind: 'pr_closed'; repository: string; number: number; branch: string; merged: boolean }
-  | { kind: 'human_push'; repository: string; branch: string; login: string; commits: number };
+  | { kind: 'human_push'; repository: string; branch: string; login: string; commits: number }
+  | { kind: 'ci_failed'; repository: string; prNumbers: number[]; workflow: string; url: string | null };
+
+const FAILED_CONCLUSIONS = ['failure', 'timed_out'];
+
+// A check workflow that failed on a pull request from this repository. A cancelled run was superseded, not failed.
+const parseWorkflowRun = (payload: unknown): GitHubEvent | undefined => {
+  const parsed = workflowRunEventSchema.safeParse(payload);
+  if (!parsed.success) {
+    return undefined;
+  }
+  const { action, repository, workflow_run: run } = parsed.data;
+  const failed =
+    action === 'completed' && run.event === 'pull_request' && FAILED_CONCLUSIONS.includes(run.conclusion ?? '');
+  if (!failed || run.head_repository?.full_name !== repository.full_name || run.pull_requests.length === 0) {
+    return undefined;
+  }
+  return {
+    kind: 'ci_failed',
+    repository: repository.full_name,
+    prNumbers: run.pull_requests.map(({ number }) => number),
+    workflow: run.name,
+    url: run.html_url ?? null
+  };
+};
 
 const BRANCH_REF = 'refs/heads/';
 
 // Returns undefined for anything the router doesn't act on.
 export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEvent | undefined => {
+  if (eventName === 'workflow_run') {
+    return parseWorkflowRun(payload);
+  }
   if (eventName === 'pull_request') {
     const parsed = pullRequestEventSchema.safeParse(payload);
     if (!parsed.success || parsed.data.action !== 'closed') {

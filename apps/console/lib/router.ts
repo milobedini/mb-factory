@@ -9,9 +9,13 @@ import type {
   StopCause
 } from '@mb-factory/core';
 import {
+  briefRound,
   buildDispatchPayload,
   CHANGES_QUESTION,
+  ciHandOverText,
   closingActivity,
+  consecutiveCiFixes,
+  decideCiFailure,
   decideIssueUpdate,
   governDispatch,
   linearStatusFor,
@@ -34,6 +38,7 @@ import {
   stageAfterPrClosed,
   stageForAgent,
   startedThought,
+  startsReviewLoop,
   stoppedText
 } from '@mb-factory/core';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
@@ -216,7 +221,8 @@ const startRun = async (
       trigger: run.trigger,
       prompt: run.prompt ?? undefined,
       pr: workItem.prNumber ?? undefined,
-      branch: workItem.branch ?? undefined
+      branch: workItem.branch ?? undefined,
+      round: briefRound(run, workItem.reviewRounds)
     }
   });
   try {
@@ -301,6 +307,12 @@ const createRun = async (
     .returning({ id: runs.id });
   if (!run) {
     throw new Error('Inserting the run returned no row');
+  }
+  if (startsReviewLoop(request)) {
+    await getDb()
+      .update(workItems)
+      .set({ reviewRounds: 0, updatedAt: new Date() })
+      .where(eq(workItems.id, workItem.id));
   }
   log('info', 'run created', { runId: run.id, issue: workItem.issueIdentifier, trigger: request.trigger });
   return run.id;
@@ -517,7 +529,18 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
       : false;
   const closing = closingActivity(run, { agentClosed, resuming });
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
-  const next = nextStepAfterRun(run, workItem.prNumber !== null);
+  const next = nextStepAfterRun(run, {
+    hasPr: workItem.prNumber !== null,
+    reviewRounds: workItem.reviewRounds,
+    maxReviewRounds: project.review.maxRounds
+  });
+  if (next.reviewRounds !== undefined) {
+    // Recorded before the revision dispatches, so its brief names the round it's fixing.
+    await getDb()
+      .update(workItems)
+      .set({ reviewRounds: next.reviewRounds, updatedAt: new Date() })
+      .where(eq(workItems.id, workItem.id));
+  }
 
   await Promise.all([
     closing ? postActivity(workItem, closing) : undefined,
@@ -576,10 +599,46 @@ const findWorkItemForPr = async (event: Extract<GitHubEvent, { kind: 'pr_closed'
   return workItem;
 };
 
-// A factory PR merged or closed settles its work item; a person pushing to its branch counts against autonomy.
+const handleCiFailure = async (event: Extract<GitHubEvent, { kind: 'ci_failed' }>): Promise<void> => {
+  const [workItem] = await getDb()
+    .select()
+    .from(workItems)
+    .where(and(eq(workItems.repository, event.repository), inArray(workItems.prNumber, event.prNumbers)))
+    .limit(1);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project) {
+    return;
+  }
+  const history = await getDb()
+    .select({ agent: runs.agent, trigger: runs.trigger, status: runs.status })
+    .from(runs)
+    .where(eq(runs.workItemId, workItem.id))
+    .orderBy(desc(runs.createdAt));
+  const action = decideCiFailure(event, {
+    stage: workItem.stage,
+    openRuns: history.filter(({ status }) => OPEN_STATUSES.includes(status)).length,
+    ciFixes: consecutiveCiFixes(history)
+  });
+  log('info', 'ci failure', { issue: workItem.issueIdentifier, workflow: event.workflow, action: action.kind });
+  if (action.kind === 'fix') {
+    await dispatchRun(project, await createRun(project, workItem, action.request));
+    return;
+  }
+  if (action.kind === 'hand_over') {
+    const text = ciHandOverText(event.workflow, event.url);
+    await Promise.all([postActivity(workItem, { type: 'error', body: text }), replyInThread(project, workItem, text)]);
+  }
+};
+
+// A factory PR merged or closed settles its work item; a person pushing to its branch counts against autonomy; a
+// failed check on a delivered PR goes back to implement.
 export const handleGitHubEvent = async (eventName: string, payload: unknown): Promise<void> => {
   const event = parseGitHubEvent(eventName, payload);
   if (!event) {
+    return;
+  }
+  if (event.kind === 'ci_failed') {
+    await handleCiFailure(event);
     return;
   }
   if (event.kind === 'human_push') {

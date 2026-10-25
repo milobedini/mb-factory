@@ -32,6 +32,7 @@ export {
   STAGE_WORKFLOW
 } from './oidc';
 export type {
+  CiFailureAction,
   ClosingActivity,
   FinishedRun,
   Governed,
@@ -40,22 +41,31 @@ export type {
   ModelledAgent,
   NextStep,
   QueueEntry,
+  ReviewLoop,
+  ReviewVerdict,
   RunRequest,
   SessionEvent,
   SessionIssue,
   SpecReply
 } from './router';
 export {
+  briefRound,
   CHANGES_QUESTION,
+  ciHandOverText,
   closingActivity,
+  consecutiveCiFixes,
+  decideCiFailure,
+  findingsPrompt,
   formatReleaseAt,
   governDispatch,
   linearStatusFor,
+  MAX_CI_FIXES,
   modelFor,
   nextStepAfterRun,
   orderQueue,
   parseSessionEvent,
   queuedThought,
+  REVIEW_VERDICTS,
   readSpecReply,
   resumeRequestFor,
   runRequestFor,
@@ -66,7 +76,8 @@ export {
   slackStartedText,
   slackThreadText,
   stageForAgent,
-  startedThought
+  startedThought,
+  startsReviewLoop
 } from './router';
 export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } from './run-report';
 export { readingsFromEvents, runReportSchema, stageReportSchema, summariseRun } from './run-report';
