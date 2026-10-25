@@ -21,7 +21,7 @@ Post each one at the moment it's true, not in a batch at the end.
 | --- | --- | --- |
 | `thought` | What you're doing or have found, in one line. `--ephemeral` for progress the next activity replaces | "Found the cause: the serializer drops `cook_time` when it's 0." |
 | `action` | A step with a concrete result | `--action "Opened draft PR" --parameter "#42"` |
-| `elicitation` | A question only a human can answer. Ends the run with outcome `needs_input` | see below |
+| `elicitation` | A gate only a human can pass. Ends the run with outcome `needs_input`. Questions go in the stage report instead | see below |
 | `response` | The stage's result, with links. One per run, last | "Spec ready for review: <PR link>. Two assumptions to check." |
 | `error` | The stage failed or is blocked; say what would unblock it | "CI can't start Postgres; the run needs the service container." |
 
@@ -37,17 +37,31 @@ At the start of the run, set the plan to the stage's steps (`linear.py plan`), a
 
 Add each artefact as a session link when it first exists: the spec PR, the implementation PR, the Actions run, evidence (`linear.py link`). Name every PR, issue and spec with a link, every time.
 
-## Elicitations
+## Questions
 
-Batch every question the stage has into one elicitation; a second round only for questions the first answers created. Every question carries a default:
+Don't post questions yourself. Put them in the stage report's `questions` and report `needs_input`; the router asks them one at a time in the session and the Slack thread, your suggestion first, with a shortcut to take the suggestions for the rest and free text always allowed. Once the last is answered it runs your stage again, once, with `trigger: answered` and every question and answer in the brief's `prompt`.
 
-> <issue>. Suggest: <fix>. Going with that unless someone objects.
+```json
+"questions": [
+  {
+    "prompt": "Recipes have no cooking time today. Show it as total minutes, or as prep and cook separately?",
+    "options": ["Total minutes", "Prep and cook", "Leave it out for now"],
+    "suggested": "Total minutes"
+  }
+]
+```
 
-- Ask only what the issue, the code and earlier stage briefs can't answer.
-- Number the questions, and offer the defaults as one tap: a `select` with a single option, `--option "Use these defaults=Use these defaults"`. End the message with "Tap Use these defaults, or reply with the numbers you'd change." Picking it means every default stands; a typed reply changes only the questions it names.
-- A **gate** is different: spec approval, slicing approval, or a decision that changes what gets built. A gate needs an explicit answer, so offer it as a `select` (`--option "Approve=approve" --option "Change something=change"`) and still end with the default you'd pick. Silence never passes a gate.
-- The human may answer in free text instead of picking an option. Read it for intent, except at the spec approval gate, which the router reads (see the `spec` agent).
+- Ask only what the issue, the code and earlier stage briefs can't answer. One round; a second only for questions the answers created.
+- `prompt` reads on its own: the decision and why it matters, in one or two sentences. `options` are two to four distinct labels of at most 80 characters. `suggested` is the label you'd pick. At most ten questions, most important first.
+- Before the report, post one `thought` saying what's coming ("Three questions before I write the spec."), and no `response` or elicitation: the questions are the run's last word.
+- An answer marked "in their own words" may match no option: read it for intent. One marked "your default" means the human took your suggestion.
 - Record each answer where the next stage will find it: in the spec's Decisions as `Asked: <question, short> → <answer>`, or in the stage brief.
+
+## Gates
+
+A **gate** is different: spec approval, slicing approval. A gate needs an explicit answer, so post it yourself as one elicitation with a `select` (`--option "Approve=Approve" --option "Change something=Change something"`, label and value the same) and still end with the default you'd pick. Silence never passes a gate. A gate's report has no `questions`.
+
+The human may answer a gate in free text instead of picking an option. Read it for intent, except at the spec approval gate, which the router reads (see the `spec` agent).
 
 ## Stage briefs
 

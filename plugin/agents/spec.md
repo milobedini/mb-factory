@@ -14,13 +14,13 @@ skills:
 
 You remove ambiguity before anyone builds. The spec you commit is the contract the implement and review stages work to. You don't implement or review.
 
-Triggered after triage recommends a spec (`trigger: delegated` with a triage brief that says `Next: spec`), when a human answers your questions (`prompted`), or when a human asks for changes to the spec on its PR or in the session.
+Triggered after triage recommends a spec (`trigger: delegated` with a triage brief that says `Next: spec`), when a human answers your questions (`answered`), or when a human asks for changes to the spec on its PR or in the session.
 
 ## Procedure
 
 1. **Seed.** Read the issue and its triage brief, then the code they point at. Don't collect again what the brief holds. Done when every file the change will touch is named and read.
 2. **Design silently.** Answer the five questions in `ground-rules` and design out its smells. Find the prior art the change should mirror.
-3. **Interview, once.** Every open fork (a design choice, an assumption, an unclear scope edge) becomes a question with a default, all in one elicitation. Interview critically: push back on vague behaviour, ask whether the approach fixes the cause or only the symptom, raise trade-offs the human didn't consider. Don't ask what the issue already answers.
+3. **Interview, once.** Every open fork (a design choice, an assumption, an unclear scope edge) becomes a question with a suggestion, all in the stage report's `questions` (see `linear-reporting`). Interview critically: push back on vague behaviour, ask whether the approach fixes the cause or only the symptom, raise trade-offs the human didn't consider. Don't ask what the issue already answers.
    - Bug: what is the correct behaviour, exactly? What constrains the fix? What's out of scope?
    - Feature: what's the main workflow? Which edge and failure cases matter most? What's out of scope?
    - Report `needs_input` and stop. Nothing blocking: skip to writing.

@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { FactoryConfig } from './config';
 import type { Decision, DispatchRequest, HoldReason, Priority, UsageWindow } from './governor';
 import { decideDispatch, PRIORITIES, USAGE_HOLD_REASONS } from './governor';
+import type { Question } from './questions';
+import { readQuestions } from './questions';
 import type { RunOutcome, RunStatus, RunTrigger } from './runs';
 import type { AgentRole, Stage } from './stages';
 import { AGENT_FOR_STAGE, STAGES, TERMINAL_STAGES, transition } from './stages';
@@ -250,8 +252,9 @@ export const linearStatusFor = (config: FactoryConfig, stage: Stage): string =>
 export const shouldMoveIssue = (currentStateType: string): boolean =>
   currentStateType !== 'completed' && currentStateType !== 'canceled';
 
-// `reviewRounds` is set when a review finished, to the number of reviews completed in this loop.
-export type NextStep = { stage?: Stage; request?: RunRequest; reviewRounds?: number };
+// `reviewRounds` is set when a review finished, to the number of reviews completed in this loop. `questions` are for
+// the router to ask one at a time.
+export type NextStep = { stage?: Stage; request?: RunRequest; reviewRounds?: number; questions?: Question[] };
 
 // The review round a brief names: the one a review run is about to do, or the one a revision is fixing.
 export const briefRound = (
@@ -410,18 +413,21 @@ const afterReview = (report: unknown, { reviewRounds, maxReviewRounds }: ReviewL
     : { stage, reviewRounds: round };
 };
 
-// What follows a run that finished its stage. Anything else (a question, `next: human`, a failure) waits for a human.
+// What follows a run that finished its stage. Anything else (a question, `next: human`, a failure) waits for a human;
+// questions the stage reported are asked by the router.
 // A spec run with its PR open is waiting on approval, whether it reports that as done or as needing input.
 // A delivered PR goes to review; the review's verdict sends it to the human merge gate or back for a revision.
 export const nextStepAfterRun = (
   run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null; report: unknown },
   { hasPr, ...loop }: ReviewLoop & { hasPr: boolean }
 ): NextStep => {
+  const questions = run.status === 'finished' && run.outcome === 'needs_input' ? readQuestions(run.report) : [];
+  const asking = questions.length > 0 ? { questions } : {};
   if (run.agent === 'spec' && run.status === 'finished' && WAITING_ON_SPEC_REVIEW.includes(run.outcome) && hasPr) {
-    return { stage: 'spec_review' };
+    return { stage: 'spec_review', ...asking };
   }
   if (run.status !== 'finished' || run.outcome !== 'done') {
-    return {};
+    return asking;
   }
   if (run.agent === 'implement') {
     return hasPr
@@ -487,11 +493,12 @@ export type FinishedRun = {
   summary: string | null;
 };
 
-export type ClosingActivity = { type: 'thought' | 'response' | 'error'; body: string };
+export type ClosingActivity = { type: 'thought' | 'response' | 'error' | 'elicitation'; body: string };
 
 const FAILING_OUTCOMES: (RunOutcome | null)[] = ['failed', 'blocked'];
 
-// What the router posts after a run, given whether the agent already closed the session itself.
+// What the router posts after a run, given whether the agent already closed the session itself. A run that needs input
+// but asked nothing leaves the session waiting on a reply.
 export const closingActivity = (
   run: FinishedRun,
   { agentClosed, resuming }: { agentClosed: boolean; resuming: boolean }
@@ -505,6 +512,9 @@ export const closingActivity = (
     return undefined;
   }
   const body = run.summary ?? `The ${run.agent} run ended without a summary.`;
+  if (run.outcome === 'needs_input') {
+    return { type: 'elicitation', body };
+  }
   return { type: FAILING_OUTCOMES.includes(run.outcome) ? 'error' : 'response', body };
 };
 
@@ -528,7 +538,8 @@ const STARTED_BECAUSE: Record<RunTrigger, (round: number | undefined) => string>
   review_findings: (round) => ` to fix the review findings${round ? ` from round ${round}` : ''}`,
   ci_failed: () => ' to fix the failed CI run',
   rerun: () => ' again, after the usage limit reset',
-  console: () => ' again, from the console'
+  console: () => ' again, from the console',
+  answered: () => ' with your answers'
 };
 
 // Says why, so the thread reads as a timeline on its own.

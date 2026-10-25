@@ -50,6 +50,13 @@
       "when": 1792943904242,
       "tag": "0006_fast_lizard",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792946743327,
+      "tag": "0007_zippy_pride",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,10 @@
 import type {
+  AgentRole,
+  AskedQuestion,
   FactoryConfig,
   GitHubEvent,
   GovernedDecision,
+  Question,
   RunRequest,
   RunStatus,
   SessionEvent,
@@ -9,6 +12,8 @@ import type {
   StopCause
 } from '@mb-factory/core';
 import {
+  answeredRequest,
+  applyAnswer,
   briefRound,
   buildDispatchPayload,
   CHANGES_QUESTION,
@@ -29,6 +34,7 @@ import {
   parseIssueUpdate,
   parseSessionEvent,
   prClosedText,
+  questionElicitation,
   queuedThought,
   resumeRequestFor,
   runRequestFor,
@@ -36,6 +42,7 @@ import {
   shouldMoveIssue,
   shouldResume,
   slackFinishedText,
+  slackQuestionText,
   slackReplyText,
   slackStartedText,
   slackThreadText,
@@ -48,7 +55,7 @@ import {
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
-import { queue, runs, workItems } from '@/db/schema';
+import { questions, queue, runs, workItems } from '@/db/schema';
 
 import { requireEnv } from './env';
 import { cancelActionsRun, sendStageDispatch } from './github-api';
@@ -64,6 +71,7 @@ import { latestReadings } from './usage';
 
 type WorkItem = typeof workItems.$inferSelect;
 type Run = typeof runs.$inferSelect;
+type QuestionRow = typeof questions.$inferSelect;
 
 const ACTIVE_STATUSES: RunStatus[] = ['dispatched', 'running'];
 const OPEN_STATUSES: RunStatus[] = ['queued', ...ACTIVE_STATUSES];
@@ -79,11 +87,11 @@ const attempt = async (label: string, fields: Record<string, unknown>, effect: (
   }
 };
 
-const postActivity = (workItem: WorkItem, content: AgentActivityContent) => {
+const postActivity = (workItem: WorkItem, content: AgentActivityContent, select?: string[]) => {
   const { agentSessionId } = workItem;
   return agentSessionId
     ? attempt('linear activity', { issue: workItem.issueIdentifier, type: content.type }, () =>
-        createAgentActivity(workItem.linearOrganizationId, agentSessionId, content)
+        createAgentActivity(workItem.linearOrganizationId, agentSessionId, content, select)
       )
     : Promise.resolve();
 };
@@ -290,12 +298,128 @@ const dispatchRun = async (project: FactoryConfig, runId: string, retried = fals
   await holdRun(project, found, { kind: 'hold', state: decision.state, reason: 'concurrency' }, now);
 };
 
+const toAsked = ({ id, position, prompt, options, answer, answerSource }: QuestionRow): AskedQuestion => ({
+  id,
+  position,
+  prompt,
+  options,
+  answer,
+  answerSource
+});
+
+const closeOpenQuestions = async (workItem: WorkItem): Promise<void> => {
+  const closed = await getDb()
+    .update(questions)
+    .set({ closedAt: new Date() })
+    .where(
+      and(
+        isNull(questions.answeredAt),
+        isNull(questions.closedAt),
+        inArray(questions.runId, getDb().select({ id: runs.id }).from(runs).where(eq(runs.workItemId, workItem.id)))
+      )
+    )
+    .returning({ id: questions.id });
+  if (closed.length > 0) {
+    log('info', 'open questions closed', { issue: workItem.issueIdentifier, count: closed.length });
+  }
+};
+
+// One question in Linear as a select, and in the thread as text.
+const askQuestion = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  question: AskedQuestion,
+  total: number
+): Promise<void> => {
+  const { body, options } = questionElicitation(question, question.position, total);
+  await Promise.all([
+    postActivity(workItem, { type: 'elicitation', body }, options),
+    replyInThread(project, workItem, slackQuestionText(question, question.position, total, workItem.issueUrl)),
+    getDb().update(questions).set({ askedAt: new Date() }).where(eq(questions.id, question.id))
+  ]);
+};
+
+// Records the questions a run reported and asks the first; a repeated report asks nothing new.
+const startQuestions = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  run: Run,
+  reported: Question[]
+): Promise<void> => {
+  const rows = await getDb()
+    .insert(questions)
+    .values(reported.map(({ prompt, options }, index) => ({ runId: run.id, position: index + 1, prompt, options })))
+    .onConflictDoNothing()
+    .returning();
+  log('info', 'questions recorded', { runId: run.id, issue: workItem.issueIdentifier, count: rows.length });
+  const first = rows.map(toAsked).find(({ position }) => position === 1);
+  if (first) {
+    await askQuestion(project, workItem, first, rows.length);
+  }
+};
+
+// The work item's open round: every question from the run that asked, answered or not.
+const openRound = async (
+  workItem: WorkItem
+): Promise<{ runId: string; agent: AgentRole; round: AskedQuestion[] } | undefined> => {
+  const [open] = await getDb()
+    .select({ runId: questions.runId, agent: runs.agent })
+    .from(questions)
+    .innerJoin(runs, eq(questions.runId, runs.id))
+    .where(and(eq(runs.workItemId, workItem.id), isNull(questions.answeredAt), isNull(questions.closedAt)))
+    .orderBy(desc(questions.createdAt))
+    .limit(1);
+  if (!open) {
+    return undefined;
+  }
+  const rows = await getDb().select().from(questions).where(eq(questions.runId, open.runId));
+  return { ...open, round: rows.map(toAsked) };
+};
+
+// A reply while questions are open answers the next one; the last answer starts the stage that asked, once.
+// Returns false when nothing was open, so the reply goes the usual way.
+const answerQuestion = async (project: FactoryConfig, workItem: WorkItem, body: string): Promise<boolean> => {
+  const open = await openRound(workItem);
+  const result = open && applyAnswer(open.round, body);
+  if (!open || !result) {
+    return false;
+  }
+  const now = new Date();
+  const recorded = await Promise.all(
+    result.answered.map(({ id, answer, answerSource }) =>
+      getDb()
+        .update(questions)
+        .set({ answer, answerSource, answeredAt: now })
+        .where(and(eq(questions.id, id), isNull(questions.answeredAt), isNull(questions.closedAt)))
+        .returning({ id: questions.id })
+    )
+  );
+  if (recorded.flat().length < result.answered.length) {
+    // Another reply got there first; it carries the round on.
+    log('warn', 'question already answered or closed', { issue: workItem.issueIdentifier, runId: open.runId });
+    return true;
+  }
+  if (result.next) {
+    await askQuestion(project, workItem, result.next, open.round.length);
+    return true;
+  }
+  const answered = open.round.map((question) => ({
+    ...question,
+    ...result.answered.find(({ id }) => id === question.id)
+  }));
+  log('info', 'questions answered', { issue: workItem.issueIdentifier, runId: open.runId, count: answered.length });
+  await dispatchRun(project, await createRun(project, workItem, answeredRequest(open.agent, answered), open.runId));
+  return true;
+};
+
 const createRun = async (
   project: FactoryConfig,
   workItem: WorkItem,
   request: RunRequest,
   parentRunId: string | null = null
 ): Promise<string> => {
+  // New work on the item makes any questions still open moot.
+  await closeOpenQuestions(workItem);
   const [run] = await getDb()
     .insert(runs)
     .values({
@@ -498,7 +622,7 @@ const cancelOpenRuns = async (workItem: WorkItem, summary: string): Promise<numb
 };
 
 const stopWorkItem = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
-  await cancelOpenRuns(workItem, 'Stopped from Linear.');
+  await Promise.all([closeOpenQuestions(workItem), cancelOpenRuns(workItem, 'Stopped from Linear.')]);
   // Linear expects a final activity after a stop, whether or not anything was running.
   await Promise.all([
     postActivity(workItem, { type: 'response', body: STOPPED_RESPONSE }),
@@ -510,6 +634,7 @@ const stopWorkItem = async (project: FactoryConfig, workItem: WorkItem): Promise
 // Stops work for a reason outside the session; says so only if something was running or queued.
 const stopForCause = async (project: FactoryConfig, workItem: WorkItem, cause: StopCause): Promise<void> => {
   const text = stoppedText(cause);
+  await closeOpenQuestions(workItem);
   if ((await cancelOpenRuns(workItem, text)) === 0) {
     return;
   }
@@ -552,6 +677,9 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
     return;
   }
   await replyInThread(project, workItem, slackReplyText(event.body, workItem.issueUrl));
+  if (await answerQuestion(project, workItem, event.body)) {
+    return;
+  }
   const request = runRequestFor(event, workItem.stage);
   if (!request) {
     // The Change something option on its own: ask what to change, and keep waiting in Spec Review.
@@ -574,8 +702,14 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   }
   const { run, workItem } = found;
   const resuming = shouldResume(run);
+  const next = nextStepAfterRun(run, {
+    hasPr: workItem.prNumber !== null,
+    reviewRounds: workItem.reviewRounds,
+    maxReviewRounds: project.review.maxRounds
+  });
+  // Reported questions are the run's last word: the router asks them instead of closing the session.
   const agentClosed =
-    run.status === 'finished' && workItem.agentSessionId && run.startedAt
+    !next.questions && run.status === 'finished' && workItem.agentSessionId && run.startedAt
       ? await hasClosingActivity(workItem.linearOrganizationId, workItem.agentSessionId, run.startedAt).catch(
           (error: unknown) => {
             log('error', 'linear session check failed', { runId, error: errorMessage(error) });
@@ -583,13 +717,8 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
           }
         )
       : false;
-  const closing = closingActivity(run, { agentClosed, resuming });
+  const closing = next.questions ? undefined : closingActivity(run, { agentClosed, resuming });
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
-  const next = nextStepAfterRun(run, {
-    hasPr: workItem.prNumber !== null,
-    reviewRounds: workItem.reviewRounds,
-    maxReviewRounds: project.review.maxRounds
-  });
   if (next.reviewRounds !== undefined) {
     // Recorded before the revision dispatches, so its brief names the round it's fixing.
     await getDb()
@@ -603,6 +732,9 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
     replyInThread(project, workItem, slackFinishedText({ ...run, prUrl, actionsRunUrl: run.actionsRunUrl })),
     next.stage ? moveWorkItem(project, workItem, next.stage) : undefined
   ]);
+  if (next.questions) {
+    await startQuestions(project, workItem, run, next.questions);
+  }
   if (next.request) {
     await dispatchRun(project, await createRun(project, workItem, next.request, run.id));
   }

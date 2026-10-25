@@ -14,8 +14,8 @@ Your prompt is the brief. It carries:
 - `stage`: triage, spec, implement, review or verify.
 - `issue`: the Linear issue ID (`TAS-123`) and URL.
 - `session`: the Linear agent session ID. Also in `LINEAR_AGENT_SESSION_ID`.
-- `trigger`: why this run exists (`delegated`, `prompted`, `spec_approved`, `delivered`, `review_findings`, `ci_failed`, `rerun` after the usage limit, `console` when a human re-ran the stage from the console). On `rerun` and `console`, carry on from what the issue, the session and the branch show; an earlier run may have stopped part-way.
-- `prompt`: the human's latest message in the session or thread, verbatim, when the trigger is `prompted`; with `spec_approved`, the suggestions the human approved the spec with, if any; with `review_findings`, the findings to fix; with `ci_failed`, the failed workflow run.
+- `trigger`: why this run exists (`delegated`, `prompted`, `spec_approved`, `delivered`, `review_findings`, `ci_failed`, `rerun` after the usage limit, `console` when a human re-ran the stage from the console, `answered` when a human answered the questions you reported). On `rerun` and `console`, carry on from what the issue, the session and the branch show; an earlier run may have stopped part-way.
+- `prompt`: the human's latest message in the session or thread, verbatim, when the trigger is `prompted`; with `spec_approved`, the suggestions the human approved the spec with, if any; with `review_findings`, the findings to fix; with `ci_failed`, the failed workflow run; with `answered`, each question you reported and its answer.
 - `pr` and `branch`, once they exist.
 - `round`: the review round (1 or 2), for review and revise runs.
 
@@ -65,3 +65,4 @@ Your last act is to write JSON to `FACTORY_REPORT_PATH`. The router reads only t
 - `outcome`: `done`, `needs_input` (you posted an elicitation and the stage can't continue without the answer), `blocked` (something outside the factory must change first; say what), `failed` (the stage couldn't finish; say why), `declined` (the work shouldn't be done, with the reason), or `stopped`.
 - `next`: the stage you recommend after this one, or `human`. The router may disagree.
 - `findings`: review runs only (see the `review` agent).
+- `questions`: with `needs_input`, the questions for the router to ask one at a time (see `linear-reporting`).

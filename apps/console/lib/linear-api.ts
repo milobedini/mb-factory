@@ -101,15 +101,21 @@ export type AgentActivityContent =
   | { type: 'error'; body: string }
   | { type: 'action'; action: string; parameter: string; result?: string };
 
+// `select` turns an elicitation into Linear's one-tap options; label and value are the same, so a tap reads the same
+// whichever of the two Linear sends back.
 export const createAgentActivity = async (
   organizationId: string,
   agentSessionId: string,
-  content: AgentActivityContent
+  content: AgentActivityContent,
+  select?: string[]
 ): Promise<void> => {
+  const signal = select
+    ? { signal: 'select', signalMetadata: { options: select.map((option) => ({ label: option, value: option })) } }
+    : {};
   await linearGraphql<{ agentActivityCreate: { success: boolean } }>(
     organizationId,
     'mutation AgentActivityCreate($input: AgentActivityCreateInput!) { agentActivityCreate(input: $input) { success } }',
-    { input: { agentSessionId, content } }
+    { input: { agentSessionId, content, ...signal } }
   );
 };
 

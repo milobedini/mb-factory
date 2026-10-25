@@ -25,7 +25,8 @@ export const stageReportSchema = z.looseObject({
   pr: z.int().positive().nullish(),
   branch: branchSchema.nullish(),
   followUps: z.array(z.string()).nullish(),
-  findings: z.array(z.unknown()).nullish()
+  findings: z.array(z.unknown()).nullish(),
+  questions: z.array(z.unknown()).nullish()
 });
 
 export type StageReport = z.infer<typeof stageReportSchema>;

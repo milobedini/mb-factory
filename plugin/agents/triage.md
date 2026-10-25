@@ -47,7 +47,7 @@ The router acts on your report straight away: `done` with `next: spec` or `next:
    References matter most: without them the next stage collects everything again.
 6. **Report.** One `response` with the size and next step, then the stage report.
 
-Questions go in one elicitation, each with a default (see `linear-reporting`). Edit the human's issue description only to add acceptance criteria they left out, and say so in the brief.
+Questions go in the stage report's `questions`, each with a suggestion (see `linear-reporting`). Edit the human's issue description only to add acceptance criteria they left out, and say so in the brief.
 
 ## Slicing
 
@@ -82,5 +82,5 @@ A project is the epic. Slicing turns its PRD into issues that are each one PR, s
 ## Exit
 
 - `done` with `next: spec` or `next: implement` (or `next: verify` for a UI reproduction).
-- `needs_input` after an elicitation; `declined` for a duplicate or work that shouldn't happen.
+- `needs_input` with questions, or after the slicing gate; `declined` for a duplicate or work that shouldn't happen.
 - Propose a lesson only through the brief; triage commits nothing.

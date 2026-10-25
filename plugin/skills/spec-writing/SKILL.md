@@ -15,7 +15,7 @@ Use the repo's `specs/_template.md` when it exists, keeping its headings and ord
 - **Sketch only the hard parts**, based on the real files you read: new signatures and return shapes, types, non-trivial state or derivation. Mechanical work gets one line plus a file to mirror. A sketch shows a decision; it isn't the implementation.
 - **Plain, exact language**: short sentences, active voice, one instruction per sentence, one meaning per word. No "as needed", "appropriately" or "etc.".
 - **Scale to the work.** A small change is mostly validation criteria. A large one gets every section.
-- **No open questions.** Ask blocking questions in one elicitation before writing (see `linear-reporting`). What's left goes under Assumptions, stated as settled, with who confirms it.
+- **No open questions.** Ask blocking questions in one round before writing (see `linear-reporting`). What's left goes under Assumptions, stated as settled, with who confirms it.
 - **Exhibits GitHub renders**: `mermaid` for flows and states, `diff` for file-tree or API changes, and fenced code (`ts`, `py`, `json`) for shapes. Nothing that needs a custom viewer.
 
 ## Parts

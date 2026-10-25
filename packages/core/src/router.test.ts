@@ -371,7 +371,15 @@ describe('closingActivity', () => {
   });
 
   it('posts a response for other outcomes the agent left open', () => {
-    expect(closingActivity({ ...run, outcome: 'needs_input' }, open)).toMatchObject({ type: 'response' });
+    expect(closingActivity({ ...run, outcome: 'done' }, open)).toMatchObject({ type: 'response' });
+    expect(closingActivity({ ...run, outcome: 'declined' }, open)).toMatchObject({ type: 'response' });
+  });
+
+  it('leaves the session waiting on a reply when the run needs input but asked nothing', () => {
+    expect(closingActivity({ ...run, outcome: 'needs_input' }, open)).toEqual({
+      type: 'elicitation',
+      body: 'CI cannot start Postgres.'
+    });
   });
 
   it('stays quiet when the agent already closed the session', () => {
@@ -423,6 +431,34 @@ describe('nextStepAfterRun', () => {
     expect(nextStepAfterRun({ ...triaged('implement'), status: 'limit_hit', outcome: null }, loop)).toEqual({});
     expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, loop)).toEqual({});
     expect(nextStepAfterRun({ ...finished, agent: 'spec', report: null }, loop)).toEqual({});
+  });
+
+  const question = { prompt: 'Store images where?', options: ['Disk', 'Blob'], suggested: 'Blob' };
+  const asking = (agent: 'triage' | 'spec' | 'implement') => ({
+    agent,
+    status: 'finished' as const,
+    outcome: 'needs_input' as const,
+    report: { stage: agent, outcome: 'needs_input', summary: 'One question.', questions: [question] }
+  });
+
+  it('hands the questions a stage reported to the router to ask', () => {
+    expect(nextStepAfterRun(asking('triage'), loop)).toEqual({
+      questions: [{ prompt: 'Store images where?', options: ['Blob', 'Disk'] }]
+    });
+  });
+
+  it('asks a spec’s questions while it waits in Spec Review', () => {
+    expect(nextStepAfterRun(asking('spec'), { ...loop, hasPr: true })).toEqual({
+      stage: 'spec_review',
+      questions: [{ prompt: 'Store images where?', options: ['Blob', 'Disk'] }]
+    });
+  });
+
+  it('ignores questions on a run that didn’t stop for input', () => {
+    expect(nextStepAfterRun({ ...asking('implement'), outcome: 'blocked' }, loop)).toEqual({});
+    expect(nextStepAfterRun({ ...asking('triage'), outcome: 'needs_input', report: { questions: [] } }, loop)).toEqual(
+      {}
+    );
   });
 
   it.each(['done', 'needs_input'] as const)('puts a spec with its PR open in Spec Review after %s', (outcome) => {
@@ -608,7 +644,8 @@ describe('slack timeline', () => {
     ],
     [{ agent: 'implement', trigger: 'ci_failed' }, undefined, 'Started the implement run to fix the failed CI run.'],
     [{ agent: 'spec', trigger: 'rerun' }, undefined, 'Started the spec run again, after the usage limit reset.'],
-    [{ agent: 'review', trigger: 'console' }, 2, 'Started the review run again, from the console.']
+    [{ agent: 'review', trigger: 'console' }, 2, 'Started the review run again, from the console.'],
+    [{ agent: 'spec', trigger: 'answered' }, undefined, 'Started the spec run with your answers.']
   ] as const)('says why %o started', (run, round, text) => {
     expect(slackStartedText(run, round)).toBe(text);
   });

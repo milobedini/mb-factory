@@ -1,5 +1,6 @@
 import {
   AGENT_ROLES,
+  ANSWER_SOURCES,
   HOLD_REASONS,
   PRIORITIES,
   RUN_OUTCOMES,
@@ -124,6 +125,33 @@ export const runs = pgTable(
   (table) => [
     index('runs_work_item_idx').on(table.workItemId, table.createdAt),
     index('runs_active_idx').on(table.status).where(sql`${table.status} in ('dispatched', 'running')`)
+  ]
+);
+
+// Questions a stage reported, which the router asks one at a time; the answers go back to the stage in one run.
+// Closed when something else happened to the work item before they were all answered.
+export const questions = pgTable(
+  'questions',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    // The run that asked.
+    runId: uuid()
+      .notNull()
+      .references(() => runs.id, { onDelete: 'cascade' }),
+    position: integer().notNull(),
+    prompt: text().notNull(),
+    // The suggested option first.
+    options: text().array().notNull(),
+    answer: text(),
+    answerSource: text({ enum: ANSWER_SOURCES }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    askedAt: timestamp({ withTimezone: true }),
+    answeredAt: timestamp({ withTimezone: true }),
+    closedAt: timestamp({ withTimezone: true })
+  },
+  (table) => [
+    uniqueIndex('questions_run_position_idx').on(table.runId, table.position),
+    index('questions_open_idx').on(table.runId).where(sql`${table.answeredAt} is null and ${table.closedAt} is null`)
   ]
 );
 

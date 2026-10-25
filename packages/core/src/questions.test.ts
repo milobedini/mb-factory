@@ -1,0 +1,184 @@
+import { describe, expect, it } from 'vitest';
+
+import type { AskedQuestion } from './questions';
+import {
+  answeredRequest,
+  answersPrompt,
+  applyAnswer,
+  MAX_QUESTIONS,
+  questionElicitation,
+  readQuestions,
+  slackQuestionText
+} from './questions';
+
+const storage = {
+  prompt: 'Where should images live?',
+  options: ['Local disk', 'Vercel Blob', 'S3'],
+  suggested: 'Vercel Blob'
+};
+
+const asked = (position: number, overrides: Partial<AskedQuestion> = {}): AskedQuestion => ({
+  id: `q${position}`,
+  position,
+  prompt: `Question ${position}?`,
+  options: [`Yes ${position}`, `No ${position}`],
+  answer: null,
+  answerSource: null,
+  ...overrides
+});
+
+describe('readQuestions', () => {
+  it('puts the suggested option first', () => {
+    expect(readQuestions({ questions: [storage] })).toEqual([
+      { prompt: 'Where should images live?', options: ['Vercel Blob', 'Local disk', 'S3'] }
+    ]);
+  });
+
+  it('matches the suggestion loosely and falls back to the first option', () => {
+    expect(readQuestions({ questions: [{ ...storage, suggested: 'vercel blob.' }] })[0]?.options[0]).toBe(
+      'Vercel Blob'
+    );
+    expect(readQuestions({ questions: [{ ...storage, suggested: 'GCS' }] })[0]?.options[0]).toBe('Local disk');
+    expect(readQuestions({ questions: [{ ...storage, suggested: undefined }] })[0]?.options[0]).toBe('Local disk');
+  });
+
+  it('drops malformed questions and keeps the rest', () => {
+    const questions = [
+      { prompt: 'One option only?', options: ['Yes'] },
+      { prompt: 'Five options?', options: ['A', 'B', 'C', 'D', 'E'] },
+      { prompt: 'Repeated?', options: ['Yes', 'yes'] },
+      { prompt: 'Shortcut as an option?', options: ['Use the defaults', 'No'] },
+      { prompt: '', options: ['A', 'B'] },
+      'not a question',
+      storage
+    ];
+    expect(readQuestions({ questions }).map(({ prompt }) => prompt)).toEqual(['Where should images live?']);
+  });
+
+  it('reads nothing from a report without questions', () => {
+    expect(readQuestions({ outcome: 'needs_input' })).toEqual([]);
+    expect(readQuestions({ questions: null })).toEqual([]);
+    expect(readQuestions(undefined)).toEqual([]);
+  });
+
+  it('keeps at most the limit', () => {
+    expect(readQuestions({ questions: Array.from({ length: 12 }, () => storage) })).toHaveLength(MAX_QUESTIONS);
+  });
+});
+
+describe('questionElicitation', () => {
+  const question = { prompt: 'Where should images live?', options: ['Vercel Blob', 'Local disk'] };
+
+  it('offers the defaults for all on the first of several', () => {
+    expect(questionElicitation(question, 1, 3)).toEqual({
+      body: 'Question 1 of 3: Where should images live?\n\nSuggested: Vercel Blob. Pick an option, or reply in your own words.',
+      options: ['Vercel Blob', 'Local disk', 'Use the defaults for all']
+    });
+  });
+
+  it('offers the defaults for the rest while more follow', () => {
+    expect(questionElicitation(question, 2, 3).options.at(-1)).toBe('Use the defaults for the rest');
+  });
+
+  it('offers no shortcut on the last question, and no numbering on a single one', () => {
+    expect(questionElicitation(question, 3, 3).options).toEqual(['Vercel Blob', 'Local disk']);
+    expect(questionElicitation(question, 1, 1).body).toMatch(/^Where should images live\?/);
+  });
+});
+
+describe('applyAnswer', () => {
+  it('reads a tapped option as that option', () => {
+    expect(applyAnswer([asked(1), asked(2)], 'Yes 1')).toEqual({
+      answered: [{ id: 'q1', answer: 'Yes 1', answerSource: 'option' }],
+      next: asked(2)
+    });
+  });
+
+  it('matches a typed option regardless of case and trailing punctuation', () => {
+    expect(applyAnswer([asked(1)], ' no 1. ')?.answered).toEqual([
+      { id: 'q1', answer: 'No 1', answerSource: 'option' }
+    ]);
+  });
+
+  it('records anything else in the human’s own words', () => {
+    expect(applyAnswer([asked(1)], '  Neither: use the CDN  ')).toEqual({
+      answered: [{ id: 'q1', answer: 'Neither: use the CDN', answerSource: 'text' }],
+      next: undefined
+    });
+  });
+
+  it('answers the first open question, by position', () => {
+    const round = [asked(2), asked(1, { answer: 'Yes 1', answerSource: 'option' }), asked(3)];
+    expect(applyAnswer(round, 'No 2')).toEqual({
+      answered: [{ id: 'q2', answer: 'No 2', answerSource: 'option' }],
+      next: asked(3)
+    });
+  });
+
+  it('takes the defaults for the current and every later question', () => {
+    const round = [asked(1, { answer: 'No 1', answerSource: 'option' }), asked(2), asked(3)];
+    expect(applyAnswer(round, 'Use the defaults for the rest')).toEqual({
+      answered: [
+        { id: 'q2', answer: 'Yes 2', answerSource: 'default' },
+        { id: 'q3', answer: 'Yes 3', answerSource: 'default' }
+      ],
+      next: undefined
+    });
+    expect(applyAnswer([asked(1), asked(2)], 'use the defaults for all')?.answered).toHaveLength(2);
+    expect(applyAnswer([asked(1)], 'Defaults.')?.answered).toEqual([
+      { id: 'q1', answer: 'Yes 1', answerSource: 'default' }
+    ]);
+  });
+
+  it('has nothing to answer once every question is answered', () => {
+    expect(applyAnswer([asked(1, { answer: 'Yes 1', answerSource: 'option' })], 'Yes')).toBeUndefined();
+  });
+
+  it('clips a very long answer', () => {
+    expect(applyAnswer([asked(1)], 'x'.repeat(3000))?.answered[0]?.answer).toHaveLength(2001);
+  });
+});
+
+describe('answersPrompt', () => {
+  it('lists every question with its answer and how it was given, in order', () => {
+    const round = [
+      asked(2, { prompt: 'Second\nquestion?', answer: 'In my\nwords', answerSource: 'text' }),
+      asked(1, { answer: 'Yes 1', answerSource: 'option' }),
+      asked(3, { answer: 'Yes 3', answerSource: 'default' })
+    ];
+    expect(answersPrompt(round)).toBe(
+      [
+        'The human answered your questions:',
+        '1. Question 1?\n   Answer: Yes 1 (picked)',
+        '2. Second question?\n   Answer: In my words (in their own words)',
+        '3. Question 3?\n   Answer: Yes 3 (your default)',
+        'A question you reported that isn’t listed here wasn’t asked: go with your suggestion and record it as an assumption.'
+      ].join('\n')
+    );
+  });
+
+  it('becomes the brief of an answered run for the stage that asked', () => {
+    const round = [asked(1, { answer: 'Yes 1', answerSource: 'option' })];
+    expect(answeredRequest('spec', round)).toEqual({
+      agent: 'spec',
+      trigger: 'answered',
+      priority: 'in_flight',
+      prompt: answersPrompt(round)
+    });
+  });
+});
+
+describe('slackQuestionText', () => {
+  it('shows the question, the suggestion and the alternatives, escaped, with a link to answer', () => {
+    expect(
+      slackQuestionText(
+        { prompt: 'Store <img> tags?', options: ['Yes', 'No & strip'] },
+        2,
+        3,
+        'https://linear.app/t/TAS-1'
+      )
+    ).toBe(
+      'Question 2 of 3: Store &lt;img&gt; tags? Suggested: Yes. Or: No &amp; strip. <https://linear.app/t/TAS-1|Answer in Linear>'
+    );
+  });
+});

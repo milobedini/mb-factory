@@ -15,7 +15,8 @@ const TRIGGER_COPY: Record<RunTrigger, string> = {
   review_findings: 'review findings',
   ci_failed: 'CI failed',
   rerun: 'resumed after the limit',
-  console: 're-run from the console'
+  console: 're-run from the console',
+  answered: 'answers'
 };
 
 const STAGE_STYLES: Partial<Record<Stage, string>> = {
