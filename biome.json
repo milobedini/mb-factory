@@ -6,7 +6,16 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!**/node_modules", "!!**/.next", "!!**/dist", "!!**/coverage", "!**/next-env.d.ts"]
+    "includes": [
+      "**",
+      "!!**/node_modules",
+      "!!**/.next",
+      "!!**/dist",
+      "!!**/coverage",
+      "!**/next-env.d.ts",
+      "!pnpm-lock.yaml",
+      "!**/.claude/settings.local.json"
+    ]
   },
   "formatter": {
     "enabled": true,
