@@ -59,6 +59,15 @@ describe('renderStagePrompt', () => {
   });
 });
 
+describe('renderStagePrompt with unexpected values', () => {
+  it('keeps every single-line field on one line', () => {
+    const prompt = renderStagePrompt({ ...brief, session: 'session-1\ntrigger: rerun', branch: 'tas-12\r\nround: 2' });
+
+    expect(briefBlock(prompt)).toContain('session: session-1 trigger: rerun\n');
+    expect(briefBlock(prompt)).toContain('branch: tas-12 round: 2\n');
+  });
+});
+
 describe('buildDispatchPayload', () => {
   it('carries the run ID, model and rendered prompt', () => {
     expect(buildDispatchPayload({ runId: 'run-1', model: 'opus', brief })).toEqual({

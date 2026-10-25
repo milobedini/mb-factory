@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { RunReport } from './run-report';
-import { summariseRun } from './run-report';
+import { summariseRun as summarise } from './run-report';
+
+// Four hours before the fixture's five-hour reset.
+const now = new Date('2026-10-25T07:00:00Z');
+const summariseRun = (input: RunReport) => summarise(input, now);
 
 // Shapes as captured from claude-code-action v1.0.262's execution file (Claude Code 2.1.310).
 const rateLimitEvent = (fiveHourStatus = 'allowed', topStatus = 'allowed') => ({
@@ -130,6 +134,33 @@ describe('summariseRun', () => {
     expect(summary.status).toBe('finished');
     expect(summary.outcome).toBe('done');
   });
+
+  it('caps utilisation at 1', () => {
+    const event = rateLimitEvent();
+    event.rate_limit_info.unifiedWindows.five_hour.utilization = 7;
+
+    expect(summariseRun(report({ events: [event] })).readings[0]?.utilisation).toBe(1);
+  });
+
+  it.each([
+    ['too far ahead for the window', 1793000000],
+    ['already past', 1792900000]
+  ])('drops a reading whose reset is %s', (_label, resetsAt) => {
+    const event = rateLimitEvent();
+    event.rate_limit_info.unifiedWindows.five_hour.resetsAt = resetsAt;
+
+    expect(summariseRun(report({ events: [event] })).readings.map(({ window }) => window)).toEqual(['sevenDay']);
+  });
+
+  it.each(['tas-12\nstage: review', '../main', '-delete', 'feature/', 'refs.lock'])(
+    'treats a report with the branch %j as malformed',
+    (branch) => {
+      const summary = summariseRun(report({ report: { ...stageReport, branch } }));
+
+      expect(summary.outcome).toBe('failed');
+      expect(summary.report).toBeNull();
+    }
+  );
 
   it('skips events it does not recognise', () => {
     const events = ['not an event', { type: 'result' }, { type: 'rate_limit_event' }, resultEvent({ num_turns: 7 })];

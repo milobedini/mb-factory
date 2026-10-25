@@ -30,8 +30,9 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
   if (!body.success) {
     return new Response('invalid report body', { status: 400 });
   }
-  const summary = summariseRun(body.data);
-  if (!(await recordRunReport(found, summary, new Date()))) {
+  const now = new Date();
+  const summary = summariseRun(body.data, now);
+  if (!(await recordRunReport(found, summary, now))) {
     return new Response(`run is ${found.run.status}, not running`, { status: 409 });
   }
 

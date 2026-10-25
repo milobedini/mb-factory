@@ -313,6 +313,7 @@ mb-factory/
 
 ## Open questions
 
+- Stage run credentials: the agent holds the Linear app token for the whole workspace (valid up to 24 h), because it reports through `linear.py`. A prompt-injected agent could misuse it in the Tastebook workspace. Narrower option: proxy Linear calls through the console with a per-run token limited to the run's session and issue. Also, the agent shares the runner with the report step, so it could rewrite the execution file and understate usage. Readings are capped at 1 and dropped when their reset time is implausible; probe readings remain the ground truth.
 - Transcripts: artifacts on a public repo can be downloaded by any signed-in GitHub user, and a transcript can hold tool output, so runs don't upload one yet. Options: private Vercel Blob written by the report step, or a trimmed transcript in Postgres.
 - Usage readings: confirm the probe's utilisation figures against `/usage`. (Run telemetry is settled: `execution_file` includes `rate_limit_event`.)
 - Evidence hosting from CI (needed by the verify stage, Phase 2): `gh --attach` with `GITHUB_TOKEN` failed (2026-10-25). Remaining options in the agreed order: (2) a classic token as an Actions secret used only in a separate, agent-free upload step, (3) Vercel Blob.

@@ -27,14 +27,17 @@ const indent = (text: string): string =>
     .map((line) => `    ${line}`)
     .join('\n');
 
+// Keeps a field on its own line, so no value can add lines that read as other brief fields.
+const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim();
+
 const renderBrief = ({ agent, issue, session, trigger, prompt, pr, branch, round }: Brief): string =>
   [
     `stage: ${agent}`,
-    `issue: ${issue.identifier} ${issue.url}`,
-    `session: ${session}`,
+    `issue: ${oneLine(issue.identifier)} ${oneLine(issue.url)}`,
+    `session: ${oneLine(session)}`,
     `trigger: ${trigger}`,
     pr === undefined ? undefined : `pr: ${pr}`,
-    branch === undefined ? undefined : `branch: ${branch}`,
+    branch === undefined ? undefined : `branch: ${oneLine(branch)}`,
     round === undefined ? undefined : `round: ${round}`,
     prompt === undefined ? undefined : `prompt: |\n${indent(prompt)}`
   ]

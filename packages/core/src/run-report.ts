@@ -6,13 +6,24 @@ import type { RunOutcome, RunStatus } from './runs';
 import { RUN_OUTCOMES } from './runs';
 import { AGENT_ROLES } from './stages';
 
+// The branch is echoed into later briefs and git commands, so it must be a plain ref name.
+const branchSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/)
+  .refine(
+    (branch) => !branch.includes('..') && !branch.includes('//') && !branch.endsWith('/') && !branch.endsWith('.lock'),
+    {
+      message: 'not a valid branch name'
+    }
+  );
+
 export const stageReportSchema = z.looseObject({
   stage: z.enum(AGENT_ROLES),
   outcome: z.enum(RUN_OUTCOMES),
   summary: z.string().min(1),
   next: z.string().nullish(),
   pr: z.int().positive().nullish(),
-  branch: z.string().min(1).nullish(),
+  branch: branchSchema.nullish(),
   followUps: z.array(z.string()).nullish(),
   findings: z.array(z.unknown()).nullish()
 });
@@ -30,7 +41,10 @@ export type RunReport = z.infer<typeof runReportSchema>;
 
 // Claude Code's stream-json events are undocumented, so each one is parsed on its own and skipped if it doesn't fit.
 const rateLimitWindowSchema = z.object({
-  utilization: z.number().min(0),
+  utilization: z
+    .number()
+    .min(0)
+    .transform((utilization) => Math.min(utilization, 1)),
   resetsAt: z.number().positive(),
   status: z.string().optional()
 });
@@ -93,6 +107,16 @@ export type RunSummary = {
 
 const WINDOW_KEYS = { five_hour: 'fiveHour', seven_day: 'sevenDay' } as const;
 
+const HOUR_MS = 60 * 60 * 1000;
+const WINDOW_LENGTH_MS: Record<UsageWindow, number> = { fiveHour: 5 * HOUR_MS, sevenDay: 7 * 24 * HOUR_MS };
+const RESET_TOLERANCE_MS = 10 * 60 * 1000;
+
+// The agent shares the runner with the report step, so a reading must at least look like a real window.
+const isPlausibleReset = (window: UsageWindow, resetsAt: Date, now: Date): boolean => {
+  const fromNow = resetsAt.getTime() - now.getTime();
+  return fromNow > -RESET_TOLERANCE_MS && fromNow <= WINDOW_LENGTH_MS[window] + RESET_TOLERANCE_MS;
+};
+
 const lastMatch = <T>(events: unknown[], schema: z.ZodType<T>): T | undefined =>
   events.reduce<T | undefined>((found, event) => {
     const parsed = schema.safeParse(event);
@@ -102,18 +126,12 @@ const lastMatch = <T>(events: unknown[], schema: z.ZodType<T>): T | undefined =>
 const toUsageStatus = (status: string | undefined): UsageStatus | null =>
   USAGE_STATUSES.find((known) => known === status) ?? null;
 
-const toReadings = (event: RateLimitEvent | undefined): RunUsageReading[] =>
+const toReadings = (event: RateLimitEvent | undefined, now: Date): RunUsageReading[] =>
   Object.entries(WINDOW_KEYS).flatMap(([key, window]) => {
     const reading = event?.rate_limit_info.unifiedWindows?.[key as keyof typeof WINDOW_KEYS];
-    return reading
-      ? [
-          {
-            window,
-            utilisation: reading.utilization,
-            resetsAt: new Date(reading.resetsAt * 1000),
-            status: toUsageStatus(reading.status)
-          }
-        ]
+    const resetsAt = reading ? new Date(reading.resetsAt * 1000) : undefined;
+    return reading && resetsAt && isPlausibleReset(window, resetsAt, now)
+      ? [{ window, utilisation: reading.utilization, resetsAt, status: toUsageStatus(reading.status) }]
       : [];
   });
 
@@ -144,11 +162,11 @@ const missingReportSummary = (result: ResultEvent | undefined, conclusion: strin
   return `The stage ended without a valid report.${detail}${failed}`;
 };
 
-export const summariseRun = ({ conclusion, report, events }: RunReport): RunSummary => {
+export const summariseRun = ({ conclusion, report, events }: RunReport, now: Date): RunSummary => {
   const stageReport = stageReportSchema.safeParse(report);
   const rateLimit = lastMatch(events, rateLimitEventSchema);
   const result = lastMatch(events, resultEventSchema);
-  const readings = toReadings(rateLimit);
+  const readings = toReadings(rateLimit, now);
   const usage = toUsage(result);
 
   if (stageReport.success) {
