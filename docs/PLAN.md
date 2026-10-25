@@ -6,14 +6,14 @@ Demo project: **Tastebook** (recipe hub). The project itself is defined later; t
 
 ## Status
 
-_Last updated 2026-10-24._ **Current phase: 1 (First loop, run log and governor).** Phase 0 closed 2026-10-24.
+_Last updated 2026-10-25._ **Current phase: 1 (First loop, run log and governor).** Phase 0 closed 2026-10-24.
 
 ### Done
 
 - Monorepo: `apps/console` (Next.js 16), `packages/core` (config, usage governor, stage machine, webhook verification, secret encryption; Vitest). Tooling: Biome 2.6 + TypeScript 7, Husky + lint-staged, VS Code workspace settings.
 - GitHub: <https://github.com/milobedini/mb-factory> (public). Pushes to `main` deploy the console.
 - Vercel: project `mb-factory-console` (Hobby, team `milobedinis-projects`), root directory `apps/console`, link at the repo root (`.vercel/`). Console: <https://mb-factory-console.vercel.app>.
-- Neon Postgres `mb-factory-db` via the Marketplace. Drizzle schema in `apps/console/db`; tables `events` (one row per delivery) and `linear_installations` (tokens AES-256-GCM encrypted). Migrations: `pnpm --filter @mb-factory/console db:generate` / `db:migrate` (source `apps/console/.env.local` first).
+- Neon Postgres `mb-factory-db` via the Marketplace. Drizzle schema in `apps/console/db`; tables `events` (one row per delivery), `linear_installations` (tokens AES-256-GCM encrypted), and since 2026-10-25 `work_items`, `runs`, `usage_readings` and `queue`. Their enum values come from `packages/core` (`STAGES`, `RUN_STATUSES`, `PRIORITIES`, …). Migrations: `pnpm --filter @mb-factory/console db:generate` / `db:migrate` (source `apps/console/.env.local` first).
 - Linear: workspace "Tastebook", team key **`TAS`**, factory statuses and Triage set up. Agent app `@Tastebook` installed (`actor=app`, `app:assignable`, `app:mentionable`) through `/api/linear/oauth/start`. Delegating an issue records an `AgentSessionEvent` and posts a "Picked this up" thought within 10 s. Tokens refresh automatically (24 h expiry). Test issue: TAS-5.
 - Slack: app `@Tastebook` from `projects/tastebook/slack-manifest.yaml`, events verified, channel `#tastebook-factory` (`C0CBSE2Q6FQ`). Mentions are recorded.
 - Production env vars: `CONSOLE_URL`, `DATABASE_URL*` (Neon), `TOKEN_ENCRYPTION_KEY`, `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `LINEAR_WEBHOOK_SECRET`, `LINEAR_ALLOWED_ORGANIZATION_ID`, `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`, `GITHUB_WEBHOOK_SECRET`.
@@ -24,7 +24,14 @@ _Last updated 2026-10-24._ **Current phase: 1 (First loop, run log and governor)
 
 Phase 0 exit check passed 2026-10-24: delegating TAS-6 to `@Tastebook` recorded an `AgentSessionEvent` and posted "Picked this up". The plugin is signed off ([instructions-review.md](instructions-review.md)). The Claude GitHub App is installed on `tastebook`, `CLAUDE_CODE_OAUTH_TOKEN` is set there, and the GitHub webhook (hook `702633536`) delivers with a 200.
 
-Verify first, while building the stage workflow: whether an agent's `skills:` list needs the `mb-factory:` prefix; the arguments for `agentSessionUpdate` in `plugin/skills/linear-reporting/scripts/linear.py`; how the stage workflow passes the brief and uploads evidence (upload order under Open questions).
+Spike done 2026-10-25 (Claude Code 2.1.310, `claude-code-action` v1.0.262, tastebook PR #1, closed). Results are under Things learnt. Order for the rest of Phase 1:
+
+1. ~~Tables `work_items`, `runs`, `usage_readings`, `queue`.~~ Done 2026-10-25 (migration `0001`).
+2. Reusable `workflows/stage.yml` and its caller in `tastebook`: brief in, stage subagent, report and usage back to an authenticated console endpoint.
+3. Router: delegation → work item → governor → `repository_dispatch` (masked Linear token) or queue; Linear session and Slack thread updates.
+4. Scheduled probe and queue release (GitHub Actions).
+5. Console login, then the Usage page.
+6. Exit check: a real small TAS change, and a forced pause that queues and releases a dispatch.
 
 ### Things learnt during setup
 
@@ -42,6 +49,11 @@ Verify first, while building the stage workflow: whether an agent's `skills:` li
 - zsh treats `config[url]=…` as a glob: quote bracketed `gh api -f` fields.
 - `vercel env update` asks for confirmation even with a value on stdin; pass `--yes`. A hidden secret can't be read back, so rotating means generating a new value and setting it in both places from one shell.
 - Reading a secret out of Vercel inside an agent session (even without printing it) is blocked as credential materialisation. Secrets that external services need go in through your own terminal.
+- An agent's `skills:` are preloaded only when it runs as a **subagent** (Agent tool), under either `mb-factory:<skill>` or the bare name. Run as the main thread with `--agent`, nothing is preloaded. So a stage run is a thin main thread that hands the brief to the `mb-factory:<stage>` subagent.
+- `claude-code-action`: job-level `env` reaches Claude's Bash tool despite the action's own `env:` block, and so does `env` in the `settings` input. `--plugin-dir` in `claude_args` loads the plugin from a clone of this repo. `execution_file` (`$RUNNER_TEMP/claude-execution-output.json`) is a JSON array of the `stream-json` events: `system/init` (agents, skills, plugins), `rate_limit_event` (`rate_limit_info.unifiedWindows.five_hour` / `seven_day`) and `result` (tokens, `total_cost_usd`, `duration_ms`, `num_turns`, `modelUsage`). Run telemetry needs no extra probe.
+- `claude-code-action` revokes the Claude App token in its own last step, and skips the App token exchange when the workflow file differs from the default branch's. Use `github_token: ${{ github.token }}` unless the App identity is needed.
+- `gh pr comment --attach` rejects `GITHUB_TOKEN` ("unsupported authentication type"), both inside the agent run and in a plain step. The Claude App token is the same kind of installation token, so it is expected to fail the same way (not tested).
+- Linear `agentSessionUpdate(id: String!, input: AgentSessionUpdateInput!)`: `plan` replaces the whole plan, items `{content, status}` with status `pending`, `inProgress`, `completed` or `canceled`; `addedExternalUrls` takes `{label, url}`. `linear.py` matches.
 
 ## Decisions
 
@@ -301,8 +313,8 @@ mb-factory/
 ## Open questions
 
 - Linear token delivery to Actions: the router refreshes the app token and passes it masked in the dispatch payload (to be validated in Phase 1).
-- Usage readings: confirm that `claude-code-action`'s execution output includes `rate_limit_event`; if not, the stage workflow runs the probe at the end of each stage instead. Confirm the probe's utilisation figures against `/usage`.
-- Evidence hosting from CI: `gh --attach` (gh 2.99+) is the choice. The docs list only the `gh auth login` OAuth token and classic personal access tokens; `GITHUB_TOKEN` and GitHub App tokens are undocumented. Agreed order (2026-10-24): (1) test `gh --attach` with `GITHUB_TOKEN` and the Claude App token in a throwaway workflow, (2) otherwise a classic token as an Actions secret used only in a separate, agent-free upload step, (3) otherwise Vercel Blob.
+- Usage readings: confirm the probe's utilisation figures against `/usage`. (Run telemetry is settled: `execution_file` includes `rate_limit_event`.)
+- Evidence hosting from CI (needed by the verify stage, Phase 2): `gh --attach` with `GITHUB_TOKEN` failed (2026-10-25). Remaining options in the agreed order: (2) a classic token as an Actions secret used only in a separate, agent-free upload step, (3) Vercel Blob.
 - Tastebook hosting (Vercel for the frontend; backend host to be decided) and preview environments for verification.
 
 ## References

@@ -1,8 +1,17 @@
 import type { UsagePolicy } from './config';
 
-export type UsageWindow = 'fiveHour' | 'sevenDay';
+export const USAGE_WINDOWS = ['fiveHour', 'sevenDay'] as const;
 
-export type UsageSource = 'run' | 'probe' | 'local' | 'estimate';
+export type UsageWindow = (typeof USAGE_WINDOWS)[number];
+
+export const USAGE_SOURCES = ['run', 'probe', 'local', 'estimate'] as const;
+
+export type UsageSource = (typeof USAGE_SOURCES)[number];
+
+// As reported by Claude Code's rate-limit telemetry for each window.
+export const USAGE_STATUSES = ['allowed', 'allowed_warning', 'rejected'] as const;
+
+export type UsageStatus = (typeof USAGE_STATUSES)[number];
 
 export type UsageReading = {
   window: UsageWindow;
@@ -12,11 +21,21 @@ export type UsageReading = {
   source: UsageSource;
 };
 
-export type Priority = 'urgent' | 'in_flight' | 'feature' | 'scheduled';
+export const PRIORITIES = ['urgent', 'in_flight', 'feature', 'scheduled'] as const;
+
+export type Priority = (typeof PRIORITIES)[number];
 
 export type GovernorState = 'open' | 'throttled' | 'paused';
 
-export type HoldReason = 'concurrency' | 'five_hour_throttle' | 'five_hour_pause' | 'weekly_pacing' | 'weekly_pause';
+export const HOLD_REASONS = [
+  'concurrency',
+  'five_hour_throttle',
+  'five_hour_pause',
+  'weekly_pacing',
+  'weekly_pause'
+] as const;
+
+export type HoldReason = (typeof HOLD_REASONS)[number];
 
 export type Decision =
   | { kind: 'dispatch'; state: GovernorState; downshift: boolean }
@@ -33,7 +52,6 @@ export type DispatchRequest = {
 };
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const WINDOWS: UsageWindow[] = ['fiveHour', 'sevenDay'];
 const THROTTLE_ALLOWS: Priority[] = ['urgent', 'in_flight'];
 
 const effectiveUtilisation = (reading: UsageReading, now: Date): number =>
@@ -90,7 +108,7 @@ export const decideDispatch = ({
   maxRuns,
   now
 }: DispatchRequest): Decision => {
-  const stale = WINDOWS.filter((window) => isStale(readings[window], now, policy.staleAfterMinutes));
+  const stale = USAGE_WINDOWS.filter((window) => isStale(readings[window], now, policy.staleAfterMinutes));
   if (stale.length > 0) {
     return { kind: 'probe', stale };
   }

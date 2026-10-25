@@ -8,6 +8,13 @@
       "when": 1792823351205,
       "tag": "0000_absurd_corsair",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792909968286,
+      "tag": "0001_nebulous_franklin_storm",
+      "breakpoints": true
     }
   ]
 }

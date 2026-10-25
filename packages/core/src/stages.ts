@@ -1,14 +1,19 @@
-export type Stage =
-  | 'researching'
-  | 'spec'
-  | 'spec_review'
-  | 'building'
-  | 'in_review'
-  | 'awaiting_merge'
-  | 'done'
-  | 'canceled';
+export const STAGES = [
+  'researching',
+  'spec',
+  'spec_review',
+  'building',
+  'in_review',
+  'awaiting_merge',
+  'done',
+  'canceled'
+] as const;
 
-export type AgentRole = 'triage' | 'spec' | 'implement' | 'review';
+export type Stage = (typeof STAGES)[number];
+
+export const AGENT_ROLES = ['triage', 'spec', 'implement', 'verify', 'review'] as const;
+
+export type AgentRole = (typeof AGENT_ROLES)[number];
 
 export type StageEvent =
   | { type: 'triaged'; needsSpec: boolean }
