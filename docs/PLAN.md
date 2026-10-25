@@ -26,15 +26,15 @@ Phase 0 exit check passed 2026-10-24 (TAS-6). Spike done 2026-10-25 (tastebook P
 
 1. ~~Tables `work_items`, `runs`, `usage_readings`, `queue`.~~ Done 2026-10-25 (migrations `0001`, `0002`).
 2. ~~Reusable `.github/workflows/stage.yml` and its caller in `tastebook`.~~ Done 2026-10-25: TAS-7 (page not found) ran end to end, dispatched by hand. tastebook PR #4 merged and TAS-7 went to Done.
-3. **Router: built 2026-10-25, not yet deployed.** Waiting on `GITHUB_DISPATCH_TOKEN` (below), then the step 3 exit check. See "The router" below.
-4. Scheduled probe and queue release (GitHub Actions).
+3. ~~Router.~~ Done 2026-10-25: TAS-8 (tab titles) went from delegation to tastebook PR #5 with no hand step. See "The router" below.
+4. **Scheduled probe and queue release (GitHub Actions) (next).** The job should also call `releaseQueue`, so usage holds release without waiting for the next run report.
 5. Console login, then the Usage page.
 6. Exit check: a real small TAS change through the router, and a forced pause that queues and releases a dispatch. (The first criterion, a small real change landing as a PR with its run recorded, was met by TAS-7 by hand.)
 
 #### Where things stand (2026-10-25)
 
 - **Stage runs work.** The console renders a brief (`buildDispatchPayload` in `packages/core/src/brief.ts`), the project's `.github/workflows/factory.yml` receives a `factory-stage` repository dispatch and calls `milobedini/mb-factory/.github/workflows/stage.yml@main`. That workflow runs `.github/actions/factory-setup` from the project, calls `POST /api/runs/<id>/start` (GitHub OIDC; returns the Linear token and session), runs `claude-code-action` (pinned to commit `925afb5`, v1.0.262) with a thin main thread that spawns `mb-factory:<agent>`, then posts the stage report and the `rate_limit_event`/`result` events to `POST /api/runs/<id>/report`. `summariseRun` in `packages/core/src/run-report.ts` turns that into the run's status, outcome, usage and `usage_readings`.
-- **The router is built** (below) but not deployed: pushing to `main` deploys it, and it needs `GITHUB_DISPATCH_TOKEN` first. Migration `0003` (`runs.prompt`) is already applied.
+- **The router is live** (below). First routed run, TAS-8: dispatched 230 ms after the session event; Actions started the run 33 s later; implement on Opus took 86 s, 3 turns, an API-equivalent $0.46, leaving the 5-hour window at 4% and the week at 2%. The session got the "Working on it" thought and the issue moved to Building; `claude[bot]` opened PR #5 with the `factory` label.
 - TAS-7's work item (`c74a7e77…`) and run (`11adc1b4…`) were inserted by hand before the router existed.
 
 #### The router (step 3)
@@ -51,9 +51,9 @@ Decisions are pure functions in `packages/core/src/router.ts` (tested); `apps/co
 - **Claiming is atomic:** the `queued` → `dispatched` update runs in one Neon HTTP transaction (drizzle `batch`) behind a `pg_advisory_xact_lock`, and only matches while the cap and the one-run-per-issue rule hold. A run that loses the claim goes through the governor once more, which holds it.
 - **Known gaps:** removing the delegation doesn't cancel anything yet (Phase 2, with the Issue webhooks). `work_items.stage` says `building` after an implement run, even once a human moves the issue on.
 
-**User action:** create a fine-grained personal access token limited to `milobedini/tastebook`, with **Contents: read and write** (repository dispatch) and **Actions: read and write** (cancelling a run on `stop`). In your own terminal, from the repo root: `vercel env add GITHUB_DISPATCH_TOKEN production`. Then push `main` to deploy.
+`GITHUB_DISPATCH_TOKEN` (production) is a fine-grained token limited to `milobedini/tastebook` with Contents and Actions read and write.
 
-**Exit check for step 3:** create a tiny TAS issue (the Linear connector can create it; the user delegates), and it reaches a PR without any hand step: Linear shows "Working on it", the issue moves to Building, Slack gets a thread, and the run is recorded with usage.
+Not yet exercised: holds and release, `prompted`, `stop` (and the Actions cancel), `limit_hit` resume, and the router's own closing activity. Step 6's forced pause covers holds and release.
 
 #### Open follow-ups (not step 3)
 
