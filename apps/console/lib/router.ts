@@ -33,6 +33,7 @@ import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import { queue, runs, usageReadings, workItems } from '@/db/schema';
 
+import { requireEnv } from './env';
 import { cancelActionsRun, sendStageDispatch } from './github-api';
 import type { AgentActivityContent } from './linear-api';
 import { createAgentActivity, hasClosingActivity, moveIssueToStatus } from './linear-api';
@@ -384,6 +385,11 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
   if (!event) {
     return;
   }
+  // The OAuth callback only installs into this workspace; this keeps any other install from reaching a project.
+  if (event.organizationId !== requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID')) {
+    log('warn', 'agent session from another Linear workspace ignored', { organizationId: event.organizationId });
+    return;
+  }
   if (event.kind === 'created') {
     await startFromSession(event);
     return;
@@ -391,7 +397,7 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
   const [workItem] = await getDb()
     .select()
     .from(workItems)
-    .where(eq(workItems.agentSessionId, event.sessionId))
+    .where(and(eq(workItems.agentSessionId, event.sessionId), eq(workItems.linearOrganizationId, event.organizationId)))
     .limit(1);
   const project = workItem && findProject(workItem.project);
   if (!workItem || !project) {
