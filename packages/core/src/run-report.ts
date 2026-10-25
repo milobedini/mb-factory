@@ -112,7 +112,7 @@ const WINDOW_LENGTH_MS: Record<UsageWindow, number> = { fiveHour: 5 * HOUR_MS, s
 const RESET_TOLERANCE_MS = 10 * 60 * 1000;
 
 // The agent shares the runner with the report step, so a reading must at least look like a real window.
-const isPlausibleReset = (window: UsageWindow, resetsAt: Date, now: Date): boolean => {
+export const isPlausibleReset = (window: UsageWindow, resetsAt: Date, now: Date): boolean => {
   const fromNow = resetsAt.getTime() - now.getTime();
   return fromNow > -RESET_TOLERANCE_MS && fromNow <= WINDOW_LENGTH_MS[window] + RESET_TOLERANCE_MS;
 };
@@ -152,6 +152,10 @@ const toUsage = (result: ResultEvent | undefined): RunUsage | null => {
     numTurns: result.num_turns ?? null
   };
 };
+
+// The usage windows from the last rate-limit event in a stream-json transcript.
+export const readingsFromEvents = (events: unknown[], now: Date): RunUsageReading[] =>
+  toReadings(lastMatch(events, rateLimitEventSchema), now);
 
 const isRejected = (event: RateLimitEvent | undefined, readings: RunUsageReading[]): boolean =>
   event?.rate_limit_info.status === 'rejected' || readings.some(({ status }) => status === 'rejected');

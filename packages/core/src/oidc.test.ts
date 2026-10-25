@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkStageRunClaims } from './oidc';
+import { checkGovernorClaims, checkStageRunClaims } from './oidc';
 
 const claims = {
   iss: 'https://token.actions.githubusercontent.com',
@@ -57,5 +57,34 @@ describe('checkStageRunClaims', () => {
 
   it('rejects a token from a different Actions run once one is recorded', () => {
     expect(check({}, '1')).toEqual({ ok: false, reason: 'token is from a different Actions run' });
+  });
+});
+
+describe('checkGovernorClaims', () => {
+  const governor = {
+    ...claims,
+    repository: 'milobedini/mb-factory',
+    job_workflow_ref: 'milobedini/mb-factory/.github/workflows/governor.yml@refs/heads/main',
+    event_name: 'schedule'
+  };
+
+  it('accepts the governor workflow on main, scheduled or run by hand', () => {
+    expect(checkGovernorClaims(governor).ok).toBe(true);
+    expect(checkGovernorClaims({ ...governor, event_name: 'workflow_dispatch' }).ok).toBe(true);
+  });
+
+  it('rejects the governor workflow from another branch, which anyone with a branch could edit', () => {
+    expect(
+      checkGovernorClaims({
+        ...governor,
+        job_workflow_ref: 'milobedini/mb-factory/.github/workflows/governor.yml@refs/heads/try-x'
+      })
+    ).toEqual({ ok: false, reason: 'token is not from the governor workflow on main' });
+  });
+
+  it('rejects other workflows, repos and events', () => {
+    expect(checkGovernorClaims({ ...governor, job_workflow_ref: claims.job_workflow_ref }).ok).toBe(false);
+    expect(checkGovernorClaims({ ...governor, repository: 'milobedini/tastebook' }).ok).toBe(false);
+    expect(checkGovernorClaims({ ...governor, event_name: 'pull_request' }).ok).toBe(false);
   });
 });

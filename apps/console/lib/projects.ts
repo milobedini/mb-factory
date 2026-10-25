@@ -19,3 +19,7 @@ export const repositoryOf = ({ repositories }: FactoryConfig): string => {
   }
   return `${primary.owner}/${primary.name}`;
 };
+
+// The governor job serves every project, so it probes by the strictest staleness limit.
+export const strictestStaleAfterMinutes = (): number =>
+  Math.min(...PROJECTS.map(({ usage }) => usage.staleAfterMinutes));

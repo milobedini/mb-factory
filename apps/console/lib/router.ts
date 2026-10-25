@@ -1,13 +1,4 @@
-import type {
-  FactoryConfig,
-  GovernedDecision,
-  RunRequest,
-  RunStatus,
-  SessionEvent,
-  Stage,
-  UsageReading,
-  UsageWindow
-} from '@mb-factory/core';
+import type { FactoryConfig, GovernedDecision, RunRequest, RunStatus, SessionEvent, Stage } from '@mb-factory/core';
 import {
   buildDispatchPayload,
   closingActivity,
@@ -27,13 +18,12 @@ import {
   slackThreadText,
   stageAfterRun,
   stageForAgent,
-  startedThought,
-  USAGE_WINDOWS
+  startedThought
 } from '@mb-factory/core';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
-import { queue, runs, usageReadings, workItems } from '@/db/schema';
+import { queue, runs, workItems } from '@/db/schema';
 
 import { requireEnv } from './env';
 import { cancelActionsRun, sendStageDispatch } from './github-api';
@@ -44,6 +34,7 @@ import { findProject, findProjectByTeamKey, repositoryOf } from './projects';
 import type { RunWithWorkItem } from './runs';
 import { findRun } from './runs';
 import { postSlackMessage } from './slack-api';
+import { latestReadings } from './usage';
 
 type WorkItem = typeof workItems.$inferSelect;
 type Run = typeof runs.$inferSelect;
@@ -94,28 +85,6 @@ const openSlackThread = async (project: FactoryConfig, workItem: WorkItem, title
       .set({ slackChannelId: channel, slackThreadTs: ts, updatedAt: new Date() })
       .where(and(eq(workItems.id, workItem.id), isNull(workItems.slackThreadTs)));
   });
-};
-
-const latestReadings = async (): Promise<Partial<Record<UsageWindow, UsageReading>>> => {
-  const latest = await Promise.all(
-    USAGE_WINDOWS.map(async (window) => {
-      const [row] = await getDb()
-        .select()
-        .from(usageReadings)
-        .where(eq(usageReadings.window, window))
-        .orderBy(desc(usageReadings.takenAt))
-        .limit(1);
-      return row;
-    })
-  );
-  return Object.fromEntries(
-    latest
-      .filter((row) => row !== undefined)
-      .map(({ window, utilisation, resetsAt, takenAt, source }) => [
-        window,
-        { window, utilisation, resetsAt, takenAt, source }
-      ])
-  );
 };
 
 const holdRun = async (

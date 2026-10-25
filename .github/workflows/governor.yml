@@ -1,0 +1,69 @@
+# Releases held stage runs every 15 minutes, probing usage first only when the console asks (held work, stale readings).
+name: Governor
+
+on:
+  schedule:
+    # Off the quarter-hour: GitHub delays scheduled runs most at :00.
+    - cron: "4,19,34,49 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: governor
+  cancel-in-progress: false
+
+env:
+  CONSOLE_URL: https://mb-factory-console.vercel.app
+  # Pinned: the probe reads Claude Code's undocumented stream-json events.
+  CLAUDE_CODE_VERSION: 2.1.310
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Authenticates to the console; it accepts only this workflow on main.
+      id-token: write
+    steps:
+      - name: Release held runs
+        id: tick
+        run: |
+          audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
+          oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          echo "::add-mask::$oidc"
+          response=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
+            --data '{"probed":false}' "$CONSOLE_URL/api/governor/tick")
+          echo "$response"
+          echo "probe=$(jq -r .probe <<< "$response")" >> "$GITHUB_OUTPUT"
+
+      - name: Probe usage
+        if: steps.tick.outputs.probe == 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          npm install --global --silent "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+          cd "$RUNNER_TEMP"
+          claude -p "Reply with OK." --model haiku --tools "" --max-turns 1 --output-format stream-json --verbose \
+            --no-session-persistence --strict-mcp-config --disable-slash-commands > probe.jsonl
+          # Only the usage events, without message text.
+          jq -cs '{events: [.[] | select(.type == "rate_limit_event" or .type == "result") | del(.result, .permission_denials)]}' \
+            probe.jsonl > probe-report.json
+
+          audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
+          oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          echo "::add-mask::$oidc"
+          curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
+            --data @probe-report.json "$CONSOLE_URL/api/governor/readings"
+
+      # Runs even if the probe failed: the governor then decides on the readings it has (fail open).
+      - name: Release after the probe
+        if: always() && steps.tick.outputs.probe == 'true'
+        run: |
+          audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
+          oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          echo "::add-mask::$oidc"
+          curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
+            --data '{"probed":true}' "$CONSOLE_URL/api/governor/tick"

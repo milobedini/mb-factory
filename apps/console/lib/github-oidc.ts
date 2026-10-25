@@ -1,7 +1,8 @@
-import { GITHUB_OIDC_ISSUER } from '@mb-factory/core';
+import { checkGovernorClaims, GITHUB_OIDC_ISSUER } from '@mb-factory/core';
 import { createRemoteJWKSet, errors, jwtVerify } from 'jose';
 
 import { requireEnv } from './env';
+import { log } from './log';
 
 const jwks = createRemoteJWKSet(new URL(`${GITHUB_OIDC_ISSUER}/.well-known/jwks`));
 
@@ -27,4 +28,15 @@ export const verifyGitHubOidc = async (request: Request): Promise<OidcVerificati
     }
     throw error;
   }
+};
+
+// For the governor's endpoints: a response to send back when the caller isn't the scheduled governor workflow.
+export const rejectUnlessGovernor = async (request: Request, endpoint: string): Promise<Response | undefined> => {
+  const verification = await verifyGitHubOidc(request);
+  const check = verification.ok ? checkGovernorClaims(verification.claims) : verification;
+  if (check.ok) {
+    return undefined;
+  }
+  log('warn', `${endpoint} rejected`, { reason: check.reason });
+  return new Response('not the governor workflow', { status: verification.ok ? 403 : 401 });
 };

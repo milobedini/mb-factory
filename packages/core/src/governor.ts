@@ -65,6 +65,13 @@ const isStale = (reading: UsageReading | undefined, now: Date, staleAfterMinutes
   (now.getTime() < reading.resetsAt.getTime() &&
     now.getTime() - reading.takenAt.getTime() > staleAfterMinutes * 60 * 1000);
 
+// Windows with no reading, or whose reading is older than the limit and hasn't reset since.
+export const staleWindows = (
+  readings: Partial<Record<UsageWindow, UsageReading>>,
+  now: Date,
+  staleAfterMinutes: number
+): UsageWindow[] => USAGE_WINDOWS.filter((window) => isStale(readings[window], now, staleAfterMinutes));
+
 const weeklyPaceLimit = (reading: UsageReading, now: Date, slack: number): number => {
   const windowStart = reading.resetsAt.getTime() - WEEK_MS;
   const elapsed = Math.min(Math.max((now.getTime() - windowStart) / WEEK_MS, 0), 1);
@@ -112,7 +119,7 @@ export const decideDispatch = ({
   now,
   acceptStale = false
 }: DispatchRequest): Decision => {
-  const stale = USAGE_WINDOWS.filter((window) => isStale(readings[window], now, policy.staleAfterMinutes));
+  const stale = staleWindows(readings, now, policy.staleAfterMinutes);
   if (stale.length > 0 && !acceptStale) {
     return { kind: 'probe', stale };
   }

@@ -27,8 +27,8 @@ Phase 0 exit check passed 2026-10-24 (TAS-6). Spike done 2026-10-25 (tastebook P
 1. ~~Tables `work_items`, `runs`, `usage_readings`, `queue`.~~ Done 2026-10-25 (migrations `0001`, `0002`).
 2. ~~Reusable `.github/workflows/stage.yml` and its caller in `tastebook`.~~ Done 2026-10-25: TAS-7 (page not found) ran end to end, dispatched by hand. tastebook PR #4 merged and TAS-7 went to Done.
 3. ~~Router.~~ Done 2026-10-25: TAS-8 (tab titles) went from delegation to tastebook PR #5 with no hand step. See "The router" below.
-4. **Scheduled probe and queue release (GitHub Actions) (next).** The job should also call `releaseQueue`, so usage holds release without waiting for the next run report.
-5. Console login, then the Usage page.
+4. **Governor job and local reporter: built 2026-10-25, not yet deployed.** Waiting on two secrets (below). See "The governor job" below.
+5. Console login, then the Usage page. The page shows each reading's age and source, and has a "Refresh" button that runs one probe (a `workflow_dispatch` of `governor.yml`, which needs a token with Actions write on `mb-factory`).
 6. Exit check: a real small TAS change through the router, and a forced pause that queues and releases a dispatch. (The first criterion, a small real change landing as a PR with its run recorded, was met by TAS-7 by hand.)
 
 #### Where things stand (2026-10-25)
@@ -54,6 +54,21 @@ Decisions are pure functions in `packages/core/src/router.ts` (tested); `apps/co
 `GITHUB_DISPATCH_TOKEN` (production) is a fine-grained token limited to `milobedini/tastebook` with Contents and Actions read and write.
 
 Not yet exercised: holds and release, `prompted`, `stop` (and the Actions cancel), `limit_hit` resume, and the router's own closing activity. Step 6's forced pause covers holds and release.
+
+#### The governor job (step 4)
+
+- **Why so few probes:** usage only grows within a window until it resets, so a stale reading understates usage and a probe can never release a hold early. A probe only matters just before held work is released, to catch usage that grew in the meantime (mostly the user's own). A window past its reset already counts as empty.
+- **`.github/workflows/governor.yml`** (this repo, every 15 minutes at :04/:19/:34/:49, or by hand): `POST /api/governor/tick` with `{probed: false}`. The console answers `probe: true` when runs are waiting and a reading is stale (`needsProbe`, by the strictest `staleAfterMinutes` across projects); otherwise it runs `releaseQueue`. On `probe: true` the job installs Claude Code (pinned, 2.1.310), runs one `claude -p` on Haiku with no tools, posts its `rate_limit_event`/`result` events to `POST /api/governor/readings` (recorded as `probe`), then ticks again with `{probed: true}`, which releases even if the probe failed (fail open). Both endpoints accept only a GitHub OIDC token from `governor.yml` on `refs/heads/main` in this repo (`checkGovernorClaims`).
+- **Probe cost** (measured 2026-10-25, Claude Code 2.1.310): about 4.4k tokens, nearly all cache, an API-equivalent $0.00075, roughly 1/600 of an implement run. A quiet day probes zero times.
+- **Local reporter:** `cli/status-line.sh` wraps your status line command (`ccstatusline`). It sends `rate_limits` from Claude Code's status line input to `POST /api/usage/local` (bearer `USAGE_REPORT_TOKEN`, token file `~/.config/mb-factory/usage-token`), at most every two minutes, in the background; a render still returns in about 0.25 s when the console is unreachable. An unchanged local reading only refreshes its `takenAt`, so the table doesn't grow while you work. It sees Claude Code on this Mac only, not claude.ai chat or other machines.
+- **New webhook dispatches still fail open** on stale readings: the console can't run Claude itself. The local reporter keeps readings fresh while you're working, which is when they move.
+- Scheduled workflows in a public repo stop after 60 days without repository activity; GitHub emails before it disables them.
+
+**User actions:**
+
+1. The probe needs the subscription token as a secret in this repo (the `tastebook` one isn't visible here). Run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R milobedini/mb-factory` and paste it.
+2. The local reporter's token, generated and stored in both places from one shell: `token=$(openssl rand -hex 32) && printf '%s' "$token" | vercel env add USAGE_REPORT_TOKEN production && mkdir -p ~/.config/mb-factory && (umask 077 && printf '%s' "$token" > ~/.config/mb-factory/usage-token) && unset token`
+3. Point the status line at the wrapper: `"command": "/Users/milobedini/Documents/git/mb-factory/cli/status-line.sh npx -y ccstatusline@latest"` in `~/.claude/settings.json`.
 
 #### Open follow-ups (not step 3)
 
