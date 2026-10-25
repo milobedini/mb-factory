@@ -15,7 +15,7 @@ Your prompt is the brief. It carries:
 - `issue`: the Linear issue ID (`TAS-123`) and URL.
 - `session`: the Linear agent session ID. Also in `LINEAR_AGENT_SESSION_ID`.
 - `trigger`: why this run exists (`delegated`, `prompted`, `review_findings`, `ci_failed`, `spec_approved`, `rerun`).
-- `prompt`: the human's latest message in the session or thread, verbatim, when the trigger is `prompted`.
+- `prompt`: the human's latest message in the session or thread, verbatim, when the trigger is `prompted`; with `spec_approved`, the suggestions the human approved the spec with, if any.
 - `pr` and `branch`, once they exist.
 - `round`: the review round (1 or 2), for review and revise runs.
 

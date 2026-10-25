@@ -42,9 +42,11 @@ export type {
   QueueEntry,
   RunRequest,
   SessionEvent,
-  SessionIssue
+  SessionIssue,
+  SpecReply
 } from './router';
 export {
+  CHANGES_QUESTION,
   closingActivity,
   formatReleaseAt,
   governDispatch,
@@ -54,6 +56,7 @@ export {
   orderQueue,
   parseSessionEvent,
   queuedThought,
+  readSpecReply,
   resumeRequestFor,
   runRequestFor,
   STOPPED_RESPONSE,

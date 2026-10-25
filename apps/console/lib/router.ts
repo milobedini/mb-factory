@@ -10,6 +10,7 @@ import type {
 } from '@mb-factory/core';
 import {
   buildDispatchPayload,
+  CHANGES_QUESTION,
   closingActivity,
   decideIssueUpdate,
   governDispatch,
@@ -391,6 +392,9 @@ const startFromSession = async (event: Extract<SessionEvent, { kind: 'created' }
     .where(eq(workItems.linearIssueId, event.issue.id))
     .limit(1);
   const request = runRequestFor(event, existing?.stage);
+  if (!request) {
+    throw new Error('A delegation always yields a run request');
+  }
   const workItem = await upsertWorkItem(project, event, request);
   await openSlackThread(project, workItem, event.issue.title);
   await dispatchRun(project, await createRun(project, workItem, request));
@@ -483,7 +487,13 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
     await stopWorkItem(project, workItem);
     return;
   }
-  await dispatchRun(project, await createRun(project, workItem, runRequestFor(event, workItem.stage)));
+  const request = runRequestFor(event, workItem.stage);
+  if (!request) {
+    // The Change something option on its own: ask what to change, and keep waiting in Spec Review.
+    await postActivity(workItem, { type: 'elicitation', body: CHANGES_QUESTION });
+    return;
+  }
+  await dispatchRun(project, await createRun(project, workItem, request));
 };
 
 // After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a

@@ -94,12 +94,52 @@ const AGENT_TO_CONTINUE: Record<Stage, AgentRole> = {
   canceled: 'triage'
 };
 
-// New work starts at triage; a reply carries the human's message to the agent for the work item's stage.
-export const runRequestFor = (event: Exclude<SessionEvent, { kind: 'stop' }>, stage: Stage | undefined): RunRequest => {
+export type SpecReply =
+  | { kind: 'approve'; suggestions: string | null }
+  | { kind: 'ask_changes' }
+  | { kind: 'changes'; body: string };
+
+const APPROVALS = ['approve', 'approved', 'lgtm'];
+const CHANGE_OPTIONS = ['change something', 'change'];
+const APPROVE_WITH_SUGGESTIONS = /^approved?\s*[:\-–—]\s*(\S[\s\S]*)$/i;
+
+// Approval is a gate, so it's read strictly: the Approve option (by label or value), a bare "approve" or "lgtm", or
+// "Approve: <suggestions>". The Change something option alone says nothing to change yet. Anything else is a change.
+export const readSpecReply = (body: string): SpecReply => {
+  const text = body.trim();
+  const bare = text.toLowerCase().replace(/[.!\s]+$/, '');
+  if (APPROVALS.includes(bare)) {
+    return { kind: 'approve', suggestions: null };
+  }
+  const suggestions = APPROVE_WITH_SUGGESTIONS.exec(text)?.[1]?.trim();
+  if (suggestions) {
+    return { kind: 'approve', suggestions };
+  }
+  return CHANGE_OPTIONS.includes(bare) ? { kind: 'ask_changes' } : { kind: 'changes', body: text };
+};
+
+export const CHANGES_QUESTION = 'What should change? Reply here with the changes and I’ll revise the spec.';
+
+// New work starts at triage; a reply carries the human's message to the agent for the work item's stage. In Spec Review
+// an approval starts implement on the spec's branch; undefined means the router should ask what to change.
+export const runRequestFor = (
+  event: Exclude<SessionEvent, { kind: 'stop' }>,
+  stage: Stage | undefined
+): RunRequest | undefined => {
   const agent = stage ? AGENT_TO_CONTINUE[stage] : 'triage';
-  return event.kind === 'created'
-    ? { agent, trigger: 'delegated', priority: 'feature', prompt: null }
-    : { agent, trigger: 'prompted', priority: 'in_flight', prompt: event.body };
+  if (event.kind === 'created') {
+    return { agent, trigger: 'delegated', priority: 'feature', prompt: null };
+  }
+  if (stage !== 'spec_review') {
+    return { agent, trigger: 'prompted', priority: 'in_flight', prompt: event.body };
+  }
+  const reply = readSpecReply(event.body);
+  if (reply.kind === 'approve') {
+    return { agent: 'implement', trigger: 'spec_approved', priority: 'in_flight', prompt: reply.suggestions };
+  }
+  return reply.kind === 'changes'
+    ? { agent: 'spec', trigger: 'prompted', priority: 'in_flight', prompt: reply.body }
+    : undefined;
 };
 
 // A run cut short by the usage limit resumes ahead of new work once the window allows it.
@@ -191,12 +231,18 @@ const agentAfterTriage = (report: unknown): AgentRole | undefined => {
   return next === 'implement' || next === 'verify' ? 'implement' : undefined;
 };
 
+const WAITING_ON_SPEC_REVIEW: (RunOutcome | null)[] = ['done', 'needs_input'];
+
 // What follows a run that finished its stage. Anything else (a question, `next: human`, a failure) waits for a human.
+// A spec run with its PR open is waiting on approval, whether it reports that as done or as needing input.
 // Phase 2 step 4 sends a delivered PR to review instead of straight to the human merge gate.
 export const nextStepAfterRun = (
   run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null; report: unknown },
   hasPr: boolean
 ): NextStep => {
+  if (run.agent === 'spec' && run.status === 'finished' && WAITING_ON_SPEC_REVIEW.includes(run.outcome) && hasPr) {
+    return { stage: 'spec_review' };
+  }
   if (run.status !== 'finished' || run.outcome !== 'done') {
     return {};
   }

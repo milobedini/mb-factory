@@ -14,6 +14,7 @@ import {
   orderQueue,
   parseSessionEvent,
   queuedThought,
+  readSpecReply,
   runRequestFor,
   shouldMoveIssue,
   shouldResume,
@@ -135,9 +136,67 @@ describe('runRequestFor', () => {
     ['done', 'triage'],
     ['canceled', 'triage']
   ] as const)('continues from %s with %s', (stage, agent) => {
-    expect(runRequestFor(prompted, stage).agent).toBe(agent);
     expect(runRequestFor(created, stage)).toMatchObject({ agent, trigger: 'delegated' });
+    if (stage !== 'spec_review') {
+      expect(runRequestFor(prompted, stage)?.agent).toBe(agent);
+    }
   });
+
+  const reply = (body: string) => {
+    const event = parseSessionEvent(promptedEvent({ content: { body } }));
+    if (event?.kind !== 'prompted') {
+      throw new Error('fixture did not parse');
+    }
+    return event;
+  };
+
+  it('starts implement on approval in Spec Review, carrying any suggestions', () => {
+    expect(runRequestFor(reply('Approve'), 'spec_review')).toEqual({
+      agent: 'implement',
+      trigger: 'spec_approved',
+      priority: 'in_flight',
+      prompt: null
+    });
+    expect(runRequestFor(reply('Approve: call the button Retry'), 'spec_review')).toMatchObject({
+      agent: 'implement',
+      prompt: 'call the button Retry'
+    });
+  });
+
+  it('revises the spec on a change, and asks first when the reply names none', () => {
+    expect(runRequestFor(reply('Keep the old copy.'), 'spec_review')).toEqual({
+      agent: 'spec',
+      trigger: 'prompted',
+      priority: 'in_flight',
+      prompt: 'Keep the old copy.'
+    });
+    expect(runRequestFor(reply('Change something'), 'spec_review')).toBeUndefined();
+  });
+});
+
+describe('readSpecReply', () => {
+  it.each(['Approve', 'approve', 'Approved.', ' LGTM! '])('reads %j as a plain approval', (body) => {
+    expect(readSpecReply(body)).toEqual({ kind: 'approve', suggestions: null });
+  });
+
+  it.each([
+    ['Approve: call the button Retry', 'call the button Retry'],
+    ['approved - log the error too\nand keep the copy', 'log the error too\nand keep the copy'],
+    ['Approve — fine as is, but shorter copy', 'fine as is, but shorter copy']
+  ])('reads %j as approval with suggestions', (body, suggestions) => {
+    expect(readSpecReply(body)).toEqual({ kind: 'approve', suggestions });
+  });
+
+  it.each(['Change something', 'change'])('reads the %j option alone as asking for changes', (body) => {
+    expect(readSpecReply(body)).toEqual({ kind: 'ask_changes' });
+  });
+
+  it.each(['Approve once the copy is shorter', 'I approve of the approach but not the copy', 'Approve:', 'Yes'])(
+    'reads %j as a change, not an approval',
+    (body) => {
+      expect(readSpecReply(body)).toEqual({ kind: 'changes', body });
+    }
+  );
 });
 
 const now = new Date('2026-10-25T12:00:00Z');
@@ -353,7 +412,13 @@ describe('nextStepAfterRun', () => {
     expect(nextStepAfterRun({ ...triaged('implement'), outcome: 'needs_input' }, false)).toEqual({});
     expect(nextStepAfterRun({ ...triaged('implement'), status: 'limit_hit', outcome: null }, false)).toEqual({});
     expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, false)).toEqual({});
-    expect(nextStepAfterRun({ ...finished, agent: 'spec', report: null }, true)).toEqual({});
+    expect(nextStepAfterRun({ ...finished, agent: 'spec', report: null }, false)).toEqual({});
+  });
+
+  it.each(['done', 'needs_input'] as const)('puts a spec with its PR open in Spec Review after %s', (outcome) => {
+    expect(nextStepAfterRun({ ...finished, outcome, agent: 'spec', report: null }, true)).toEqual({
+      stage: 'spec_review'
+    });
   });
 });
 

@@ -45,7 +45,7 @@ Batch every question the stage has into one elicitation; a second round only for
 
 - Ask only what the issue, the code and earlier stage briefs can't answer.
 - A **gate** is different: spec approval, slicing approval, or a decision that changes what gets built. A gate needs an explicit answer, so offer it as a `select` (`--option "Approve=approve" --option "Change something=change"`) and still end with the default you'd pick. Silence never passes a gate.
-- The human may answer in free text instead of picking an option. Read it for intent.
+- The human may answer in free text instead of picking an option. Read it for intent, except at the spec approval gate, which the router reads (see the `spec` agent).
 - Record each answer where the next stage will find it: in the spec's Decisions as `Asked: <question, short> → <answer>`, or in the stage brief.
 
 ## Stage briefs

@@ -26,7 +26,9 @@ Triggered after triage recommends a spec (`trigger: delegated` with a triage bri
    - Report `needs_input` and stop. Nothing blocking: skip to writing.
 4. **Write** `specs/<ISSUE-ID>.md` with `spec-writing`. Record every answer in Decisions as `Asked: … → …`. If the human said to go ahead with questions unanswered, take the most careful reading of each and record it under Assumptions.
 5. **Commit and open the draft PR.** Branch per `git-text`, one commit (`Add spec for <title>`), then a draft PR whose title is the issue's work and whose description says `Fixes TAS-123`, a one-line summary, and "Spec under review; implementation follows on this branch." Add the `factory` label. Link the PR on the session.
-6. **Ask for approval.** One elicitation with the spec link, the decisions in one line each, and the assumptions someone must confirm. Options: `Approve`, `Change something`. Report `needs_input` with `next: human`. Approval is a gate: it needs an explicit answer, a PR approval, or the human moving the issue past Spec Review.
+6. **Ask for approval.** One elicitation with the spec link, the decisions in one line each, and the assumptions someone must confirm, offered as a select with the label and value the same: `--option "Approve=Approve" --option "Change something=Change something"`. End it with this line, word for word: "To approve with suggestions, reply `Approve: <your suggestions>`." Report `needs_input` with `next: human`.
+
+The router reads the answer, not you: an approval (with or without suggestions) starts the implement stage on your branch, and anything else comes back to you as `prompted` with the reply. Approval is a gate, so it needs an explicit answer in the session.
 
 ## Revising
 
@@ -34,6 +36,5 @@ The committed file is the source of truth, and a human may edit it directly. Re-
 
 ## Exit
 
-- `needs_input` while interviewing or awaiting approval.
-- `done` with `next: implement` only when the brief says the spec was approved.
+- `needs_input` while interviewing or awaiting approval. Once the draft PR exists, the router treats the work as waiting in Spec Review.
 - Propose a lesson in the spec PR when the interview surfaced a rule the repo's docs should have said.
