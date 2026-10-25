@@ -12,6 +12,7 @@ import {
   briefRound,
   buildDispatchPayload,
   CHANGES_QUESTION,
+  canRerun,
   ciHandOverText,
   closingActivity,
   consecutiveCiFixes,
@@ -340,7 +341,8 @@ export const cancelRunFromConsole = async (runId: string, login: string): Promis
   return true;
 };
 
-// Re-run from the Runs page: only a work item's latest run, once it has settled, so two stages never race.
+// Re-run from the Runs page: only a work item's latest run, and only when it ended badly (`canRerun`), so two stages
+// never race and settled work isn't repeated.
 export const rerunFromConsole = async (runId: string, login: string): Promise<boolean> => {
   const found = await findRun(runId);
   const project = found && findProject(found.workItem.project);
@@ -353,7 +355,13 @@ export const rerunFromConsole = async (runId: string, login: string): Promise<bo
     .where(eq(runs.workItemId, found.workItem.id))
     .orderBy(desc(runs.createdAt))
     .limit(1);
-  if (latest?.id !== runId) {
+  const allowed = canRerun(found.run, {
+    stage: found.workItem.stage,
+    hasPr: found.workItem.prNumber !== null,
+    reviewRounds: found.workItem.reviewRounds,
+    maxReviewRounds: project.review.maxRounds
+  });
+  if (latest?.id !== runId || !allowed) {
     return false;
   }
   log('info', 'run re-run from the console', { runId, login, issue: found.workItem.issueIdentifier });

@@ -6,6 +6,7 @@ import { parseFactoryConfig } from './config';
 import type { UsageReading } from './governor';
 import {
   briefRound,
+  canRerun,
   closingActivity,
   consecutiveCiFixes,
   decideCiFailure,
@@ -549,6 +550,44 @@ describe('CI failures', () => {
     ).toBe(2);
     expect(consecutiveCiFixes([run('implement', 'spec_approved'), run('implement', 'ci_failed')])).toBe(0);
     expect(consecutiveCiFixes([])).toBe(0);
+  });
+});
+
+describe('canRerun', () => {
+  const open = { stage: 'building' as const, hasPr: false, reviewRounds: 0, maxReviewRounds: 2 };
+  const run = (
+    agent: 'triage' | 'implement' | 'review',
+    status: 'finished' | 'limit_hit' | 'canceled' | 'running',
+    outcome: 'done' | 'failed' | 'blocked' | 'stopped' | 'needs_input' | 'declined' | null,
+    report: unknown = null
+  ) => ({ agent, status, outcome, report });
+
+  it.each([
+    ['a failed run', run('implement', 'finished', 'failed')],
+    ['a blocked run', run('implement', 'finished', 'blocked')],
+    ['a stopped run', run('implement', 'finished', 'stopped')],
+    ['a run that hit the limit', run('implement', 'limit_hit', null)],
+    ['a canceled run', run('implement', 'canceled', null)],
+    ['triage that named no next stage', run('triage', 'finished', 'done', { next: null })],
+    ['implement that delivered no PR', run('implement', 'finished', 'done')]
+  ])('allows %s', (_label, candidate) => {
+    expect(canRerun(candidate, open)).toBe(true);
+  });
+
+  it.each([
+    ['a run still going', run('implement', 'running', null), open],
+    ['a question', run('implement', 'finished', 'needs_input'), open],
+    ['a decline', run('triage', 'finished', 'declined'), open],
+    ['triage that handed to a human', run('triage', 'finished', 'done', { next: 'human' }), open],
+    ['a stage the router moved on from', run('implement', 'finished', 'done'), { ...open, hasPr: true }],
+    [
+      'a review',
+      run('review', 'finished', 'done', { verdict: 'accepted' }),
+      { ...open, stage: 'awaiting_merge' as const }
+    ],
+    ['a failed run on settled work', run('implement', 'finished', 'failed'), { ...open, stage: 'done' as const }]
+  ])('refuses %s', (_label, candidate, workItem) => {
+    expect(canRerun(candidate, workItem)).toBe(false);
   });
 });
 

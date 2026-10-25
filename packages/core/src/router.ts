@@ -5,7 +5,7 @@ import type { Decision, DispatchRequest, HoldReason, Priority, UsageWindow } fro
 import { decideDispatch, PRIORITIES, USAGE_HOLD_REASONS } from './governor';
 import type { RunOutcome, RunStatus, RunTrigger } from './runs';
 import type { AgentRole, Stage } from './stages';
-import { AGENT_FOR_STAGE, STAGES, transition } from './stages';
+import { AGENT_FOR_STAGE, STAGES, TERMINAL_STAGES, transition } from './stages';
 
 // Linear's AgentSessionEvent webhook: only the fields the router reads.
 const sessionEventSchema = z.looseObject({
@@ -139,6 +139,32 @@ export const runRequestFor = (
   return reply.kind === 'changes'
     ? { agent: 'spec', trigger: 'prompted', priority: 'in_flight', prompt: reply.body }
     : undefined;
+};
+
+const RERUN_OUTCOMES: (RunOutcome | null)[] = ['failed', 'blocked', 'stopped'];
+
+// Re-running is for a run that ended badly, on work that isn't settled. A finished stage the router moved on from,
+// a question, a decline, or triage's `next: human` all have better routes: a reply in Linear, or a new delegation.
+export const canRerun = (
+  run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null; report: unknown },
+  workItem: ReviewLoop & { stage: Stage; hasPr: boolean }
+): boolean => {
+  if (TERMINAL_STAGES.includes(workItem.stage)) {
+    return false;
+  }
+  if (run.status === 'limit_hit' || run.status === 'canceled') {
+    return true;
+  }
+  if (run.status !== 'finished') {
+    return false;
+  }
+  if (RERUN_OUTCOMES.includes(run.outcome)) {
+    return true;
+  }
+  const stoppedForHuman = run.agent === 'triage' && triageReportSchema.safeParse(run.report).data?.next === 'human';
+  const { stage: _stage, ...loop } = workItem;
+  const next = nextStepAfterRun(run, loop);
+  return run.outcome === 'done' && !stoppedForHuman && next.stage === undefined && next.request === undefined;
 };
 
 // Re-run from the console: the same stage again, ahead of new work.

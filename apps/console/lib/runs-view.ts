@@ -1,10 +1,11 @@
 import type { RunTotals } from '@mb-factory/core';
-import { runTotals } from '@mb-factory/core';
+import { canRerun, runTotals } from '@mb-factory/core';
 import { asc, desc, inArray } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
 import { runs, workItems } from '@/db/schema';
 
+import { findProject } from './projects';
 import type { ConsoleUser } from './session';
 import { requireConsoleUser } from './session';
 
@@ -15,6 +16,8 @@ export type WorkItemRuns = {
   prUrl: string | null;
   runs: RunRow[];
   totals: RunTotals;
+  // The latest run, when the console may re-run it.
+  rerunnableId: string | null;
 };
 
 export type RunsView = { user: ConsoleUser; now: Date; workItems: WorkItemRuns[] };
@@ -44,11 +47,23 @@ export const loadRunsView = async (): Promise<RunsView> => {
     now: new Date(),
     workItems: items.map((workItem) => {
       const own = itemRuns.filter(({ workItemId }) => workItemId === workItem.id);
+      const latest = own.at(-1);
+      const project = findProject(workItem.project);
+      const rerunnable =
+        latest !== undefined &&
+        project !== undefined &&
+        canRerun(latest, {
+          stage: workItem.stage,
+          hasPr: workItem.prNumber !== null,
+          reviewRounds: workItem.reviewRounds,
+          maxReviewRounds: project.review.maxRounds
+        });
       return {
         workItem,
         prUrl: workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null,
         runs: own,
-        totals: runTotals(own)
+        totals: runTotals(own),
+        rerunnableId: rerunnable ? latest.id : null
       };
     })
   };

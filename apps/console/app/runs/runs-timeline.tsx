@@ -58,7 +58,7 @@ const SecondaryButton = ({ label }: { label: string }) => (
   </button>
 );
 
-const RunItem = ({ run, latest, now }: { run: RunRow; latest: boolean; now: Date }) => {
+const RunItem = ({ run, rerunnable, now }: { run: RunRow; rerunnable: boolean; now: Date }) => {
   const status = statusOf(run);
   const { waitedMs, ranMs } = runTiming(run, now);
   const facts = [
@@ -92,7 +92,7 @@ const RunItem = ({ run, latest, now }: { run: RunRow; latest: boolean; now: Date
               <SecondaryButton label="Cancel" />
             </form>
           )}
-          {latest && !open && (
+          {rerunnable && (
             <form action={rerunAction}>
               <input type="hidden" name="runId" value={run.id} />
               <SecondaryButton label="Re-run" />
@@ -107,10 +107,9 @@ const RunItem = ({ run, latest, now }: { run: RunRow; latest: boolean; now: Date
 };
 
 const WorkItemSection = ({ item, now }: { item: WorkItemRuns; now: Date }) => {
-  const { workItem, prUrl, runs, totals } = item;
+  const { workItem, prUrl, runs, totals, rerunnableId } = item;
   const project = findProject(workItem.project);
   const stageLabel = project ? linearStatusFor(project, workItem.stage) : workItem.stage;
-  const latestId = runs.at(-1)?.id;
   const facts = [
     `${totals.runs} ${totals.runs === 1 ? 'run' : 'runs'}`,
     totals.costUsd === null ? undefined : usd(totals.costUsd),
@@ -149,7 +148,7 @@ const WorkItemSection = ({ item, now }: { item: WorkItemRuns; now: Date }) => {
       ) : (
         <ol className="ml-1 flex flex-col">
           {runs.map((run) => (
-            <RunItem key={run.id} run={run} latest={run.id === latestId} now={now} />
+            <RunItem key={run.id} run={run} rerunnable={run.id === rerunnableId} now={now} />
           ))}
         </ol>
       )}

@@ -51,6 +51,7 @@ export type {
 export {
   briefRound,
   CHANGES_QUESTION,
+  canRerun,
   ciHandOverText,
   closingActivity,
   consecutiveCiFixes,
