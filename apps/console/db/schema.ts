@@ -90,6 +90,8 @@ export const runs = pgTable(
     model: text().notNull(),
     trigger: text({ enum: RUN_TRIGGERS }).notNull(),
     priority: text({ enum: PRIORITIES }).notNull(),
+    // The human's message for a prompted run, held until the brief is rendered at dispatch.
+    prompt: text(),
     status: text({ enum: RUN_STATUSES }).notNull(),
     outcome: text({ enum: RUN_OUTCOMES }),
     summary: text(),

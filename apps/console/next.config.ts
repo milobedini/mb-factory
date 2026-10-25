@@ -9,7 +9,9 @@ const nextConfig: NextConfig = {
       '*.css': {
         loaders: ['@tailwindcss/turbopack'],
         as: '*.css'
-      }
+      },
+      // Project definitions (`projects/*/factory.yaml`) are bundled as text and parsed by core.
+      '*.yaml': { type: 'text' }
     }
   }
 };

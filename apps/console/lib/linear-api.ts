@@ -99,3 +99,55 @@ export const createAgentActivity = async (
     { input: { agentSessionId, content } }
   );
 };
+
+type IssueStates = {
+  issue: { state: { id: string; type: string }; team: { states: { nodes: { id: string; name: string }[] } } };
+};
+
+export type IssueMove = { moved: true } | { moved: false; reason: string };
+
+// Statuses are named in factory.yaml; IDs differ per workspace, so they're resolved on each move.
+export const moveIssueToStatus = async (
+  organizationId: string,
+  issueId: string,
+  statusName: string,
+  shouldMove: (currentStateType: string) => boolean
+): Promise<IssueMove> => {
+  const { issue } = await linearGraphql<IssueStates>(
+    organizationId,
+    'query IssueStates($id: String!) { issue(id: $id) { state { id type } team { states { nodes { id name } } } } }',
+    { id: issueId }
+  );
+  const target = issue.team.states.nodes.find(({ name }) => name === statusName);
+  if (!target) {
+    return { moved: false, reason: `the team has no status named ${statusName}` };
+  }
+  if (target.id === issue.state.id) {
+    return { moved: false, reason: 'already there' };
+  }
+  if (!shouldMove(issue.state.type)) {
+    return { moved: false, reason: `the issue is ${issue.state.type}` };
+  }
+  await linearGraphql<{ issueUpdate: { success: boolean } }>(
+    organizationId,
+    'mutation IssueMove($id: String!, $stateId: String!) { issueUpdate(id: $id, input: { stateId: $stateId }) { success } }',
+    { id: issueId, stateId: target.id }
+  );
+  return { moved: true };
+};
+
+const CLOSING_ACTIVITY_TYPES = ['response', 'error', 'elicitation'];
+
+// Whether the session got a final message (or a question) since the given time, from the agent or anyone else.
+export const hasClosingActivity = async (
+  organizationId: string,
+  agentSessionId: string,
+  since: Date
+): Promise<boolean> => {
+  const { agentSession } = await linearGraphql<{ agentSession: { activities: { nodes: { id: string }[] } } }>(
+    organizationId,
+    'query SessionClosing($id: String!, $since: DateTimeOrDuration!, $types: [String!]) { agentSession(id: $id) { activities(first: 1, filter: { createdAt: { gte: $since }, type: { in: $types } }) { nodes { id } } } }',
+    { id: agentSessionId, since: since.toISOString(), types: CLOSING_ACTIVITY_TYPES }
+  );
+  return agentSession.activities.nodes.length > 0;
+};

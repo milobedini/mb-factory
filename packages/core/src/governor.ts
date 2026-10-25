@@ -29,6 +29,7 @@ export type GovernorState = 'open' | 'throttled' | 'paused';
 
 export const HOLD_REASONS = [
   'concurrency',
+  'work_item_busy',
   'five_hour_throttle',
   'five_hour_pause',
   'weekly_pacing',
@@ -49,6 +50,8 @@ export type DispatchRequest = {
   runningCount: number;
   maxRuns: number;
   now: Date;
+  // Decide on whatever readings exist instead of asking for a probe.
+  acceptStale?: boolean;
 };
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -106,10 +109,11 @@ export const decideDispatch = ({
   priority,
   runningCount,
   maxRuns,
-  now
+  now,
+  acceptStale = false
 }: DispatchRequest): Decision => {
   const stale = USAGE_WINDOWS.filter((window) => isStale(readings[window], now, policy.staleAfterMinutes));
-  if (stale.length > 0) {
+  if (stale.length > 0 && !acceptStale) {
     return { kind: 'probe', stale };
   }
 

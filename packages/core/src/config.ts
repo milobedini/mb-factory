@@ -2,6 +2,15 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 
 const fraction = z.number().min(0).max(1);
+const isTimeZone = (zone: string): boolean => {
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const notionId = z.string().regex(/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/);
 
 export const usagePolicySchema = z.object({
@@ -22,6 +31,8 @@ export const factoryConfigSchema = z.object({
   schemaVersion: z.literal(1),
   name: z.string().min(1),
   alias: z.string().min(1),
+  // Times in messages to humans, such as when held work will be released.
+  timeZone: z.string().refine(isTimeZone, { message: 'not an IANA time zone' }).default('UTC'),
   repositories: z.array(z.object({ owner: z.string().min(1), name: z.string().min(1) })).min(1),
   linear: z.object({
     teamKey: z.string().min(1),
@@ -36,7 +47,7 @@ export const factoryConfigSchema = z.object({
       canceled: z.string().min(1)
     })
   }),
-  slack: z.object({ channel: z.string().min(1) }).optional(),
+  slack: z.object({ channel: z.string().min(1), channelId: z.string().regex(/^[CG][A-Z0-9]+$/) }).optional(),
   notion: z
     .object({
       teamspace: z.string().min(1),

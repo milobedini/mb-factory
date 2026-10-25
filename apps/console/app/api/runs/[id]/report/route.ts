@@ -1,7 +1,9 @@
 import { checkStageRunClaims, runReportSchema, summariseRun } from '@mb-factory/core';
+import { after } from 'next/server';
 
 import { verifyGitHubOidc } from '@/lib/github-oidc';
 import { log } from '@/lib/log';
+import { handleRunFinished } from '@/lib/router';
 import { findRun, recordRunReport } from '@/lib/runs';
 
 export const POST = async (request: Request, context: RouteContext<'/api/runs/[id]/report'>) => {
@@ -42,6 +44,16 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
     status: summary.status,
     outcome: summary.outcome,
     costUsd: summary.usage?.costUsd
+  });
+  after(async () => {
+    try {
+      await handleRunFinished(id);
+    } catch (error) {
+      log('error', 'run follow-up failed', {
+        runId: id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
   });
   return Response.json({ status: summary.status, outcome: summary.outcome });
 };

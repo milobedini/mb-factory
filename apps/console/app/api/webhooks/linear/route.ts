@@ -5,6 +5,7 @@ import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
 import { createAgentActivity } from '@/lib/linear-api';
 import { log } from '@/lib/log';
+import { handleAgentSessionEvent } from '@/lib/router';
 
 type LinearWebhook = {
   type: string;
@@ -13,20 +14,23 @@ type LinearWebhook = {
   agentSession?: { id: string; issue?: { identifier?: string } };
 };
 
-const ACKNOWLEDGEMENT =
-  'Picked this up. The factory is still being set up, so no stages run yet. This session is recorded in the console.';
-
-const acknowledgeSession = async (event: LinearWebhook): Promise<void> => {
-  if (event.type !== 'AgentSessionEvent' || event.action !== 'created' || !event.agentSession) {
+// The router posts the session's first activity; if it throws first, the session still hears back within Linear's 10 s.
+const routeSessionEvent = async (event: LinearWebhook): Promise<void> => {
+  if (event.type !== 'AgentSessionEvent' || !event.agentSession) {
     return;
   }
   try {
-    await createAgentActivity(event.organizationId, event.agentSession.id, { type: 'thought', body: ACKNOWLEDGEMENT });
+    await handleAgentSessionEvent(event);
   } catch (error) {
-    log('error', 'linear acknowledgement failed', {
+    log('error', 'agent session routing failed', {
       agentSessionId: event.agentSession.id,
+      action: event.action,
       error: error instanceof Error ? error.message : String(error)
     });
+    await createAgentActivity(event.organizationId, event.agentSession.id, {
+      type: 'error',
+      body: 'Something went wrong on my side before I could start. It’s in the console log; reply here to try again.'
+    }).catch(() => undefined);
   }
 };
 
@@ -63,7 +67,7 @@ export const POST = async (request: Request) => {
   });
 
   if (isNew) {
-    after(() => acknowledgeSession(event));
+    after(() => routeSessionEvent(event));
   }
 
   return new Response(null, { status: 200 });

@@ -62,6 +62,21 @@ describe('decideDispatch', () => {
     });
   });
 
+  it('decides on stale or missing readings when told to accept them', () => {
+    const stale = { fiveHour: fiveHour(0.85, { takenAt: minutesAgo(30) }) };
+    expect(decideDispatch(request({ readings: stale, acceptStale: true }))).toEqual({
+      kind: 'hold',
+      state: 'paused',
+      reason: 'five_hour_pause',
+      releaseAt: hoursFromNow(2)
+    });
+    expect(decideDispatch(request({ readings: {}, acceptStale: true }))).toEqual({
+      kind: 'dispatch',
+      state: 'open',
+      downshift: false
+    });
+  });
+
   it('treats a window whose reset time has passed as empty, without probing', () => {
     const decision = decideDispatch(
       request({

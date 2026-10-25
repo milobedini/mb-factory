@@ -23,6 +23,37 @@ export {
 } from './governor';
 export type { ClaimCheck, StageRunClaims } from './oidc';
 export { checkStageRunClaims, GITHUB_OIDC_ISSUER, STAGE_WORKFLOW } from './oidc';
+export type {
+  ClosingActivity,
+  FinishedRun,
+  Governed,
+  GovernedDecision,
+  ModelledAgent,
+  QueueEntry,
+  RunRequest,
+  SessionEvent,
+  SessionIssue
+} from './router';
+export {
+  closingActivity,
+  formatReleaseAt,
+  governDispatch,
+  linearStatusFor,
+  modelFor,
+  orderQueue,
+  parseSessionEvent,
+  queuedThought,
+  resumeRequestFor,
+  runRequestFor,
+  STOPPED_RESPONSE,
+  shouldMoveIssue,
+  shouldResume,
+  slackFinishedText,
+  slackStartedText,
+  slackThreadText,
+  stageForAgent,
+  startedThought
+} from './router';
 export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } from './run-report';
 export { runReportSchema, stageReportSchema, summariseRun } from './run-report';
 export type { RunOutcome, RunStatus, RunTrigger, WorkOrigin } from './runs';
