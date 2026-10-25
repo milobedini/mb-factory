@@ -59,6 +59,19 @@ export const getLinearAccessToken = async (
   return token.access_token;
 };
 
+// The factory's own Linear user, which its status moves and activities come from.
+export const findAppUserId = async (organizationId: string): Promise<string> => {
+  const [installation] = await getDb()
+    .select({ appUserId: linearInstallations.appUserId })
+    .from(linearInstallations)
+    .where(eq(linearInstallations.organizationId, organizationId))
+    .limit(1);
+  if (!installation) {
+    throw new Error(`No Linear installation for organisation ${organizationId}`);
+  }
+  return installation.appUserId;
+};
+
 export const linearGraphql = async <T>(
   organizationId: string,
   query: string,

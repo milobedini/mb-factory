@@ -1,12 +1,25 @@
-import type { FactoryConfig, GovernedDecision, RunRequest, RunStatus, SessionEvent, Stage } from '@mb-factory/core';
+import type {
+  FactoryConfig,
+  GitHubEvent,
+  GovernedDecision,
+  RunRequest,
+  RunStatus,
+  SessionEvent,
+  Stage,
+  StopCause
+} from '@mb-factory/core';
 import {
   buildDispatchPayload,
   closingActivity,
+  decideIssueUpdate,
   governDispatch,
   linearStatusFor,
   modelFor,
   orderQueue,
+  parseGitHubEvent,
+  parseIssueUpdate,
   parseSessionEvent,
+  prClosedText,
   queuedThought,
   resumeRequestFor,
   runRequestFor,
@@ -16,11 +29,13 @@ import {
   slackFinishedText,
   slackStartedText,
   slackThreadText,
+  stageAfterPrClosed,
   stageAfterRun,
   stageForAgent,
-  startedThought
+  startedThought,
+  stoppedText
 } from '@mb-factory/core';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
 import { queue, runs, workItems } from '@/db/schema';
@@ -28,7 +43,7 @@ import { queue, runs, workItems } from '@/db/schema';
 import { requireEnv } from './env';
 import { cancelActionsRun, sendStageDispatch } from './github-api';
 import type { AgentActivityContent } from './linear-api';
-import { createAgentActivity, hasClosingActivity, moveIssueToStatus } from './linear-api';
+import { createAgentActivity, findAppUserId, hasClosingActivity, moveIssueToStatus } from './linear-api';
 import { log } from './log';
 import { currentPause } from './pause';
 import { findProject, findProjectByTeamKey, repositoryOf } from './projects';
@@ -375,15 +390,15 @@ const startFromSession = async (event: Extract<SessionEvent, { kind: 'created' }
   await dispatchRun(project, await createRun(project, workItem, request));
 };
 
-const cancelRun = async (run: Run, workItem: WorkItem, now: Date): Promise<void> => {
+const cancelRun = async (run: Run, workItem: WorkItem, summary: string, now: Date): Promise<boolean> => {
   const db = getDb();
   const canceled = await db
     .update(runs)
-    .set({ status: 'canceled', summary: 'Stopped from Linear.', finishedAt: now })
+    .set({ status: 'canceled', summary, finishedAt: now })
     .where(and(eq(runs.id, run.id), eq(runs.status, run.status)))
     .returning({ id: runs.id });
   if (canceled.length === 0) {
-    return;
+    return false;
   }
   await db
     .update(queue)
@@ -393,22 +408,45 @@ const cancelRun = async (run: Run, workItem: WorkItem, now: Date): Promise<void>
     const actionsRunId = run.actionsRunId;
     await attempt('actions run cancel', { runId: run.id }, () => cancelActionsRun(workItem.repository, actionsRunId));
   }
-  log('info', 'run canceled', { runId: run.id, issue: workItem.issueIdentifier, from: run.status });
+  log('info', 'run canceled', { runId: run.id, issue: workItem.issueIdentifier, from: run.status, summary });
+  return true;
 };
 
-const stopWorkItem = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
+// Cancels the work item's queued and active runs; returns how many it canceled.
+const cancelOpenRuns = async (workItem: WorkItem, summary: string): Promise<number> => {
   const open = await getDb()
     .select()
     .from(runs)
     .where(and(eq(runs.workItemId, workItem.id), inArray(runs.status, OPEN_STATUSES)));
   const now = new Date();
-  await Promise.all(open.map((run) => cancelRun(run, workItem, now)));
+  const canceled = await Promise.all(open.map((run) => cancelRun(run, workItem, summary, now)));
+  return canceled.filter(Boolean).length;
+};
+
+const stopWorkItem = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
+  await cancelOpenRuns(workItem, 'Stopped from Linear.');
   // Linear expects a final activity after a stop, whether or not anything was running.
   await Promise.all([
     postActivity(workItem, { type: 'response', body: STOPPED_RESPONSE }),
     replyInThread(project, workItem, 'Stopped from Linear.')
   ]);
   await releaseQueue();
+};
+
+// Stops work for a reason outside the session; says so only if something was running or queued.
+const stopForCause = async (project: FactoryConfig, workItem: WorkItem, cause: StopCause): Promise<void> => {
+  const text = stoppedText(cause);
+  if ((await cancelOpenRuns(workItem, text)) === 0) {
+    return;
+  }
+  await Promise.all([postActivity(workItem, { type: 'response', body: text }), replyInThread(project, workItem, text)]);
+  await releaseQueue();
+};
+
+// Records the stage without moving the Linear issue: the event came from Linear or GitHub, which already show it.
+const recordStage = async (workItem: WorkItem, stage: Stage, cause: string): Promise<void> => {
+  await getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id));
+  log('info', 'work item stage followed', { issue: workItem.issueIdentifier, from: workItem.stage, to: stage, cause });
 };
 
 export const handleAgentSessionEvent = async (payload: unknown): Promise<void> => {
@@ -473,4 +511,81 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
     await dispatchRun(project, await createRun(project, workItem, resumeRequestFor(run.agent), run.id));
   }
   await releaseQueue();
+};
+
+// A human's status change or undelegation in Linear. Issues the factory never worked on have no work item.
+export const handleIssueUpdate = async (payload: unknown): Promise<void> => {
+  const update = parseIssueUpdate(payload);
+  if (!update || update.organizationId !== requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID')) {
+    return;
+  }
+  const [workItem] = await getDb()
+    .select()
+    .from(workItems)
+    .where(and(eq(workItems.linearIssueId, update.issueId), eq(workItems.linearOrganizationId, update.organizationId)))
+    .limit(1);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project) {
+    return;
+  }
+  const actions = decideIssueUpdate(update, {
+    config: project,
+    appUserId: await findAppUserId(update.organizationId),
+    stage: workItem.stage
+  });
+  if (actions.stage) {
+    await recordStage(workItem, actions.stage, 'linear status');
+  }
+  if (actions.stop) {
+    await stopForCause(project, workItem, actions.stop);
+  }
+};
+
+const findWorkItemForPr = async (event: Extract<GitHubEvent, { kind: 'pr_closed' }>): Promise<WorkItem | undefined> => {
+  const [workItem] = await getDb()
+    .select()
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.repository, event.repository),
+        or(eq(workItems.prNumber, event.number), and(isNull(workItems.prNumber), eq(workItems.branch, event.branch)))
+      )
+    )
+    .orderBy(desc(workItems.updatedAt))
+    .limit(1);
+  return workItem;
+};
+
+// A factory PR merged or closed settles its work item; a person pushing to its branch counts against autonomy.
+export const handleGitHubEvent = async (eventName: string, payload: unknown): Promise<void> => {
+  const event = parseGitHubEvent(eventName, payload);
+  if (!event) {
+    return;
+  }
+  if (event.kind === 'human_push') {
+    const pushed = await getDb()
+      .update(workItems)
+      .set({ humanPushes: sql`${workItems.humanPushes} + 1`, updatedAt: new Date() })
+      .where(and(eq(workItems.repository, event.repository), eq(workItems.branch, event.branch)))
+      .returning({ issue: workItems.issueIdentifier });
+    if (pushed.length > 0) {
+      log('info', 'human push recorded', {
+        issues: pushed.map(({ issue }) => issue),
+        login: event.login,
+        commits: event.commits
+      });
+    }
+    return;
+  }
+  const workItem = await findWorkItemForPr(event);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project) {
+    return;
+  }
+  const stage = stageAfterPrClosed(workItem.stage, event.merged);
+  if (stage) {
+    await recordStage(workItem, stage, event.merged ? 'pr merged' : 'pr closed');
+  }
+  await replyInThread(project, workItem, prClosedText(event.number, event.merged));
+  await stopForCause(project, workItem, { kind: 'pr_closed', number: event.number, merged: event.merged });
 };

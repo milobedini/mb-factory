@@ -5,7 +5,7 @@ import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
 import { createAgentActivity } from '@/lib/linear-api';
 import { log } from '@/lib/log';
-import { handleAgentSessionEvent } from '@/lib/router';
+import { handleAgentSessionEvent, handleIssueUpdate } from '@/lib/router';
 
 type LinearWebhook = {
   type: string;
@@ -31,6 +31,17 @@ const routeSessionEvent = async (event: LinearWebhook): Promise<void> => {
       type: 'error',
       body: 'Something went wrong on my side before I could start. It’s in the console log; reply here to try again.'
     }).catch(() => undefined);
+  }
+};
+
+const routeIssueUpdate = async (event: LinearWebhook): Promise<void> => {
+  try {
+    await handleIssueUpdate(event);
+  } catch (error) {
+    log('error', 'issue update routing failed', {
+      action: event.action,
+      error: error instanceof Error ? error.message : String(error)
+    });
   }
 };
 
@@ -66,8 +77,11 @@ export const POST = async (request: Request) => {
     issue: event.agentSession?.issue?.identifier
   });
 
-  if (isNew) {
+  if (isNew && event.type === 'AgentSessionEvent') {
     after(() => routeSessionEvent(event));
+  }
+  if (isNew && event.type === 'Issue') {
+    after(() => routeIssueUpdate(event));
   }
 
   return new Response(null, { status: 200 });

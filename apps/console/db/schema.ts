@@ -72,10 +72,15 @@ export const workItems = pgTable(
     reviewRounds: integer().notNull().default(0),
     branch: text(),
     prNumber: integer(),
+    // Pushes by people to the work item's branch: a merged PR with none counts as autonomous.
+    humanPushes: integer().notNull().default(0),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
   },
-  (table) => [index('work_items_agent_session_idx').on(table.agentSessionId)]
+  (table) => [
+    index('work_items_agent_session_idx').on(table.agentSessionId),
+    index('work_items_repository_branch_idx').on(table.repository, table.branch)
+  ]
 );
 
 export const runs = pgTable(

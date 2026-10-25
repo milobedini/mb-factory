@@ -45,6 +45,11 @@ describe('transition', () => {
     expect(transition('awaiting_merge', { type: 'closed_unmerged' }, context)).toEqual({ ok: true, stage: 'canceled' });
   });
 
+  it.each(['spec_review', 'building', 'in_review'] as const)('settles on merge or close from %s too', (stage) => {
+    expect(transition(stage, { type: 'merged' }, context)).toEqual({ ok: true, stage: 'done' });
+    expect(transition(stage, { type: 'closed_unmerged' }, context)).toEqual({ ok: true, stage: 'canceled' });
+  });
+
   it('cancels from any active stage', () => {
     expect(transition('building', { type: 'canceled' }, context)).toEqual({ ok: true, stage: 'canceled' });
   });

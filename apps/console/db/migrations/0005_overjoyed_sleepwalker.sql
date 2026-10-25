@@ -1,0 +1,2 @@
+ALTER TABLE "work_items" ADD COLUMN "human_pushes" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+CREATE INDEX "work_items_repository_branch_idx" ON "work_items" USING btree ("repository","branch");

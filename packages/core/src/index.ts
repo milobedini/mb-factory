@@ -72,6 +72,16 @@ export { decryptSecret, deriveKey, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
 export type { AgentRole, Stage, StageContext, StageEvent, Transition } from './stages';
-export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, STAGES, transition } from './stages';
+export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, STAGES, TERMINAL_STAGES, transition } from './stages';
 export type { UsageSummary, WindowSummary } from './usage';
 export { formatDuration, needsProbe, readingsFromStatusLine, statusLineUsageSchema, summariseUsage } from './usage';
+export type { GitHubEvent, IssueUpdate, IssueUpdateActions, LinearState, StopCause } from './work-item-events';
+export {
+  decideIssueUpdate,
+  parseGitHubEvent,
+  parseIssueUpdate,
+  prClosedText,
+  stageAfterPrClosed,
+  stageForLinearState,
+  stoppedText
+} from './work-item-events';

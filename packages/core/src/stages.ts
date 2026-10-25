@@ -59,17 +59,24 @@ const HANDLERS: Record<Stage, Handler> = {
     const canRevise = event.verdict === 'revision_needed' && reviewRounds < maxReviewRounds;
     return to(canRevise ? 'building' : 'awaiting_merge');
   },
-  awaiting_merge: (event) =>
-    event.type === 'merged' ? to('done') : event.type === 'closed_unmerged' ? to('canceled') : undefined,
+  awaiting_merge: () => undefined,
   done: () => undefined,
   canceled: () => undefined
 };
 
-const TERMINAL: Stage[] = ['done', 'canceled'];
+export const TERMINAL_STAGES: Stage[] = ['done', 'canceled'];
+
+// What happens to the PR or the issue settles the work item, whatever stage the factory had reached.
+const SETTLING_EVENTS: Partial<Record<StageEvent['type'], Stage>> = {
+  merged: 'done',
+  closed_unmerged: 'canceled',
+  canceled: 'canceled'
+};
 
 export const transition = (stage: Stage, event: StageEvent, context: StageContext): Transition => {
-  if (event.type === 'canceled' && !TERMINAL.includes(stage)) {
-    return to('canceled');
+  const settled = SETTLING_EVENTS[event.type];
+  if (settled && !TERMINAL_STAGES.includes(stage)) {
+    return to(settled);
   }
   return HANDLERS[stage](event, context) ?? { ok: false, error: `Event ${event.type} is not valid in stage ${stage}` };
 };

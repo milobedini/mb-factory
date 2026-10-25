@@ -1,8 +1,10 @@
 import { verifyGitHubWebhook } from '@mb-factory/core';
+import { after } from 'next/server';
 
 import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
 import { log } from '@/lib/log';
+import { handleGitHubEvent } from '@/lib/router';
 
 type GitHubWebhook = {
   action?: string;
@@ -42,6 +44,20 @@ export const POST = async (request: Request) => {
     pullRequest: event.pull_request?.number,
     merged: event.pull_request?.merged
   });
+
+  if (isNew) {
+    after(async () => {
+      try {
+        await handleGitHubEvent(eventName, event);
+      } catch (error) {
+        log('error', 'github event routing failed', {
+          delivery,
+          event: eventName,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    });
+  }
 
   return new Response(null, { status: 200 });
 };
