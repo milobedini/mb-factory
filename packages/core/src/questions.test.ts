@@ -21,6 +21,7 @@ const asked = (position: number, overrides: Partial<AskedQuestion> = {}): AskedQ
   position,
   prompt: `Question ${position}?`,
   topic: null,
+  why: null,
   options: [`Yes ${position}`, `No ${position}`],
   answer: null,
   answerSource: null,
@@ -30,13 +31,17 @@ const asked = (position: number, overrides: Partial<AskedQuestion> = {}): AskedQ
 describe('readQuestions', () => {
   it('puts the suggested option first', () => {
     expect(readQuestions({ questions: [storage] })).toEqual([
-      { prompt: 'Where should images live?', topic: null, options: ['Vercel Blob', 'Local disk', 'S3'] }
+      { prompt: 'Where should images live?', topic: null, why: null, options: ['Vercel Blob', 'Local disk', 'S3'] }
     ]);
   });
 
   it('keeps a topic, and drops only the topic when it’s too long', () => {
     expect(readQuestions({ questions: [{ ...storage, topic: ' Image storage ' }] })[0]?.topic).toBe('Image storage');
     expect(readQuestions({ questions: [{ ...storage, topic: 'x'.repeat(61) }] })[0]?.topic).toBeNull();
+    expect(readQuestions({ questions: [{ ...storage, why: ' Blob is already set up. ' }] })[0]?.why).toBe(
+      'Blob is already set up.'
+    );
+    expect(readQuestions({ questions: [{ ...storage, why: 'x'.repeat(601) }] })[0]?.why).toBeNull();
   });
 
   it('matches the suggestion loosely and falls back to the first option', () => {
@@ -77,15 +82,17 @@ describe('questionElicitation', () => {
       position: 1,
       prompt: 'Where should images live?',
       topic: 'Image storage',
+      why: null,
       options: ['Vercel Blob', 'Local disk']
     },
     {
       position: 2,
       prompt: 'A long question about the address of each recipe page?',
       topic: null,
+      why: null,
       options: ['ID', 'Slug']
     },
-    { position: 3, prompt: 'Cache them?', topic: 'Caching', options: ['Yes', 'No'] }
+    { position: 3, prompt: 'Cache them?', topic: 'Caching', why: null, options: ['Yes', 'No'] }
   ];
   const [first, second, third] = round;
 
@@ -114,8 +121,15 @@ describe('questionElicitation', () => {
   });
 
   it('falls back to the clipped prompt when a question has no topic', () => {
-    const long = { position: 2, prompt: 'x'.repeat(100), topic: null, options: ['A', 'B'] };
+    const long = { position: 2, prompt: 'x'.repeat(100), topic: null, why: null, options: ['A', 'B'] };
     expect(first && questionElicitation(first, [first, long]).body).toContain(`2. ${'x'.repeat(60)}… → A`);
+  });
+
+  it('puts the reasoning under the question', () => {
+    const third = round[2];
+    expect(third && questionElicitation({ ...third, why: 'Caching hides edits for a minute.' }, round).body).toBe(
+      'Question 3 of 3: Cache them?\n\nCaching hides edits for a minute.\n\nSuggested: Yes. Pick an option, or reply in your own words.'
+    );
   });
 
   it('offers no shortcut or list on the last question, and no numbering on a single one', () => {

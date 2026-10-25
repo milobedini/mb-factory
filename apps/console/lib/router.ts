@@ -40,6 +40,7 @@ import {
   parseSlackAction,
   parseSlackThreadReply,
   prClosedText,
+  QUESTION_GONE,
   questionElicitation,
   queuedThought,
   resumeRequestFor,
@@ -49,8 +50,7 @@ import {
   shouldMoveIssue,
   shouldResume,
   slackFinishedText,
-  slackQuestionMessage,
-  slackQuestionSettled,
+  slackQuestionCard,
   slackReplyText,
   slackSpecGateMessage,
   slackSpecGateSettled,
@@ -76,7 +76,13 @@ import { currentPause } from './pause';
 import { findProject, findProjectByTeamKey, repositoryOf } from './projects';
 import type { RunWithWorkItem } from './runs';
 import { findRun } from './runs';
-import { postSlackEphemeral, postSlackMessage, respondToSlackAction, slackUserName } from './slack-api';
+import {
+  postSlackEphemeral,
+  postSlackMessage,
+  respondToSlackAction,
+  slackUserName,
+  updateSlackMessage
+} from './slack-api';
 import { latestReadings } from './usage';
 
 type WorkItem = typeof workItems.$inferSelect;
@@ -106,14 +112,30 @@ const postActivity = (workItem: WorkItem, content: AgentActivityContent, select?
     : Promise.resolve();
 };
 
-const replyInThread = (project: FactoryConfig, workItem: WorkItem, message: string | SlackMessage) => {
+// Returns the reply's `ts` when it was posted, for messages edited later.
+const replyInThread = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  message: string | SlackMessage
+): Promise<string | undefined> => {
   const channel = workItem.slackChannelId ?? project.slack?.channelId;
   const threadTs = workItem.slackThreadTs;
   const content = typeof message === 'string' ? { text: message } : message;
-  return channel && threadTs
-    ? attempt('slack reply', { issue: workItem.issueIdentifier }, () =>
-        postSlackMessage({ channel, threadTs, ...content })
-      )
+  if (!channel || !threadTs) {
+    return undefined;
+  }
+  try {
+    return await postSlackMessage({ channel, threadTs, ...content });
+  } catch (error) {
+    log('error', 'slack reply failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return undefined;
+  }
+};
+
+const editInThread = (project: FactoryConfig, workItem: WorkItem, ts: string, message: SlackMessage) => {
+  const channel = workItem.slackChannelId ?? project.slack?.channelId;
+  return channel
+    ? attempt('slack edit', { issue: workItem.issueIdentifier }, () => updateSlackMessage({ channel, ts, ...message }))
     : Promise.resolve();
 };
 
@@ -311,17 +333,32 @@ const dispatchRun = async (project: FactoryConfig, runId: string, retried = fals
   await holdRun(project, found, { kind: 'hold', state: decision.state, reason: 'concurrency' }, now);
 };
 
-const toAsked = ({ id, position, prompt, topic, options, answer, answerSource }: QuestionRow): AskedQuestion => ({
+const toAsked = ({ id, position, prompt, topic, why, options, answer, answerSource }: QuestionRow): AskedQuestion => ({
   id,
   position,
   prompt,
   topic,
+  why,
   options,
   answer,
   answerSource
 });
 
-const closeOpenQuestions = async (workItem: WorkItem): Promise<void> => {
+// Redraws a round's message in the thread from the database, so it shows the same state whoever answered and where.
+const refreshQuestionCard = async (project: FactoryConfig, workItem: WorkItem, runId: string): Promise<void> => {
+  const [rows, [asking]] = await Promise.all([
+    getDb().select().from(questions).where(eq(questions.runId, runId)),
+    getDb().select({ agent: runs.agent }).from(runs).where(eq(runs.id, runId)).limit(1)
+  ]);
+  const ts = rows[0]?.slackTs;
+  if (!ts || !asking) {
+    return;
+  }
+  const round = rows.map((row) => ({ ...toAsked(row), closed: row.closedAt !== null }));
+  await editInThread(project, workItem, ts, slackQuestionCard(asking.agent, round, workItem.issueUrl));
+};
+
+const closeOpenQuestions = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
   const closed = await getDb()
     .update(questions)
     .set({ closedAt: new Date() })
@@ -332,28 +369,33 @@ const closeOpenQuestions = async (workItem: WorkItem): Promise<void> => {
         inArray(questions.runId, getDb().select({ id: runs.id }).from(runs).where(eq(runs.workItemId, workItem.id)))
       )
     )
-    .returning({ id: questions.id });
-  if (closed.length > 0) {
-    log('info', 'open questions closed', { issue: workItem.issueIdentifier, count: closed.length });
+    .returning({ runId: questions.runId });
+  if (closed.length === 0) {
+    return;
   }
+  log('info', 'open questions closed', { issue: workItem.issueIdentifier, count: closed.length });
+  const runIds = [...new Set(closed.map(({ runId }) => runId))];
+  await Promise.all(runIds.map((runId) => refreshQuestionCard(project, workItem, runId)));
 };
 
-// One question in Linear as a select, and in the thread as text, each with the questions still to come.
+// One question in Linear as a select; the round's message in the thread moves on to it.
 const askQuestion = async (
   project: FactoryConfig,
   workItem: WorkItem,
   question: AskedQuestion,
-  round: AskedQuestion[]
+  round: AskedQuestion[],
+  runId: string
 ): Promise<void> => {
   const { body, options } = questionElicitation(question, round);
   await Promise.all([
     postActivity(workItem, { type: 'elicitation', body }, options),
-    replyInThread(project, workItem, slackQuestionMessage(question, round, workItem.issueUrl)),
     getDb().update(questions).set({ askedAt: new Date() }).where(eq(questions.id, question.id))
   ]);
+  await refreshQuestionCard(project, workItem, runId);
 };
 
-// Records the questions a run reported and asks the first; a repeated report asks nothing new.
+// Records the questions a run reported, posts the round's message in the thread and asks the first; a repeated report
+// asks nothing new.
 const startQuestions = async (
   project: FactoryConfig,
   workItem: WorkItem,
@@ -363,11 +405,12 @@ const startQuestions = async (
   const rows = await getDb()
     .insert(questions)
     .values(
-      reported.map(({ prompt, topic, options }, index) => ({
+      reported.map(({ prompt, topic, why, options }, index) => ({
         runId: run.id,
         position: index + 1,
         prompt,
         topic,
+        why,
         options
       }))
     )
@@ -376,9 +419,19 @@ const startQuestions = async (
   log('info', 'questions recorded', { runId: run.id, issue: workItem.issueIdentifier, count: rows.length });
   const round = rows.map(toAsked);
   const first = round.find(({ position }) => position === 1);
-  if (first) {
-    await askQuestion(project, workItem, first, round);
+  if (!first) {
+    return;
   }
+  const card = slackQuestionCard(
+    run.agent,
+    round.map((question) => ({ ...question, closed: false })),
+    workItem.issueUrl
+  );
+  const ts = await replyInThread(project, workItem, card);
+  if (ts) {
+    await getDb().update(questions).set({ slackTs: ts }).where(eq(questions.runId, run.id));
+  }
+  await askQuestion(project, workItem, first, round, run.id);
 };
 
 // The work item's open round: every question from the run that asked, answered or not.
@@ -398,6 +451,9 @@ const openRound = async (
   const rows = await getDb().select().from(questions).where(eq(questions.runId, open.runId));
   return { ...open, round: rows.map(toAsked) };
 };
+
+const currentQuestion = (round: AskedQuestion[]): AskedQuestion | undefined =>
+  round.filter(({ answer }) => answer === null).toSorted((a, b) => a.position - b.position)[0];
 
 // A reply while questions are open answers the next one; the last answer starts the stage that asked, once.
 // Returns false when nothing was open, so the reply goes the usual way.
@@ -420,10 +476,11 @@ const answerQuestion = async (project: FactoryConfig, workItem: WorkItem, body: 
   if (recorded.flat().length < result.answered.length) {
     // Another reply got there first; it carries the round on.
     log('warn', 'question already answered or closed', { issue: workItem.issueIdentifier, runId: open.runId });
+    await refreshQuestionCard(project, workItem, open.runId);
     return true;
   }
   if (result.next) {
-    await askQuestion(project, workItem, result.next, open.round);
+    await askQuestion(project, workItem, result.next, open.round, open.runId);
     return true;
   }
   const answered = open.round.map((question) => ({
@@ -431,6 +488,7 @@ const answerQuestion = async (project: FactoryConfig, workItem: WorkItem, body: 
     ...result.answered.find(({ id }) => id === question.id)
   }));
   log('info', 'questions answered', { issue: workItem.issueIdentifier, runId: open.runId, count: answered.length });
+  await refreshQuestionCard(project, workItem, open.runId);
   await dispatchRun(project, await createRun(project, workItem, answeredRequest(open.agent, answered), open.runId));
   return true;
 };
@@ -442,7 +500,7 @@ const createRun = async (
   parentRunId: string | null = null
 ): Promise<string> => {
   // New work on the item makes any questions still open moot.
-  await closeOpenQuestions(workItem);
+  await closeOpenQuestions(project, workItem);
   const [run] = await getDb()
     .insert(runs)
     .values({
@@ -645,7 +703,7 @@ const cancelOpenRuns = async (workItem: WorkItem, summary: string): Promise<numb
 };
 
 const stopWorkItem = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
-  await Promise.all([closeOpenQuestions(workItem), cancelOpenRuns(workItem, 'Stopped from Linear.')]);
+  await Promise.all([closeOpenQuestions(project, workItem), cancelOpenRuns(workItem, 'Stopped from Linear.')]);
   // Linear expects a final activity after a stop, whether or not anything was running.
   await Promise.all([
     postActivity(workItem, { type: 'response', body: STOPPED_RESPONSE }),
@@ -657,7 +715,7 @@ const stopWorkItem = async (project: FactoryConfig, workItem: WorkItem): Promise
 // Stops work for a reason outside the session; says so only if something was running or queued.
 const stopForCause = async (project: FactoryConfig, workItem: WorkItem, cause: StopCause): Promise<void> => {
   const text = stoppedText(cause);
-  await closeOpenQuestions(workItem);
+  await closeOpenQuestions(project, workItem);
   if ((await cancelOpenRuns(workItem, text)) === 0) {
     return;
   }
@@ -704,6 +762,30 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
 
 type ReplyFrom = { via: 'linear' } | { via: 'slack'; name: string };
 
+// The spec gate's message in the thread, once the gate is answered from anywhere.
+const settleSpecGate = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  request: RunRequest | undefined,
+  from: ReplyFrom
+): Promise<void> => {
+  const ts = workItem.specGateSlackTs;
+  if (workItem.stage !== 'spec_review' || !ts) {
+    return;
+  }
+  const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
+  const by = from.via === 'slack' ? `by ${from.name}` : 'in Linear';
+  await Promise.all([
+    editInThread(
+      project,
+      workItem,
+      ts,
+      slackSpecGateSettled(request?.trigger === 'spec_approved' ? 'approved' : 'changes', by, prUrl)
+    ),
+    getDb().update(workItems).set({ specGateSlackTs: null }).where(eq(workItems.id, workItem.id))
+  ]);
+};
+
 // A human's reply, from the Linear session or the Slack thread: mirrored to the other, then it answers the open
 // question, or the spec gate, or goes to the agent for the work item's stage.
 const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: string, from: ReplyFrom) => {
@@ -714,6 +796,7 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
     return;
   }
   const request = runRequestFor({ kind: 'prompted', body }, workItem.stage);
+  await settleSpecGate(project, workItem, request, from);
   if (!request) {
     // The Change something option on its own: ask what to change, and keep waiting in Spec Review.
     await Promise.all([
@@ -774,16 +857,14 @@ const findWorkItemById = async (id: string): Promise<WorkItem | undefined> => {
 };
 
 // A tap on a question's or the spec gate's button. Only the current question and a spec still in review take an
-// answer; a stale button is replaced by what happened to it.
+// answer; the messages themselves are redrawn by the answer, wherever it came from.
 export const handleSlackAction = async (payload: unknown): Promise<void> => {
   const action = parseSlackAction(payload);
   if (!action) {
     return;
   }
-  const respond = (message: SlackMessage | { text: string }, mode: 'replace' | 'ephemeral') =>
-    attempt('slack action response', { user: action.userId }, () =>
-      respondToSlackAction(action.responseUrl, message, mode)
-    );
+  const tellTapper = (text: string) =>
+    attempt('slack action response', { user: action.userId }, () => respondToSlackAction(action.responseUrl, text));
   const tapped = action.kind === 'question' ? await findQuestionWithWorkItem(action.questionId) : undefined;
   const workItem = action.kind === 'question' ? tapped?.workItem : await findWorkItemById(action.workItemId);
   const project = workItem && findProject(workItem.project);
@@ -792,34 +873,25 @@ export const handleSlackAction = async (payload: unknown): Promise<void> => {
   }
   if (!isAllowedSlackUser(project, action.userId)) {
     log('info', 'slack tap from someone not allowed', { issue: workItem.issueIdentifier, user: action.userId });
-    await respond({ text: notAllowedText(project) }, 'ephemeral');
+    await tellTapper(notAllowedText(project));
     return;
   }
-  const name = await slackUserName(action.userId).catch(() => action.userId);
   log('info', 'slack tap', { issue: workItem.issueIdentifier, user: action.userId, kind: action.kind });
-  if (action.kind === 'spec_gate') {
-    if (workItem.stage !== 'spec_review') {
-      await respond({ text: SPEC_GATE_GONE }, 'replace');
+  if (action.kind === 'spec_gate' && workItem.stage !== 'spec_review') {
+    await tellTapper(SPEC_GATE_GONE);
+    return;
+  }
+  if (action.kind === 'question') {
+    const open = await openRound(workItem);
+    if (!tapped || currentQuestion(open?.round ?? [])?.id !== action.questionId) {
+      await tellTapper(QUESTION_GONE);
+      if (tapped) {
+        await refreshQuestionCard(project, workItem, tapped.question.runId);
+      }
       return;
     }
-    await respond(slackSpecGateSettled(action.body, name), 'replace');
-    await handleReply(project, workItem, action.body, { via: 'slack', name });
-    return;
   }
-  if (!tapped) {
-    return;
-  }
-  const open = await openRound(workItem);
-  const round = open?.round ?? [];
-  const current = round.filter(({ answer }) => answer === null).toSorted((a, b) => a.position - b.position)[0];
-  if (current?.id !== action.questionId) {
-    const { question } = tapped;
-    const total = await getDb().$count(questions, eq(questions.runId, question.runId));
-    await respond(slackQuestionSettled({ ...toAsked(question), closed: question.closedAt !== null }, total), 'replace');
-    return;
-  }
-  const answer = applyAnswer(round, action.body)?.answered.find(({ id }) => id === current.id);
-  await respond(slackQuestionSettled({ ...current, ...answer, closed: false }, round.length, name), 'replace');
+  const name = await slackUserName(action.userId).catch(() => action.userId);
   await handleReply(project, workItem, action.body, { via: 'slack', name });
 };
 
@@ -860,14 +932,23 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
 
   await Promise.all([
     closing ? postActivity(workItem, closing) : undefined,
-    replyInThread(project, workItem, slackFinishedText({ ...run, prUrl, actionsRunUrl: run.actionsRunUrl })),
+    replyInThread(
+      project,
+      workItem,
+      slackFinishedText({ ...run, prUrl, actionsRunUrl: run.actionsRunUrl }, next.questions?.length)
+    ),
     next.stage ? moveWorkItem(project, workItem, next.stage) : undefined
   ]);
   if (next.questions) {
     await startQuestions(project, workItem, run, next.questions);
   }
   if (next.stage === 'spec_review') {
-    await replyInThread(project, workItem, slackSpecGateMessage(workItem.id, { prUrl, issueUrl: workItem.issueUrl }));
+    const gate = slackSpecGateMessage(workItem.id, { prUrl, issueUrl: workItem.issueUrl });
+    const ts = await replyInThread(project, workItem, gate);
+    await getDb()
+      .update(workItems)
+      .set({ specGateSlackTs: ts ?? null })
+      .where(eq(workItems.id, workItem.id));
   }
   if (next.request) {
     await dispatchRun(project, await createRun(project, workItem, next.request, run.id));

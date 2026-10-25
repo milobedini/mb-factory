@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 import type { FactoryConfig } from './config';
 import type { AskedQuestion, PositionedQuestion } from './questions';
-import { FOR_ALL, FOR_THE_REST, RECOMMENDED, topicOf } from './questions';
+import { FOR_ALL, FOR_THE_REST, laterThan, RECOMMENDED, topicOf } from './questions';
+import type { AgentRole } from './stages';
 
 // Block Kit is plain JSON; the console only passes these through to Slack.
 export type SlackBlock = Record<string, unknown>;
@@ -41,20 +42,74 @@ const button = (actionId: string, text: string, value: ButtonValue, primary = fa
   ...(primary ? { style: 'primary' } : {})
 });
 
-const questionHeading = (question: PositionedQuestion, total: number): string =>
-  total > 1 ? `Question ${question.position} of ${total}` : 'Question';
+const STAGE_NAMES: Record<AgentRole, string> = {
+  triage: 'Triage',
+  spec: 'Spec',
+  implement: 'Build',
+  review: 'Review',
+  verify: 'Verify'
+};
 
-// A question in the work item's thread: one button per option, the suggestion first and marked, the defaults shortcut
-// while more follow, and what's still to come. A reply in the thread answers it too.
-export const slackQuestionMessage = (
-  question: AskedQuestion,
-  round: PositionedQuestion[],
-  issueUrl: string
-): SlackMessage => {
-  const heading = questionHeading(question, round.length);
-  const later = round
-    .filter(({ position }) => position > question.position)
-    .toSorted((a, b) => a.position - b.position);
+const MAX_TYPED_ANSWER_SHOWN = 200;
+
+export type CardQuestion = AskedQuestion & { closed: boolean };
+
+const shownAnswer = ({ answer, answerSource }: CardQuestion): string => {
+  const text = escapeSlack(oneLine(answer ?? ''));
+  if (answerSource === 'text') {
+    return `“${clip(text, MAX_TYPED_ANSWER_SHOWN)}”`;
+  }
+  return answerSource === 'default' ? `*${text}* (default)` : `*${text}*`;
+};
+
+// A round of questions as one message in the thread, edited as it's answered from anywhere: answered questions
+// collapse to a line, the current one has a button per option (the suggestion first and marked, the defaults shortcut
+// while more follow), and the rest are listed with their suggestions. A reply in the thread answers it too.
+export const slackQuestionCard = (agent: AgentRole, round: CardQuestion[], issueUrl: string): SlackMessage => {
+  const ordered = round.toSorted((a, b) => a.position - b.position);
+  const closed = ordered.some((question) => question.closed);
+  const current = closed ? undefined : ordered.find(({ answer }) => answer === null);
+  const title = `${STAGE_NAMES[agent]} questions`;
+  const status = closed
+    ? 'no longer needed'
+    : current
+      ? ordered.length > 1
+        ? `${current.position} of ${ordered.length}`
+        : undefined
+      : 'all answered';
+  const answered = ordered
+    .filter(({ answer }) => answer !== null)
+    .map((question) => `✓ ${question.position}. ${escapeSlack(topicOf(question))} → ${shownAnswer(question)}`);
+  const later = current ? laterThan(current, ordered) : [];
+  const footer = current
+    ? `Reply in this thread to answer in your own words. Also in <${issueUrl}|Linear>.`
+    : closed
+      ? 'The work moved on before these were all answered.'
+      : `The ${agent} run starts again with your answers.`;
+  return {
+    text: current ? `${title}: ${oneLine(current.prompt)}` : `${title}: ${status}`,
+    blocks: [
+      section(`*${title}*${status ? ` · ${status}` : ''}`),
+      ...(answered.length > 0 ? [section(answered.join('\n'))] : []),
+      ...(current ? currentQuestionBlocks(current, later) : []),
+      ...(later.length > 0
+        ? [
+            context(
+              [
+                'Still to come, with my suggestions:',
+                ...later.map(
+                  (next) => `${next.position}. ${escapeSlack(topicOf(next))} → ${escapeSlack(next.options[0] ?? '')}`
+                )
+              ].join('\n')
+            )
+          ]
+        : []),
+      context(footer)
+    ]
+  };
+};
+
+const currentQuestionBlocks = (question: CardQuestion, later: PositionedQuestion[]): SlackBlock[] => {
   const shortcut = question.position === 1 ? FOR_ALL : FOR_THE_REST;
   const labels = question.options.map((option, index) => (index === 0 ? `${RECOMMENDED}${option}` : option));
   const listed = labels.some((label) => label.length > BUTTON_SHOWS)
@@ -66,39 +121,12 @@ export const slackQuestionMessage = (
     ),
     ...(later.length > 0 ? [button('defaults', shortcut, { q: question.id, a: shortcut })] : [])
   ];
-  const upcoming = later.map(
-    (next) => `${next.position}. ${escapeSlack(topicOf(next))} → ${escapeSlack(next.options[0] ?? '')}`
-  );
-  return {
-    text: `${heading}: ${oneLine(question.prompt)}`,
-    blocks: [
-      section(`*${heading}:* ${escapeSlack(question.prompt)}`),
-      ...listed,
-      { type: 'actions', elements: buttons },
-      ...(upcoming.length > 0
-        ? [context(`Still to come, with my suggestions: ${upcoming.join(' · ')}. ${shortcut} takes them all.`)]
-        : []),
-      context(`Or reply in this thread in your own words. Also in <${issueUrl}|Linear>.`)
-    ]
-  };
-};
-
-// What a question's message becomes once it's settled, so its buttons can't be tapped again.
-export const slackQuestionSettled = (
-  question: AskedQuestion & { closed: boolean },
-  total: number,
-  answeredBy?: string
-): SlackMessage => {
-  const heading = questionHeading(question, total);
-  const by = answeredBy ? ` by ${escapeSlack(answeredBy)}` : '';
-  const outcome =
-    question.answer !== null
-      ? `Answered${by}: *${escapeSlack(question.answer)}*`
-      : question.closed
-        ? 'No longer needed: the work moved on.'
-        : 'Waiting for the earlier questions first.';
-  const text = `${heading}: ${oneLine(question.prompt)}`;
-  return { text, blocks: [section(`*${heading}:* ${escapeSlack(question.prompt)}`), context(outcome)] };
+  return [
+    section(`*${question.position}. ${escapeSlack(question.prompt)}*`),
+    ...(question.why ? [context(escapeSlack(question.why))] : []),
+    ...listed,
+    { type: 'actions', elements: buttons }
+  ];
 };
 
 export const SPEC_APPROVE = 'Approve';
@@ -128,15 +156,26 @@ export const slackSpecGateMessage = (
   };
 };
 
-export const slackSpecGateSettled = (answer: string, answeredBy: string): SlackMessage => {
+// The gate once answered, wherever: `by` reads "by Milo" or "in Linear".
+export const slackSpecGateSettled = (
+  outcome: 'approved' | 'changes',
+  by: string,
+  prUrl: string | null
+): SlackMessage => {
+  const spec = prUrl ? `<${prUrl}|The spec>` : 'The spec';
   const text =
-    answer === SPEC_APPROVE
-      ? `Spec approved by ${escapeSlack(answeredBy)}.`
-      : `${escapeSlack(answeredBy)} asked for changes to the spec.`;
-  return { text, blocks: [section(text)] };
+    outcome === 'approved'
+      ? `✓ ${spec} was approved ${escapeSlack(by)}. Building starts next.`
+      : `Changes to ${prUrl ? `<${prUrl}|the spec>` : 'the spec'} were asked for ${escapeSlack(by)}.`;
+  return {
+    text: outcome === 'approved' ? 'The spec was approved.' : 'Changes to the spec were asked for.',
+    blocks: [section(text)]
+  };
 };
 
 export const SPEC_GATE_GONE = 'The spec isn’t waiting for approval any more.';
+
+export const QUESTION_GONE = 'That question was already answered, or the work moved on.';
 
 export const notAllowedText = (config: FactoryConfig): string =>
   `Only the people listed for ${config.alias} can answer the factory here. Ask one of them, or reply in Linear.`;

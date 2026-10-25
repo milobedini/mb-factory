@@ -13,6 +13,7 @@ const MAX_OPTIONS = 4;
 const MAX_OPTION_LENGTH = 80;
 const MAX_PROMPT_LENGTH = 1000;
 const MAX_TOPIC_LENGTH = 60;
+const MAX_WHY_LENGTH = 600;
 const MAX_ANSWER_LENGTH = 2000;
 
 export const FOR_ALL = 'Use the defaults for all';
@@ -35,6 +36,8 @@ const questionSchema = z
     prompt: z.string().trim().min(1).max(MAX_PROMPT_LENGTH),
     // A few words naming the decision, for the list of questions still to come.
     topic: z.string().trim().min(1).max(MAX_TOPIC_LENGTH).nullish().catch(null),
+    // Why it matters or what it trades off, shown smaller under the question.
+    why: z.string().trim().min(1).max(MAX_WHY_LENGTH).nullish().catch(null),
     options: z.array(z.string().trim().min(1).max(MAX_OPTION_LENGTH)).min(2).max(MAX_OPTIONS),
     suggested: z.string().trim().nullish()
   })
@@ -46,7 +49,7 @@ const questionSchema = z
   });
 
 // A question as the router asks it: the suggested option first.
-export type Question = { prompt: string; topic: string | null; options: string[] };
+export type Question = { prompt: string; topic: string | null; why: string | null; options: string[] };
 
 const reportQuestionsSchema = z.looseObject({ questions: z.array(z.unknown()).nullish() });
 
@@ -59,10 +62,17 @@ export const readQuestions = (report: unknown): Question[] =>
       if (!read.success) {
         return [];
       }
-      const { prompt, topic, options, suggested } = read.data;
+      const { prompt, topic, why, options, suggested } = read.data;
       const first = options.find((option) => suggested && normalise(option) === normalise(suggested)) ?? options[0];
       return first
-        ? [{ prompt, topic: topic ?? null, options: [first, ...options.filter((option) => option !== first)] }]
+        ? [
+            {
+              prompt,
+              topic: topic ?? null,
+              why: why ?? null,
+              options: [first, ...options.filter((option) => option !== first)]
+            }
+          ]
         : [];
     })
     .slice(0, MAX_QUESTIONS);
@@ -76,7 +86,7 @@ export const topicOf = ({ topic, prompt }: Question): string => {
   return flat.length > MAX_TOPIC_LENGTH ? `${flat.slice(0, MAX_TOPIC_LENGTH)}…` : flat;
 };
 
-const laterThan = (question: PositionedQuestion, round: PositionedQuestion[]): PositionedQuestion[] =>
+export const laterThan = (question: PositionedQuestion, round: PositionedQuestion[]): PositionedQuestion[] =>
   round.filter(({ position }) => position > question.position).toSorted((a, b) => a.position - b.position);
 
 // What the router posts for one question: a Linear select, suggested option first. While more questions follow, it
@@ -103,6 +113,7 @@ export const questionElicitation = (
   return {
     body: [
       `${heading}${question.prompt}`,
+      ...(question.why ? ['', question.why] : []),
       '',
       `Suggested: ${question.options[0]}. Pick an option, or reply in your own words.`,
       ...upcoming
@@ -127,7 +138,7 @@ export type AnswerResult = { answered: AnswerUpdate[]; next: AskedQuestion | und
 const clipAnswer = (text: string): string =>
   text.length > MAX_ANSWER_LENGTH ? `${text.slice(0, MAX_ANSWER_LENGTH)}…` : text;
 
-const byPosition = (questions: AskedQuestion[]): AskedQuestion[] =>
+export const byPosition = (questions: AskedQuestion[]): AskedQuestion[] =>
   questions.toSorted((a, b) => a.position - b.position);
 
 // A reply answers the first open question: an option by its label, the defaults shortcut for it and every later one,

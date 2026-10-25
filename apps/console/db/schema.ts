@@ -70,6 +70,8 @@ export const workItems = pgTable(
     origin: text({ enum: WORK_ORIGINS }).notNull(),
     slackChannelId: text(),
     slackThreadTs: text(),
+    // The spec approval message in the thread while Spec Review waits, edited once it's answered.
+    specGateSlackTs: text(),
     requester: text(),
     stage: text({ enum: STAGES }).notNull(),
     reviewRounds: integer().notNull().default(0),
@@ -142,6 +144,8 @@ export const questions = pgTable(
     prompt: text().notNull(),
     // A few words naming the decision, for the list of questions still to come.
     topic: text(),
+    // Why it matters, shown under the question.
+    why: text(),
     // The suggested option first.
     options: text().array().notNull(),
     answer: text(),
@@ -149,7 +153,9 @@ export const questions = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     askedAt: timestamp({ withTimezone: true }),
     answeredAt: timestamp({ withTimezone: true }),
-    closedAt: timestamp({ withTimezone: true })
+    closedAt: timestamp({ withTimezone: true }),
+    // The round's message in the work item's Slack thread, edited as it's answered; the same on every row of a round.
+    slackTs: text()
   },
   (table) => [
     uniqueIndex('questions_run_position_idx').on(table.runId, table.position),

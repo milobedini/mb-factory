@@ -116,7 +116,7 @@ export {
 export { decryptSecret, deriveKey, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
-export type { SlackAction, SlackBlock, SlackMessage, SlackThreadReply } from './slack';
+export type { CardQuestion, SlackAction, SlackBlock, SlackMessage, SlackThreadReply } from './slack';
 export {
   escapeSlack,
   isAllowedSlackUser,
@@ -124,12 +124,12 @@ export {
   notAllowedText,
   parseSlackAction,
   parseSlackThreadReply,
+  QUESTION_GONE,
   SPEC_APPROVE,
   SPEC_CHANGE,
   SPEC_GATE_GONE,
   slackPlainText,
-  slackQuestionMessage,
-  slackQuestionSettled,
+  slackQuestionCard,
   slackSpecGateMessage,
   slackSpecGateSettled
 } from './slack';

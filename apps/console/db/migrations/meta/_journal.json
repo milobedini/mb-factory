@@ -64,6 +64,13 @@
       "when": 1792947550935,
       "tag": "0008_productive_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792949126615,
+      "tag": "0009_clear_husk",
+      "breakpoints": true
     }
   ]
 }

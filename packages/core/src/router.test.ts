@@ -443,14 +443,14 @@ describe('nextStepAfterRun', () => {
 
   it('hands the questions a stage reported to the router to ask', () => {
     expect(nextStepAfterRun(asking('triage'), loop)).toEqual({
-      questions: [{ prompt: 'Store images where?', topic: null, options: ['Blob', 'Disk'] }]
+      questions: [{ prompt: 'Store images where?', topic: null, why: null, options: ['Blob', 'Disk'] }]
     });
   });
 
   it('asks a spec’s questions while it waits in Spec Review', () => {
     expect(nextStepAfterRun(asking('spec'), { ...loop, hasPr: true })).toEqual({
       stage: 'spec_review',
-      questions: [{ prompt: 'Store images where?', topic: null, options: ['Blob', 'Disk'] }]
+      questions: [{ prompt: 'Store images where?', topic: null, why: null, options: ['Blob', 'Disk'] }]
     });
   });
 
@@ -690,6 +690,22 @@ describe('Slack text', () => {
         actionsRunUrl: null
       })
     ).toBe('The implement run finished. Added the page. <https://github.com/milobedini/tastebook/pull/4|PR>');
+  });
+
+  it('points at the questions a run asked instead of its summary', () => {
+    const asked = {
+      agent: 'spec' as const,
+      status: 'finished' as const,
+      outcome: 'needs_input' as const,
+      summary: 'Six questions before the spec.',
+      prUrl: null,
+      actionsRunUrl: 'https://github.com/milobedini/tastebook/actions/runs/2'
+    };
+    expect(slackFinishedText(asked, 6)).toBe(
+      'The spec run has 6 questions for you below. <https://github.com/milobedini/tastebook/actions/runs/2|run log>'
+    );
+    expect(slackFinishedText(asked, 1)).toMatch(/^The spec run has a question for you below\./);
+    expect(slackFinishedText(asked)).toMatch(/^The spec run needs an answer\. Six questions/);
   });
 
   it('says a limit-hit run will resume', () => {

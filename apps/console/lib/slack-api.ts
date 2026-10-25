@@ -46,6 +46,16 @@ export const postSlackMessage = async ({
   return ts;
 };
 
+// Edits one of the app's own messages in place.
+export const updateSlackMessage = async ({
+  channel,
+  ts,
+  text,
+  blocks
+}: SlackMessage & { channel: string; ts: string }): Promise<void> => {
+  await callSlack('chat.update', { channel, ts, text, blocks });
+};
+
 // A message only one person sees, such as why their reply wasn't taken.
 export const postSlackEphemeral = async ({
   channel,
@@ -61,20 +71,12 @@ export const postSlackEphemeral = async ({
   await callSlack('chat.postEphemeral', { channel, user, text, thread_ts: threadTs ?? undefined });
 };
 
-// Answers a button tap through its response URL: replacing the tapped message, or privately to whoever tapped.
-export const respondToSlackAction = async (
-  responseUrl: string,
-  message: SlackMessage | { text: string },
-  mode: 'replace' | 'ephemeral'
-): Promise<void> => {
+// Answers a button tap privately, to whoever tapped, through its response URL.
+export const respondToSlackAction = async (responseUrl: string, text: string): Promise<void> => {
   const response = await fetch(responseUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify(
-      mode === 'replace'
-        ? { replace_original: true, ...message }
-        : { response_type: 'ephemeral', replace_original: false, ...message }
-    )
+    body: JSON.stringify({ response_type: 'ephemeral', replace_original: false, text })
   });
   if (!response.ok) {
     throw new Error(`Slack response URL failed with ${response.status}`);

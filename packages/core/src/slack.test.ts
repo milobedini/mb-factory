@@ -10,8 +10,7 @@ import {
   parseSlackAction,
   parseSlackThreadReply,
   slackPlainText,
-  slackQuestionMessage,
-  slackQuestionSettled,
+  slackQuestionCard,
   slackSpecGateMessage,
   slackSpecGateSettled
 } from './slack';
@@ -29,6 +28,7 @@ const asked = (position: number, overrides: Partial<AskedQuestion> = {}): AskedQ
   position,
   prompt: `Question ${position}?`,
   topic: null,
+  why: null,
   options: [`Yes ${position}`, `No ${position}`],
   answer: null,
   answerSource: null,
@@ -43,20 +43,28 @@ type Block = {
 
 const blocksOf = (message: { blocks: unknown[] }): Block[] => message.blocks as Block[];
 
-describe('slackQuestionMessage', () => {
-  const round = [
-    asked(1, { prompt: 'Store <img> tags?' }),
-    asked(2, { topic: 'Recipe address', options: ['Slug', 'ID'] }),
-    asked(3)
-  ];
+describe('slackQuestionCard', () => {
+  const card = (overrides: Partial<AskedQuestion>[] = []) =>
+    [asked(1), asked(2, { topic: 'Recipe address', options: ['Slug', 'ID'] }), asked(3)].map((question, index) => ({
+      ...question,
+      ...overrides[index],
+      closed: false
+    }));
+  const textOf = (blocks: Block[]) => JSON.stringify(blocks);
+  const buttonsOf = (blocks: Block[]) => blocks.find(({ type }) => type === 'actions')?.elements ?? [];
 
-  it('offers each option as a button, the suggestion marked, with the shortcut and what follows', () => {
-    const [first] = round;
-    const message = first && slackQuestionMessage(first, round, issueUrl);
-    const blocks = message ? blocksOf(message) : [];
-    expect(message?.text).toBe('Question 1 of 3: Store <img> tags?');
-    expect(blocks[0]?.text?.text).toBe('*Question 1 of 3:* Store &lt;img&gt; tags?');
-    const buttons = blocks.find(({ type }) => type === 'actions')?.elements ?? [];
+  it('asks the first question with a button per option, the suggestion marked, and lists the rest', () => {
+    const message = slackQuestionCard(
+      'spec',
+      card([{ prompt: 'Store <img> tags?', why: 'Tags bloat <html>.' }]),
+      issueUrl
+    );
+    const blocks = blocksOf(message);
+    expect(message.text).toBe('Spec questions: Store <img> tags?');
+    expect(blocks[0]?.text?.text).toBe('*Spec questions* · 1 of 3');
+    expect(blocks[1]?.text?.text).toBe('*1. Store &lt;img&gt; tags?*');
+    expect(textOf(blocks)).toContain('Tags bloat &lt;html&gt;.');
+    const buttons = buttonsOf(blocks);
     expect(buttons.map(({ text }) => (typeof text === 'string' ? text : text.text))).toEqual([
       '(R) Yes 1',
       'No 1',
@@ -68,32 +76,56 @@ describe('slackQuestionMessage', () => {
       { q: questionId, a: 'No 1' },
       { q: questionId, a: 'Use the defaults for all' }
     ]);
-    expect(JSON.stringify(blocks)).toContain('2. Recipe address → Slug · 3. Question 3? → Yes 3');
+    expect(textOf(blocks)).toContain(
+      'Still to come, with my suggestions:\\n2. Recipe address → Slug\\n3. Question 3? → Yes 3'
+    );
+  });
+
+  it('collapses answered questions to a line and moves on, with the shortcut for the rest', () => {
+    const blocks = blocksOf(slackQuestionCard('spec', card([{ answer: 'No 1', answerSource: 'option' }]), issueUrl));
+    expect(blocks[0]?.text?.text).toBe('*Spec questions* · 2 of 3');
+    expect(blocks[1]?.text?.text).toBe('✓ 1. Question 1? → *No 1*');
+    expect(blocks[2]?.text?.text).toBe('*2. Question 2?*');
+    expect(buttonsOf(blocks).at(-1)?.text).toMatchObject({ text: 'Use the defaults for the rest' });
+  });
+
+  it('shows typed answers quoted and defaults marked, and says the stage runs again once all are answered', () => {
+    const blocks = blocksOf(
+      slackQuestionCard(
+        'spec',
+        card([
+          { answer: 'Use <slugs>', answerSource: 'text' },
+          { answer: 'Slug', answerSource: 'default' },
+          { answer: 'Yes 3', answerSource: 'default' }
+        ]),
+        issueUrl
+      )
+    );
+    expect(blocks[0]?.text?.text).toBe('*Spec questions* · all answered');
+    expect(blocks[1]?.text?.text).toBe(
+      '✓ 1. Question 1? → “Use &lt;slugs&gt;”\n✓ 2. Recipe address → *Slug* (default)\n✓ 3. Question 3? → *Yes 3* (default)'
+    );
+    expect(buttonsOf(blocks)).toEqual([]);
+    expect(textOf(blocks)).toContain('The spec run starts again with your answers.');
   });
 
   it('lists long options in full, since Slack cuts button text short', () => {
-    const long = asked(1, { options: ['Title and description only; new fields are a separate issue', 'More'] });
-    const listed = blocksOf(slackQuestionMessage(long, [long], issueUrl))[1];
-    expect(listed?.text?.text).toBe('• (R) Title and description only; new fields are a separate issue\n• More');
+    const long = card([{ options: ['Title and description only; new fields are a separate issue', 'More'] }]);
+    expect(blocksOf(slackQuestionCard('spec', long, issueUrl))[2]?.text?.text).toBe(
+      '• (R) Title and description only; new fields are a separate issue\n• More'
+    );
   });
 
-  it('offers no shortcut on the last question', () => {
-    const last = round[2];
-    const blocks = last ? blocksOf(slackQuestionMessage(last, round, issueUrl)) : [];
-    expect(blocks.find(({ type }) => type === 'actions')?.elements).toHaveLength(2);
-    expect(JSON.stringify(blocks)).not.toContain('Still to come');
-  });
-});
-
-describe('slackQuestionSettled', () => {
-  it('replaces the buttons with the answer and who gave it', () => {
-    const settled = slackQuestionSettled({ ...asked(2, { answer: 'Slug <x>' }), closed: false }, 3, 'Milo');
-    expect(JSON.stringify(settled.blocks)).toContain('Answered by Milo: *Slug &lt;x&gt;*');
-    expect(JSON.stringify(settled.blocks)).not.toContain('button');
-  });
-
-  it('says a closed question is no longer needed', () => {
-    expect(JSON.stringify(slackQuestionSettled({ ...asked(1), closed: true }, 1).blocks)).toContain('No longer needed');
+  it('offers no shortcut on the last question, and says when the work moved on', () => {
+    const last = card([
+      { answer: 'Yes 1', answerSource: 'option' },
+      { answer: 'Slug', answerSource: 'option' }
+    ]);
+    expect(buttonsOf(blocksOf(slackQuestionCard('triage', last, issueUrl)))).toHaveLength(2);
+    const closed = card().map((question) => ({ ...question, closed: true }));
+    const blocks = blocksOf(slackQuestionCard('implement', closed, issueUrl));
+    expect(blocks[0]?.text?.text).toBe('*Build questions* · no longer needed');
+    expect(buttonsOf(blocks)).toEqual([]);
   });
 });
 
@@ -111,9 +143,14 @@ describe('the spec gate', () => {
     expect(JSON.stringify(blocks)).toContain('Approve: <your suggestions>');
   });
 
-  it('says who approved or asked for changes', () => {
-    expect(slackSpecGateSettled('Approve', 'Milo').text).toBe('Spec approved by Milo.');
-    expect(slackSpecGateSettled('Change something', 'Milo').text).toBe('Milo asked for changes to the spec.');
+  it('says who approved or asked for changes, and where', () => {
+    const pr = 'https://github.com/milobedini/tastebook/pull/11';
+    expect(blocksOf(slackSpecGateSettled('approved', 'by Milo', pr))[0]?.text?.text).toBe(
+      `✓ <${pr}|The spec> was approved by Milo. Building starts next.`
+    );
+    expect(blocksOf(slackSpecGateSettled('changes', 'in Linear', null))[0]?.text?.text).toBe(
+      'Changes to the spec were asked for in Linear.'
+    );
   });
 });
 

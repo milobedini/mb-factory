@@ -558,29 +558,33 @@ export const slackReplyText = (body: string, issueUrl: string): string => {
 
 const OUTCOME_COPY: Record<RunOutcome, string> = {
   done: 'finished',
-  needs_input: 'needs an answer in Linear',
+  needs_input: 'needs an answer',
   blocked: 'is blocked',
   failed: 'failed',
   declined: 'declined the work',
   stopped: 'stopped'
 };
 
+// A run that asked questions points at them instead of repeating its summary, which only says it has questions.
 export const slackFinishedText = (
-  run: FinishedRun & { prUrl: string | null; actionsRunUrl: string | null }
+  run: FinishedRun & { prUrl: string | null; actionsRunUrl: string | null },
+  questions = 0
 ): string => {
   const verdict =
     run.status === 'limit_hit'
       ? 'hit the usage limit; it resumes once the window resets'
-      : run.outcome
-        ? OUTCOME_COPY[run.outcome]
-        : run.status;
+      : questions > 0
+        ? `has ${questions === 1 ? 'a question' : `${questions} questions`} for you below`
+        : run.outcome
+          ? OUTCOME_COPY[run.outcome]
+          : run.status;
   const links = [
     run.prUrl ? slackLink(run.prUrl, 'PR') : undefined,
     run.actionsRunUrl ? slackLink(run.actionsRunUrl, 'run log') : undefined
   ].filter((link) => link !== undefined);
   return [
     `The ${run.agent} run ${verdict}.`,
-    run.summary ? escapeSlack(run.summary) : undefined,
+    run.summary && questions === 0 ? escapeSlack(run.summary) : undefined,
     links.length > 0 ? links.join(' · ') : undefined
   ]
     .filter((part) => part !== undefined)
