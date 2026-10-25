@@ -25,7 +25,7 @@ _Last updated 2026-10-25._ **Current phase: 2 (All stages and the Runs page).** 
 
 Exit criterion: a medium feature goes end to end with one spec approval and one merge, fully traceable in the console.
 
-1. **PR and issue events (built 2026-10-25; waiting on migration `0005` and the push).** Decisions in `packages/core/src/work-item-events.ts`, I/O in `handleGitHubEvent` / `handleIssueUpdate` (`apps/console/lib/router.ts`); see "Following GitHub and Linear" below. To finish: apply `0005` (`db:migrate`), set TAS-7's stage to `done` and TAS-8's to `awaiting_merge` (both stale from before this step), push, then check live: merging PR #5 or #6 sets `done` and replies "PR #n merged." in the Slack thread.
+1. **PR and issue events (shipped 2026-10-25).** Decisions in `packages/core/src/work-item-events.ts`, I/O in `handleGitHubEvent` / `handleIssueUpdate` (`apps/console/lib/router.ts`); see "Following GitHub and Linear" below. Migration `0005` applied; TAS-7 (`done`) and TAS-8 (`awaiting_merge`) were corrected by hand, being stale from before this step. Still to see live: merging PR #5 or #6 sets `done` and replies "PR #n merged." in the Slack thread.
 2. **Triage.** Delegation starts a triage run (`models.triage`, status Researching) instead of implement. Its report's `next` (`spec`, `implement` or `human`) becomes the stage machine's `triaged` event and the next run. `prompted` must route by the work item's stage, not always to implement (`runRequestFor` in `packages/core/src/router.ts`).
 3. **Spec and the Spec Review gate.** The spec run writes `specs/<ID>.md` in a draft PR and ends with a `select` elicitation (Approve, Change something). The reply arrives as `prompted`: approve → implement with `trigger: spec_approved` on the spec branch; anything else → spec again with the reply as the prompt. Decide how to read a free-text reply (the `linear-reporting` skill says to read it for intent).
 4. **Review loop.** An implement run that ends `done` with a PR goes to In Review and a review run (`models.review`), not Awaiting Merge (`stageAfterRun`). The review report's verdict: `accepted` → Awaiting Merge; `revision_needed` → implement with `trigger: review_findings` and `round`, up to `review.maxRounds` (2); `human_decision_needed` → Awaiting Merge with a note. A failed CI check on the PR → implement with `trigger: ci_failed`. The verify stage needs evidence hosting first (Open questions).
@@ -94,6 +94,7 @@ The GitHub webhook (`pull_request`, `push`, among others) and Linear's app webho
 - Narrower Linear credential for runs, and transcript storage: see Open questions.
 - `factory init` must create the `factory` label in GitHub and Linear (both exist for Tastebook now).
 - Usage readings in hand-written SQL need `"window"` quoted (reserved word); Drizzle quotes it.
+- `db:migrate` can stall silently on Neon's websocket driver; stop it and run it again (2026-10-25: the second run applied `0005` in seconds).
 
 ### Things learnt during setup
 
