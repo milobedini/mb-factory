@@ -17,6 +17,9 @@ const MAX_ANSWER_LENGTH = 2000;
 
 const FOR_ALL = 'Use the defaults for all';
 const FOR_THE_REST = 'Use the defaults for the rest';
+// Marks the suggested option in a select; a tap sends the label back with it, so replies are read without it.
+const RECOMMENDED = ' (R)';
+const RECOMMENDED_MARK = /\s*\(r\)$/;
 const DEFAULTS_REPLIES = [FOR_ALL, FOR_THE_REST, 'use the defaults', 'use defaults', 'defaults'].map((reply) =>
   reply.toLowerCase()
 );
@@ -104,7 +107,10 @@ export const questionElicitation = (
       `Suggested: ${question.options[0]}. Pick an option, or reply in your own words.`,
       ...upcoming
     ].join('\n'),
-    options: [...question.options, ...(later.length > 0 ? [shortcut] : [])]
+    options: [
+      ...question.options.map((option, index) => (index === 0 ? `${option}${RECOMMENDED}` : option)),
+      ...(later.length > 0 ? [shortcut] : [])
+    ]
   };
 };
 
@@ -132,7 +138,7 @@ export const applyAnswer = (round: AskedQuestion[], body: string): AnswerResult 
   if (!current) {
     return undefined;
   }
-  const reply = normalise(body);
+  const reply = normalise(body).replace(RECOMMENDED_MARK, '');
   if (DEFAULTS_REPLIES.includes(reply)) {
     return {
       answered: open.map(({ id, options }) => ({ id, answer: options[0] ?? '', answerSource: 'default' })),

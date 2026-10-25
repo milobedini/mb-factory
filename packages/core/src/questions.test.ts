@@ -103,7 +103,7 @@ describe('questionElicitation', () => {
         '',
         'Use the defaults for all takes my suggestion here and for each of these.'
       ].join('\n'),
-      options: ['Vercel Blob', 'Local disk', 'Use the defaults for all']
+      options: ['Vercel Blob (R)', 'Local disk', 'Use the defaults for all']
     });
   });
 
@@ -122,7 +122,7 @@ describe('questionElicitation', () => {
   it('offers no shortcut or list on the last question, and no numbering on a single one', () => {
     expect(third && questionElicitation(third, round)).toEqual({
       body: 'Question 3 of 3: Cache them?\n\nSuggested: Yes. Pick an option, or reply in your own words.',
-      options: ['Yes', 'No']
+      options: ['Yes (R)', 'No']
     });
     expect(first && questionElicitation(first, [first]).body).toMatch(/^Where should images live\?/);
   });
@@ -139,6 +139,12 @@ describe('applyAnswer', () => {
   it('matches a typed option regardless of case and trailing punctuation', () => {
     expect(applyAnswer([asked(1)], ' no 1. ')?.answered).toEqual([
       { id: 'q1', answer: 'No 1', answerSource: 'option' }
+    ]);
+  });
+
+  it('reads the recommended option’s tap without its mark, and stores the option as given', () => {
+    expect(applyAnswer([asked(1)], 'Yes 1 (R)')?.answered).toEqual([
+      { id: 'q1', answer: 'Yes 1', answerSource: 'option' }
     ]);
   });
 
