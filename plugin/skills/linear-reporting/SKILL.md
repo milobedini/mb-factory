@@ -44,6 +44,7 @@ Batch every question the stage has into one elicitation; a second round only for
 > <issue>. Suggest: <fix>. Going with that unless someone objects.
 
 - Ask only what the issue, the code and earlier stage briefs can't answer.
+- Number the questions, and offer the defaults as one tap: a `select` with a single option, `--option "Use these defaults=Use these defaults"`. End the message with "Tap Use these defaults, or reply with the numbers you'd change." Picking it means every default stands; a typed reply changes only the questions it names.
 - A **gate** is different: spec approval, slicing approval, or a decision that changes what gets built. A gate needs an explicit answer, so offer it as a `select` (`--option "Approve=approve" --option "Change something=change"`) and still end with the default you'd pick. Silence never passes a gate.
 - The human may answer in free text instead of picking an option. Read it for intent, except at the spec approval gate, which the router reads (see the `spec` agent).
 - Record each answer where the next stage will find it: in the spec's Decisions as `Asked: <question, short> → <answer>`, or in the stage brief.
