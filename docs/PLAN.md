@@ -28,8 +28,9 @@ Phase 0 exit check passed 2026-10-24 (TAS-6). Spike done 2026-10-25 (tastebook P
 2. ~~Reusable `.github/workflows/stage.yml` and its caller in `tastebook`.~~ Done 2026-10-25: TAS-7 (page not found) ran end to end, dispatched by hand. tastebook PR #4 merged and TAS-7 went to Done.
 3. ~~Router.~~ Done 2026-10-25: TAS-8 (tab titles) went from delegation to tastebook PR #5 with no hand step. See "The router" below.
 4. ~~Governor job and local reporter.~~ Done 2026-10-25: the first manual tick released with nothing waiting and no probe, and the status line's first report recorded both windows as `local` (4% and 2%, matching the run readings). The probe path in Actions hasn't run yet; step 6's forced pause exercises it. See "The governor job" below.
-5. **Console login and the Usage page: built 2026-10-25, not yet deployed.** Waiting on the GitHub OAuth app and the governor token (below). See "The console login and Usage page" below.
-6. Exit check: a real small TAS change through the router, and a forced pause that queues and releases a dispatch. (The first criterion, a small real change landing as a PR with its run recorded, was met by TAS-7 by hand.)
+5. ~~Console login and the Usage page.~~ Done 2026-10-25: sign-in works, and Refresh probed (5% and 3%, source `probe`). See "The console login and Usage page" below.
+6. ~~Exit check.~~ Passed 2026-10-25. TAS-8 and TAS-9 went through the router with no hand step (PRs #5 and #6). TAS-9 was delegated while the factory was paused: its run was held as `manual_pause`, with "Queued: the factory is paused from the console" in Linear and Slack, and was dispatched 206 ms after Resume. It finished in 65 s, 3 turns, an API-equivalent $0.39, and moved the issue Todo → Building → Awaiting Merge by itself.
+7. **Watch:** the governor's schedule hadn't fired by 08:56 UTC, about 50 minutes after `governor.yml` reached `main` (only the two manual runs). GitHub is often slow to start a new schedule; check that it runs before relying on it.
 
 #### Where things stand (2026-10-25)
 
@@ -76,7 +77,7 @@ Set up 2026-10-25: `CLAUDE_CODE_OAUTH_TOKEN` (Actions secret in this repo), `USA
 - **Refresh** dispatches `governor.yml` with `probe: true` (`GITHUB_GOVERNOR_TOKEN`); readings arrive about a minute later.
 - **Not built (Phase 4):** usage over time with runs overlaid, the factory/you split.
 
-**User actions:**
+Set up 2026-10-25 (the OAuth app's ID and secret, and `GITHUB_GOVERNOR_TOKEN`). For reference:
 
 1. Create a GitHub OAuth app at <https://github.com/settings/applications/new>: name `mb-factory console`, homepage `https://mb-factory-console.vercel.app`, callback `https://mb-factory-console.vercel.app/api/auth/github/callback`, device flow off. Generate a client secret. Then `vercel env add GITHUB_OAUTH_CLIENT_ID production` and `vercel env add GITHUB_OAUTH_CLIENT_SECRET production`.
 2. For Refresh: a fine-grained token limited to `milobedini/mb-factory` with **Actions: read and write** only, then `vercel env add GITHUB_GOVERNOR_TOKEN production`. A separate token from `GITHUB_DISPATCH_TOKEN`, so the console can't push to this repo.
