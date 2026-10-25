@@ -568,7 +568,8 @@ describe('slack timeline', () => {
       'Started the implement run to fix the review findings from round 1.'
     ],
     [{ agent: 'implement', trigger: 'ci_failed' }, undefined, 'Started the implement run to fix the failed CI run.'],
-    [{ agent: 'spec', trigger: 'rerun' }, undefined, 'Started the spec run again, after the usage limit reset.']
+    [{ agent: 'spec', trigger: 'rerun' }, undefined, 'Started the spec run again, after the usage limit reset.'],
+    [{ agent: 'review', trigger: 'console' }, 2, 'Started the review run again, from the console.']
   ] as const)('says why %o started', (run, round, text) => {
     expect(slackStartedText(run, round)).toBe(text);
   });

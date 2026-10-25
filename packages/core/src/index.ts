@@ -54,6 +54,7 @@ export {
   ciHandOverText,
   closingActivity,
   consecutiveCiFixes,
+  consoleRerunRequest,
   decideCiFailure,
   findingsPrompt,
   formatReleaseAt,
@@ -82,8 +83,18 @@ export {
 } from './router';
 export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } from './run-report';
 export { readingsFromEvents, runReportSchema, stageReportSchema, summariseRun } from './run-report';
-export type { RunOutcome, RunStatus, RunTrigger, WorkOrigin } from './runs';
-export { RUN_OUTCOMES, RUN_STATUSES, RUN_TRIGGERS, WORK_ORIGINS } from './runs';
+export type { RunOutcome, RunStatus, RunTotals, RunTrigger, WorkOrigin } from './runs';
+export {
+  formatRunTime,
+  isOpenRun,
+  OPEN_RUN_STATUSES,
+  RUN_OUTCOMES,
+  RUN_STATUSES,
+  RUN_TRIGGERS,
+  runTiming,
+  runTotals,
+  WORK_ORIGINS
+} from './runs';
 export { decryptSecret, deriveKey, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';

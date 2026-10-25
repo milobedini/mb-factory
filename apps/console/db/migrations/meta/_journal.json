@@ -43,6 +43,13 @@
       "when": 1792938988094,
       "tag": "0005_overjoyed_sleepwalker",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792943904242,
+      "tag": "0006_fast_lizard",
+      "breakpoints": true
     }
   ]
 }

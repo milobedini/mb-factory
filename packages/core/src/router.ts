@@ -141,6 +141,14 @@ export const runRequestFor = (
     : undefined;
 };
 
+// Re-run from the console: the same stage again, ahead of new work.
+export const consoleRerunRequest = (agent: AgentRole): RunRequest => ({
+  agent,
+  trigger: 'console',
+  priority: 'in_flight',
+  prompt: null
+});
+
 // A run cut short by the usage limit resumes ahead of new work once the window allows it.
 export const resumeRequestFor = (agent: AgentRole): RunRequest => ({
   agent,
@@ -493,7 +501,8 @@ const STARTED_BECAUSE: Record<RunTrigger, (round: number | undefined) => string>
   delivered: () => ' on the PR',
   review_findings: (round) => ` to fix the review findings${round ? ` from round ${round}` : ''}`,
   ci_failed: () => ' to fix the failed CI run',
-  rerun: () => ' again, after the usage limit reset'
+  rerun: () => ' again, after the usage limit reset',
+  console: () => ' again, from the console'
 };
 
 // Says why, so the thread reads as a timeline on its own.

@@ -189,7 +189,8 @@ export const stageForLinearState = (config: FactoryConfig, { name, type }: Linea
 export type StopCause =
   | { kind: 'undelegated' }
   | { kind: 'issue_closed'; status: string }
-  | { kind: 'pr_closed'; number: number; merged: boolean };
+  | { kind: 'pr_closed'; number: number; merged: boolean }
+  | { kind: 'console'; login: string };
 
 export type IssueUpdateActions = { stage?: Stage; stop?: StopCause };
 
@@ -221,6 +222,9 @@ export const stoppedText = (cause: StopCause): string => {
   }
   if (cause.kind === 'issue_closed') {
     return `Stopped: the issue was moved to ${cause.status}.`;
+  }
+  if (cause.kind === 'console') {
+    return `Stopped from the console by ${cause.login}.`;
   }
   return `Stopped: PR #${cause.number} was ${cause.merged ? 'merged' : 'closed without merging'}.`;
 };

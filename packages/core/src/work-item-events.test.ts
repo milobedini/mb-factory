@@ -272,5 +272,6 @@ describe('stop copy', () => {
       'Stopped: PR #6 was closed without merging.'
     );
     expect(stoppedText({ kind: 'issue_closed', status: 'Done' })).toBe('Stopped: the issue was moved to Done.');
+    expect(stoppedText({ kind: 'console', login: 'milobedini' })).toBe('Stopped from the console by milobedini.');
   });
 });

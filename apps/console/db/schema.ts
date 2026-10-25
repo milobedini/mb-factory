@@ -62,6 +62,8 @@ export const workItems = pgTable(
     linearIssueId: text().notNull().unique(),
     issueIdentifier: text().notNull(),
     issueUrl: text().notNull(),
+    // The issue's title when it was last delegated, for the console.
+    title: text(),
     linearProjectId: text(),
     agentSessionId: text(),
     origin: text({ enum: WORK_ORIGINS }).notNull(),

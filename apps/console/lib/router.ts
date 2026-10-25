@@ -15,9 +15,11 @@ import {
   ciHandOverText,
   closingActivity,
   consecutiveCiFixes,
+  consoleRerunRequest,
   decideCiFailure,
   decideIssueUpdate,
   governDispatch,
+  isOpenRun,
   linearStatusFor,
   modelFor,
   nextStepAfterRun,
@@ -319,6 +321,46 @@ const createRun = async (
   return run.id;
 };
 
+// Cancel from the Runs page: the run and its Actions run, then a final word in Linear and Slack.
+export const cancelRunFromConsole = async (runId: string, login: string): Promise<boolean> => {
+  const found = await findRun(runId);
+  const project = found && findProject(found.workItem.project);
+  if (!found || !project || !isOpenRun(found.run.status)) {
+    return false;
+  }
+  const text = stoppedText({ kind: 'console', login });
+  if (!(await cancelRun(found.run, found.workItem, text, new Date()))) {
+    return false;
+  }
+  await Promise.all([
+    postActivity(found.workItem, { type: 'response', body: text }),
+    replyInThread(project, found.workItem, text)
+  ]);
+  await releaseQueue();
+  return true;
+};
+
+// Re-run from the Runs page: only a work item's latest run, once it has settled, so two stages never race.
+export const rerunFromConsole = async (runId: string, login: string): Promise<boolean> => {
+  const found = await findRun(runId);
+  const project = found && findProject(found.workItem.project);
+  if (!found || !project || isOpenRun(found.run.status)) {
+    return false;
+  }
+  const [latest] = await getDb()
+    .select({ id: runs.id })
+    .from(runs)
+    .where(eq(runs.workItemId, found.workItem.id))
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  if (latest?.id !== runId) {
+    return false;
+  }
+  log('info', 'run re-run from the console', { runId, login, issue: found.workItem.issueIdentifier });
+  await dispatchRun(project, await createRun(project, found.workItem, consoleRerunRequest(found.run.agent), runId));
+  return true;
+};
+
 // "Allow once" from the console: the run skips usage holds and the pause from now on, even if the run caps hold it first.
 export const allowRunOnce = async (runId: string, login: string): Promise<boolean> => {
   const [allowed] = await getDb()
@@ -365,6 +407,7 @@ const upsertWorkItem = async (
   const current = {
     issueIdentifier: event.issue.identifier,
     issueUrl: event.issue.url,
+    title: event.issue.title,
     agentSessionId: event.sessionId,
     stage,
     updatedAt: new Date()
