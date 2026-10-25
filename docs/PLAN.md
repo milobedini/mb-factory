@@ -27,8 +27,8 @@ Phase 0 exit check passed 2026-10-24 (TAS-6). Spike done 2026-10-25 (tastebook P
 1. ~~Tables `work_items`, `runs`, `usage_readings`, `queue`.~~ Done 2026-10-25 (migrations `0001`, `0002`).
 2. ~~Reusable `.github/workflows/stage.yml` and its caller in `tastebook`.~~ Done 2026-10-25: TAS-7 (page not found) ran end to end, dispatched by hand. tastebook PR #4 merged and TAS-7 went to Done.
 3. ~~Router.~~ Done 2026-10-25: TAS-8 (tab titles) went from delegation to tastebook PR #5 with no hand step. See "The router" below.
-4. **Governor job and local reporter: built 2026-10-25, not yet deployed.** Waiting on two secrets (below). See "The governor job" below.
-5. Console login, then the Usage page. The page shows each reading's age and source, and has a "Refresh" button that runs one probe (a `workflow_dispatch` of `governor.yml`, which needs a token with Actions write on `mb-factory`).
+4. ~~Governor job and local reporter.~~ Done 2026-10-25: the first manual tick released with nothing waiting and no probe, and the status line's first report recorded both windows as `local` (4% and 2%, matching the run readings). The probe path in Actions hasn't run yet; step 6's forced pause exercises it. See "The governor job" below.
+5. **Console login, then the Usage page (next).** The page shows each reading's age and source, and has a "Refresh" button that runs one probe (a `workflow_dispatch` of `governor.yml`, which needs a token with Actions write on `mb-factory`).
 6. Exit check: a real small TAS change through the router, and a forced pause that queues and releases a dispatch. (The first criterion, a small real change landing as a PR with its run recorded, was met by TAS-7 by hand.)
 
 #### Where things stand (2026-10-25)
@@ -64,11 +64,7 @@ Not yet exercised: holds and release, `prompted`, `stop` (and the Actions cancel
 - **New webhook dispatches still fail open** on stale readings: the console can't run Claude itself. The local reporter keeps readings fresh while you're working, which is when they move.
 - Scheduled workflows in a public repo stop after 60 days without repository activity; GitHub emails before it disables them.
 
-**User actions:**
-
-1. The probe needs the subscription token as a secret in this repo (the `tastebook` one isn't visible here). Run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R milobedini/mb-factory` and paste it.
-2. The local reporter's token, generated and stored in both places from one shell: `token=$(openssl rand -hex 32) && printf '%s' "$token" | vercel env add USAGE_REPORT_TOKEN production && mkdir -p ~/.config/mb-factory && (umask 077 && printf '%s' "$token" > ~/.config/mb-factory/usage-token) && unset token`
-3. Point the status line at the wrapper: `"command": "/Users/milobedini/Documents/git/mb-factory/cli/status-line.sh npx -y ccstatusline@latest"` in `~/.claude/settings.json`.
+Set up 2026-10-25: `CLAUDE_CODE_OAUTH_TOKEN` (Actions secret in this repo), `USAGE_REPORT_TOKEN` (Vercel production, and `~/.config/mb-factory/usage-token`, mode 600), and the status line `command` in `~/.claude/settings.json` (`/Users/milobedini/Documents/git/mb-factory/cli/status-line.sh npx -y ccstatusline@latest`).
 
 #### Open follow-ups (not step 3)
 
