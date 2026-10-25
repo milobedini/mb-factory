@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { FactoryConfig } from './config';
 import type { Decision, DispatchRequest, HoldReason, Priority, UsageWindow } from './governor';
-import { decideDispatch, PRIORITIES } from './governor';
+import { decideDispatch, PRIORITIES, USAGE_HOLD_REASONS } from './governor';
 import type { RunOutcome, RunStatus, RunTrigger } from './runs';
 import type { AgentRole, Stage } from './stages';
 import { AGENT_FOR_STAGE, STAGES } from './stages';
@@ -100,16 +100,28 @@ export type GovernedDecision = Exclude<Decision, { kind: 'probe' }>;
 export type Governed = { decision: GovernedDecision; staleWindows: UsageWindow[] };
 
 // Until the scheduled probe exists, stale readings don't block work: every run records fresh ones.
-export const governDispatch = ({
-  workItemBusy,
-  ...request
-}: Omit<DispatchRequest, 'acceptStale'> & { workItemBusy: boolean }): Governed => {
+export type GovernInput = Omit<DispatchRequest, 'acceptStale'> & {
+  workItemBusy: boolean;
+  // The console's pause switch.
+  paused: boolean;
+  // A human chose "allow once": usage limits and the pause don't apply; the run caps still do.
+  allowUsage: boolean;
+};
+
+export const governDispatch = ({ workItemBusy, paused, allowUsage, ...request }: GovernInput): Governed => {
   const first = decideDispatch(request);
   const staleWindows = first.kind === 'probe' ? first.stale : [];
-  const decision = first.kind === 'probe' ? decideDispatch({ ...request, acceptStale: true }) : first;
-  if (decision.kind === 'probe') {
+  const decided = first.kind === 'probe' ? decideDispatch({ ...request, acceptStale: true }) : first;
+  if (decided.kind === 'probe') {
     throw new Error('The governor asked for a probe after accepting stale readings');
   }
+  if (paused && !allowUsage) {
+    return { decision: { kind: 'hold', state: 'paused', reason: 'manual_pause' }, staleWindows };
+  }
+  const overridden = allowUsage && decided.kind === 'hold' && USAGE_HOLD_REASONS.includes(decided.reason);
+  const decision: GovernedDecision = overridden
+    ? { kind: 'dispatch', state: decided.state, downshift: false }
+    : decided;
   if (decision.kind === 'dispatch' && workItemBusy) {
     return { decision: { kind: 'hold', state: decision.state, reason: 'work_item_busy' }, staleWindows };
   }
@@ -169,6 +181,7 @@ export const orderQueue = <T extends QueueEntry>(entries: T[]): T[] =>
 const HOLD_COPY: Record<HoldReason, string> = {
   concurrency: 'the factory is already running as many stages as it allows',
   work_item_busy: 'an earlier run on this issue is still going',
+  manual_pause: 'the factory is paused from the console',
   five_hour_throttle: 'usage in the 5-hour window is high, so only work already in flight runs',
   five_hour_pause: 'usage in the 5-hour window is close to the limit',
   weekly_pacing: 'weekly usage is ahead of pace',

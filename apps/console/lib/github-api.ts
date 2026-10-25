@@ -5,12 +5,15 @@ import { requireEnv } from './env';
 
 const API_URL = 'https://api.github.com';
 
-const githubRequest = async (path: string, body?: unknown): Promise<Response> =>
+// GITHUB_DISPATCH_TOKEN reaches project repos; GITHUB_GOVERNOR_TOKEN only runs this repo's governor workflow.
+type TokenName = 'GITHUB_DISPATCH_TOKEN' | 'GITHUB_GOVERNOR_TOKEN';
+
+const githubRequest = async (path: string, body?: unknown, token: TokenName = 'GITHUB_DISPATCH_TOKEN') =>
   fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${requireEnv('GITHUB_DISPATCH_TOKEN')}`,
+      Authorization: `Bearer ${requireEnv(token)}`,
       'X-GitHub-Api-Version': '2022-11-28',
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
     },
@@ -36,5 +39,17 @@ export const cancelActionsRun = async (repository: string, actionsRunId: string)
   const response = await githubRequest(`/repos/${repository}/actions/runs/${encodeURIComponent(actionsRunId)}/cancel`);
   if (!response.ok && response.status !== 409) {
     throw await failure('run cancel', response);
+  }
+};
+
+// The Usage page's Refresh: one governor run that probes whatever the readings say.
+export const startGovernorProbe = async (): Promise<void> => {
+  const response = await githubRequest(
+    '/repos/milobedini/mb-factory/actions/workflows/governor.yml/dispatches',
+    { ref: 'main', inputs: { probe: 'true' } },
+    'GITHUB_GOVERNOR_TOKEN'
+  );
+  if (!response.ok) {
+    throw await failure('governor dispatch', response);
   }
 };

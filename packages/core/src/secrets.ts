@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_BYTES = 12;
@@ -30,3 +30,7 @@ export const decryptSecret = (sealed: string, base64Key: string): string => {
   decipher.setAuthTag(Buffer.from(tag, 'base64'));
   return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]).toString('utf8');
 };
+
+// A separate key for each purpose (such as signing console sessions), derived from the encryption key.
+export const deriveKey = (base64Key: string, purpose: string): Uint8Array =>
+  new Uint8Array(hkdfSync('sha256', parseKey(base64Key), new Uint8Array(0), `mb-factory:${purpose}`, 32));

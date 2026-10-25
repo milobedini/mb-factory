@@ -30,6 +30,7 @@ import { cancelActionsRun, sendStageDispatch } from './github-api';
 import type { AgentActivityContent } from './linear-api';
 import { createAgentActivity, hasClosingActivity, moveIssueToStatus } from './linear-api';
 import { log } from './log';
+import { currentPause } from './pause';
 import { findProject, findProjectByTeamKey, repositoryOf } from './projects';
 import type { RunWithWorkItem } from './runs';
 import { findRun } from './runs';
@@ -226,8 +227,9 @@ const dispatchRun = async (project: FactoryConfig, runId: string, retried = fals
     return;
   }
   const db = getDb();
-  const [readings, runningCount, busyCount] = await Promise.all([
+  const [readings, pause, runningCount, busyCount] = await Promise.all([
     latestReadings(),
+    currentPause(),
     db.$count(runs, inArray(runs.status, ACTIVE_STATUSES)),
     db.$count(runs, and(eq(runs.workItemId, found.workItem.id), inArray(runs.status, ACTIVE_STATUSES)))
   ]);
@@ -239,7 +241,9 @@ const dispatchRun = async (project: FactoryConfig, runId: string, retried = fals
     runningCount,
     maxRuns: project.concurrency.maxRuns,
     now,
-    workItemBusy: busyCount > 0
+    workItemBusy: busyCount > 0,
+    paused: pause !== undefined,
+    allowUsage: found.run.usageOverrideBy !== null
   });
   if (staleWindows.length > 0) {
     // No probe until Phase 1 step 4: decide on the readings there are, and say so.
@@ -284,6 +288,25 @@ const createRun = async (
   }
   log('info', 'run created', { runId: run.id, issue: workItem.issueIdentifier, trigger: request.trigger });
   return run.id;
+};
+
+// "Allow once" from the console: the run skips usage holds and the pause from now on, even if the run caps hold it first.
+export const allowRunOnce = async (runId: string, login: string): Promise<boolean> => {
+  const [allowed] = await getDb()
+    .update(runs)
+    .set({ usageOverrideBy: login })
+    .where(and(eq(runs.id, runId), eq(runs.status, 'queued')))
+    .returning({ workItemId: runs.workItemId });
+  if (!allowed) {
+    return false;
+  }
+  const [workItem] = await getDb().select().from(workItems).where(eq(workItems.id, allowed.workItemId)).limit(1);
+  const project = workItem && findProject(workItem.project);
+  log('info', 'run allowed once', { runId, login, issue: workItem?.issueIdentifier });
+  if (project) {
+    await dispatchRun(project, runId);
+  }
+  return true;
 };
 
 // Releases held runs, highest priority first, for as long as the governor allows.

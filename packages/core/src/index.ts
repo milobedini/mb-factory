@@ -18,6 +18,7 @@ export {
   HOLD_REASONS,
   PRIORITIES,
   staleWindows,
+  USAGE_HOLD_REASONS,
   USAGE_SOURCES,
   USAGE_STATUSES,
   USAGE_WINDOWS
@@ -35,6 +36,7 @@ export type {
   FinishedRun,
   Governed,
   GovernedDecision,
+  GovernInput,
   ModelledAgent,
   QueueEntry,
   RunRequest,
@@ -66,9 +68,10 @@ export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } fr
 export { readingsFromEvents, runReportSchema, stageReportSchema, summariseRun } from './run-report';
 export type { RunOutcome, RunStatus, RunTrigger, WorkOrigin } from './runs';
 export { RUN_OUTCOMES, RUN_STATUSES, RUN_TRIGGERS, WORK_ORIGINS } from './runs';
-export { decryptSecret, encryptSecret } from './secrets';
+export { decryptSecret, deriveKey, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
 export type { AgentRole, Stage, StageContext, StageEvent, Transition } from './stages';
 export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, STAGES, transition } from './stages';
-export { needsProbe, readingsFromStatusLine, statusLineUsageSchema } from './usage';
+export type { UsageSummary, WindowSummary } from './usage';
+export { formatDuration, needsProbe, readingsFromStatusLine, statusLineUsageSchema, summariseUsage } from './usage';

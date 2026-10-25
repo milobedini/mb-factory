@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
-import { decryptSecret, encryptSecret } from './secrets';
+import { decryptSecret, deriveKey, encryptSecret } from './secrets';
 
 const key = randomBytes(32).toString('base64');
 
@@ -28,5 +28,17 @@ describe('encryptSecret / decryptSecret', () => {
     expect(() => encryptSecret('x', Buffer.from('short').toString('base64'))).toThrow(
       'Encryption key must be 32 bytes, base64-encoded'
     );
+  });
+});
+
+describe('deriveKey', () => {
+  const key = randomBytes(32).toString('base64');
+
+  it('derives a stable 32-byte key per purpose, different from other purposes and other keys', () => {
+    const session = deriveKey(key, 'console-session');
+    expect(session).toHaveLength(32);
+    expect(deriveKey(key, 'console-session')).toEqual(session);
+    expect(deriveKey(key, 'something-else')).not.toEqual(session);
+    expect(deriveKey(randomBytes(32).toString('base64'), 'console-session')).not.toEqual(session);
   });
 });

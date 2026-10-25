@@ -23,3 +23,8 @@ export const repositoryOf = ({ repositories }: FactoryConfig): string => {
 // The governor job serves every project, so it probes by the strictest staleness limit.
 export const strictestStaleAfterMinutes = (): number =>
   Math.min(...PROJECTS.map(({ usage }) => usage.staleAfterMinutes));
+
+// Times on console pages; the console serves one operator, so the first project's zone stands for theirs.
+export const consoleTimeZone = (): string => PROJECTS[0]?.timeZone ?? 'UTC';
+
+export const allProjects = (): FactoryConfig[] => PROJECTS;

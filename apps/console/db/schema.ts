@@ -93,6 +93,8 @@ export const runs = pgTable(
     // The human's message for a prompted run, held until the brief is rendered at dispatch.
     prompt: text(),
     status: text({ enum: RUN_STATUSES }).notNull(),
+    // GitHub login of whoever chose "allow once": the run then skips usage holds and the pause, not the run caps.
+    usageOverrideBy: text(),
     outcome: text({ enum: RUN_OUTCOMES }),
     summary: text(),
     report: jsonb(),
@@ -150,4 +152,17 @@ export const queue = pgTable(
     index('queue_waiting_idx').on(table.heldAt).where(sql`${table.releasedAt} is null`),
     uniqueIndex('queue_one_hold_per_run_idx').on(table.runId).where(sql`${table.releasedAt} is null`)
   ]
+);
+
+// The console's pause switch: one row per pause, open while `resumedAt` is null.
+export const pauses = pgTable(
+  'pauses',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    pausedBy: text().notNull(),
+    pausedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    resumedBy: text(),
+    resumedAt: timestamp({ withTimezone: true })
+  },
+  (table) => [uniqueIndex('pauses_one_open_idx').on(sql`(true)`).where(sql`${table.resumedAt} is null`)]
 );

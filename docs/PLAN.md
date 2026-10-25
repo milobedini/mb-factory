@@ -28,7 +28,7 @@ Phase 0 exit check passed 2026-10-24 (TAS-6). Spike done 2026-10-25 (tastebook P
 2. ~~Reusable `.github/workflows/stage.yml` and its caller in `tastebook`.~~ Done 2026-10-25: TAS-7 (page not found) ran end to end, dispatched by hand. tastebook PR #4 merged and TAS-7 went to Done.
 3. ~~Router.~~ Done 2026-10-25: TAS-8 (tab titles) went from delegation to tastebook PR #5 with no hand step. See "The router" below.
 4. ~~Governor job and local reporter.~~ Done 2026-10-25: the first manual tick released with nothing waiting and no probe, and the status line's first report recorded both windows as `local` (4% and 2%, matching the run readings). The probe path in Actions hasn't run yet; step 6's forced pause exercises it. See "The governor job" below.
-5. **Console login, then the Usage page (next).** The page shows each reading's age and source, and has a "Refresh" button that runs one probe (a `workflow_dispatch` of `governor.yml`, which needs a token with Actions write on `mb-factory`).
+5. **Console login and the Usage page: built 2026-10-25, not yet deployed.** Waiting on the GitHub OAuth app and the governor token (below). See "The console login and Usage page" below.
 6. Exit check: a real small TAS change through the router, and a forced pause that queues and releases a dispatch. (The first criterion, a small real change landing as a PR with its run recorded, was met by TAS-7 by hand.)
 
 #### Where things stand (2026-10-25)
@@ -66,6 +66,21 @@ Not yet exercised: holds and release, `prompted`, `stop` (and the Actions cancel
 
 Set up 2026-10-25: `CLAUDE_CODE_OAUTH_TOKEN` (Actions secret in this repo), `USAGE_REPORT_TOKEN` (Vercel production, and `~/.config/mb-factory/usage-token`, mode 600), and the status line `command` in `~/.claude/settings.json` (`/Users/milobedini/Documents/git/mb-factory/cli/status-line.sh npx -y ccstatusline@latest`).
 
+#### The console login and Usage page (step 5)
+
+- **Login:** Sign in with GitHub (an OAuth app, no scopes, state and PKCE), allowed only for the GitHub user IDs in `CONSOLE_GITHUB_USER_IDS` (`89992629`, set). IDs, not logins, because a login can be renamed and taken. The console gives the GitHub token back as soon as it knows who signed in. The session is a 30-day HS256 JWT in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie, signed with a key derived from `TOKEN_ENCRYPTION_KEY` (HKDF, purpose `console-session`), so there's no new secret. The allow-list is checked on every read, so removing an ID ends its sessions.
+- **No `proxy.ts`:** the Next 16 docs advise against it where there's another way. Every page reads its data through a loader that checks the session first (`loadUsageView` → `requireConsoleUser`), behind `<Suspense>`, and every Server Action checks it again. The static shell holds no data. The API routes keep their own auth (signatures, OIDC, bearer).
+- **Usage page (`/usage`):** for each project, the governor state (Open, Throttled, Paused) and both windows as gauges with the throttle, pause and weekly-pace markers, the reset countdown, and the reading's age and source (stale readings in amber). Then the queue, with **Allow once** on runs held by usage or the pause, the **Pause the factory** / **Resume** switch, the last 12 readings, and **Refresh (probe)**.
+- **Pause** (`pauses` table, one open row at most): every dispatch holds as `manual_pause` ("Queued: the factory is paused from the console"). The governor job still releases runs someone allowed once, but doesn't probe. Resuming releases the queue straight away.
+- **Allow once** sets `runs.usage_override_by`: that run skips usage holds and the pause from then on, but not the run cap or the one-run-per-issue rule, and keeps its configured model (no downshift).
+- **Refresh** dispatches `governor.yml` with `probe: true` (`GITHUB_GOVERNOR_TOKEN`); readings arrive about a minute later.
+- **Not built (Phase 4):** usage over time with runs overlaid, the factory/you split.
+
+**User actions:**
+
+1. Create a GitHub OAuth app at <https://github.com/settings/applications/new>: name `mb-factory console`, homepage `https://mb-factory-console.vercel.app`, callback `https://mb-factory-console.vercel.app/api/auth/github/callback`, device flow off. Generate a client secret. Then `vercel env add GITHUB_OAUTH_CLIENT_ID production` and `vercel env add GITHUB_OAUTH_CLIENT_SECRET production`.
+2. For Refresh: a fine-grained token limited to `milobedini/mb-factory` with **Actions: read and write** only, then `vercel env add GITHUB_GOVERNOR_TOKEN production`. A separate token from `GITHUB_DISPATCH_TOKEN`, so the console can't push to this repo.
+
 #### Open follow-ups (not step 3)
 
 - Evidence hosting for the verify stage (Phase 2): see Open questions.
@@ -78,7 +93,7 @@ Set up 2026-10-25: `CLAUDE_CODE_OAUTH_TOKEN` (Actions secret in this repo), `USA
 - Linear's "Agent session events" options appear only after the OAuth app is first saved.
 - One Slack mention arrives as both `message` and `app_mention`. Start work only on `app_mention`; use `message` only for replies in a thread that already has a work item.
 - Vercel Hobby: crons run at most once a day. The usage probe and queue release run as scheduled GitHub Actions instead.
-- Vercel Standard Protection does not cover the production `*.vercel.app` alias: the console is public. Add a login (Sign in with Vercel or a password in `proxy.ts`) before the dashboard shows real data (Phase 1).
+- Vercel Standard Protection does not cover the production `*.vercel.app` alias: the console is public, so every page checks the GitHub sign-in (step 5).
 - pnpm 12 fails installs on unapproved build scripts: list them in `pnpm-workspace.yaml` `allowBuilds`.
 - Vercel Marketplace installs add provider agent skills; the Neon one told agents to send feedback silently and was removed. Review any auto-installed skill before committing.
 - Linear also offers client-credentials tokens (app actor, ~30 days, no refresh). Candidate for giving Actions runs their own token (Phase 1).

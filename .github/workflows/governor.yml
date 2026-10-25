@@ -6,6 +6,11 @@ on:
     # Off the quarter-hour: GitHub delays scheduled runs most at :00.
     - cron: "4,19,34,49 * * * *"
   workflow_dispatch:
+    inputs:
+      probe:
+        description: Probe usage even if the readings are fresh (the console's Refresh button)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -30,7 +35,13 @@ jobs:
     steps:
       - name: Release held runs
         id: tick
+        env:
+          FORCE_PROBE: ${{ inputs.probe }}
         run: |
+          if [[ "$FORCE_PROBE" == "true" ]]; then
+            echo "probe=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
           oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
           echo "::add-mask::$oidc"

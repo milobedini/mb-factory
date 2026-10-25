@@ -141,6 +141,8 @@ const governed = (overrides: Partial<Parameters<typeof governDispatch>[0]>) =>
     maxRuns: 2,
     now,
     workItemBusy: false,
+    paused: false,
+    allowUsage: false,
     ...overrides
   });
 
@@ -170,6 +172,29 @@ describe('governDispatch', () => {
       state: 'open',
       reason: 'work_item_busy'
     });
+  });
+
+  it('holds everything while the console’s pause is on', () => {
+    expect(governed({ paused: true }).decision).toEqual({ kind: 'hold', state: 'paused', reason: 'manual_pause' });
+  });
+
+  it('lets an allowed run past the pause and the usage limits, without downshifting', () => {
+    expect(governed({ paused: true, allowUsage: true }).decision).toEqual({
+      kind: 'dispatch',
+      state: 'open',
+      downshift: false
+    });
+    expect(
+      governed({
+        allowUsage: true,
+        readings: { fiveHour: reading('fiveHour', 0.9), sevenDay: reading('sevenDay', 0.1) }
+      }).decision
+    ).toEqual({ kind: 'dispatch', state: 'paused', downshift: false });
+  });
+
+  it('keeps the run caps for an allowed run', () => {
+    expect(governed({ allowUsage: true, runningCount: 2 }).decision).toMatchObject({ reason: 'concurrency' });
+    expect(governed({ allowUsage: true, workItemBusy: true }).decision).toMatchObject({ reason: 'work_item_busy' });
   });
 
   it('prefers the usage reason over a busy issue, so the hold says when it can release', () => {

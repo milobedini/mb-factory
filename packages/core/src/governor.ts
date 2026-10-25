@@ -30,6 +30,7 @@ export type GovernorState = 'open' | 'throttled' | 'paused';
 export const HOLD_REASONS = [
   'concurrency',
   'work_item_busy',
+  'manual_pause',
   'five_hour_throttle',
   'five_hour_pause',
   'weekly_pacing',
@@ -37,6 +38,15 @@ export const HOLD_REASONS = [
 ] as const;
 
 export type HoldReason = (typeof HOLD_REASONS)[number];
+
+// Holds a human can override with "allow once": the usage limits and the console's pause, not the run caps.
+export const USAGE_HOLD_REASONS: HoldReason[] = [
+  'five_hour_throttle',
+  'five_hour_pause',
+  'weekly_pacing',
+  'weekly_pause',
+  'manual_pause'
+];
 
 export type Decision =
   | { kind: 'dispatch'; state: GovernorState; downshift: boolean }
@@ -72,7 +82,7 @@ export const staleWindows = (
   staleAfterMinutes: number
 ): UsageWindow[] => USAGE_WINDOWS.filter((window) => isStale(readings[window], now, staleAfterMinutes));
 
-const weeklyPaceLimit = (reading: UsageReading, now: Date, slack: number): number => {
+export const weeklyPaceLimit = (reading: UsageReading, now: Date, slack: number): number => {
   const windowStart = reading.resetsAt.getTime() - WEEK_MS;
   const elapsed = Math.min(Math.max((now.getTime() - windowStart) / WEEK_MS, 0), 1);
   return elapsed + slack;
@@ -84,9 +94,9 @@ const paceReleaseAt = (reading: UsageReading, slack: number): Date => {
   return new Date(windowStart + neededElapsed * WEEK_MS);
 };
 
-type Assessment = { state: GovernorState; reason?: HoldReason; releaseAt?: Date };
+export type Assessment = { state: GovernorState; reason?: HoldReason; releaseAt?: Date };
 
-const assess = (
+export const assessUsage = (
   policy: UsagePolicy,
   fiveHour: UsageReading | undefined,
   sevenDay: UsageReading | undefined,
@@ -124,7 +134,7 @@ export const decideDispatch = ({
     return { kind: 'probe', stale };
   }
 
-  const { state, reason, releaseAt } = assess(policy, readings.fiveHour, readings.sevenDay, now);
+  const { state, reason, releaseAt } = assessUsage(policy, readings.fiveHour, readings.sevenDay, now);
 
   if (runningCount >= maxRuns) {
     return { kind: 'hold', state, reason: 'concurrency' };
