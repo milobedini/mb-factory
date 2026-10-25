@@ -22,16 +22,41 @@ _Last updated 2026-10-25._ **Current phase: 1 (First loop, run log and governor)
 
 ### Next (Phase 1)
 
-Phase 0 exit check passed 2026-10-24: delegating TAS-6 to `@Tastebook` recorded an `AgentSessionEvent` and posted "Picked this up". The plugin is signed off ([instructions-review.md](instructions-review.md)). The Claude GitHub App is installed on `tastebook`, `CLAUDE_CODE_OAUTH_TOKEN` is set there, and the GitHub webhook (hook `702633536`) delivers with a 200.
+Phase 0 exit check passed 2026-10-24 (TAS-6). Spike done 2026-10-25 (tastebook PR #1, closed); results under Things learnt.
 
-Spike done 2026-10-25 (Claude Code 2.1.310, `claude-code-action` v1.0.262, tastebook PR #1, closed). Results are under Things learnt. Order for the rest of Phase 1:
-
-1. ~~Tables `work_items`, `runs`, `usage_readings`, `queue`.~~ Done 2026-10-25 (migration `0001`).
-2. Reusable `.github/workflows/stage.yml` and its caller in `tastebook`: brief in, stage subagent, report and usage back to an authenticated console endpoint. Done 2026-10-25: TAS-7 ran end to end (dispatched by hand) and opened tastebook PR #4 with green CI.
-3. Router: delegation → work item → governor → `repository_dispatch` (masked Linear token) or queue; Linear session and Slack thread updates.
+1. ~~Tables `work_items`, `runs`, `usage_readings`, `queue`.~~ Done 2026-10-25 (migrations `0001`, `0002`).
+2. ~~Reusable `.github/workflows/stage.yml` and its caller in `tastebook`.~~ Done 2026-10-25: TAS-7 (page not found) ran end to end, dispatched by hand. tastebook PR #4 merged and TAS-7 went to Done.
+3. **Router (next).** See the brief below.
 4. Scheduled probe and queue release (GitHub Actions).
 5. Console login, then the Usage page.
-6. Exit check: a real small TAS change, and a forced pause that queues and releases a dispatch.
+6. Exit check: a real small TAS change through the router, and a forced pause that queues and releases a dispatch. (The first criterion, a small real change landing as a PR with its run recorded, was met by TAS-7 by hand.)
+
+#### Where things stand (2026-10-25)
+
+- **Stage runs work.** The console renders a brief (`buildDispatchPayload` in `packages/core/src/brief.ts`), the project's `.github/workflows/factory.yml` receives a `factory-stage` repository dispatch and calls `milobedini/mb-factory/.github/workflows/stage.yml@main`. That workflow runs `.github/actions/factory-setup` from the project, calls `POST /api/runs/<id>/start` (GitHub OIDC; returns the Linear token and session), runs `claude-code-action` (pinned to commit `925afb5`, v1.0.262) with a thin main thread that spawns `mb-factory:<agent>`, then posts the stage report and the `rate_limit_event`/`result` events to `POST /api/runs/<id>/report`. `summariseRun` in `packages/core/src/run-report.ts` turns that into the run's status, outcome, usage and `usage_readings`.
+- **What doesn't exist yet:** nothing creates work items or runs, dispatches, or moves Linear statuses. TAS-7's work item (`c74a7e77…`) and run (`11adc1b4…`) were inserted by a throwaway script (SQL insert of a `work_items` row and a `runs` row with status `dispatched`, then `gh api repos/milobedini/tastebook/dispatches` with `{event_type: "factory-stage", client_payload: buildDispatchPayload(…)}`); I also moved TAS-7 to Building by hand through the Linear connector. The work item's `stage` column still says `building`.
+- **Webhooks only record.** `app/api/webhooks/{linear,slack,github}` verify, store an `events` row, and (Linear only) post a "Picked this up" thought whose text is now wrong: it says no stages run yet.
+- **The console doesn't load `factory.yaml`.** `parseFactoryConfig` exists in core but nothing in `apps/console` reads `projects/*/factory.yaml`.
+
+#### Step 3 brief: the router
+
+Goal: delegating an issue to `@Tastebook` runs the implement stage with no hand steps, through the governor.
+
+- **Trigger:** Linear `AgentSessionEvent` `created` (delegation or @mention) → upsert `work_items` by Linear issue ID (store org, identifier, URL, session; a new session on re-delegation replaces the old one), create a `runs` row (`agent: implement`, model from `factory.yaml` `models.implement`, `trigger: delegated`, `priority: feature`, `status: queued`). Phase 1 skips triage; Phase 2 adds it. `prompted` (a human reply in the session) re-runs implement with `trigger: prompted` and the reply as the brief's `prompt` at priority `in_flight`; include it if cheap, otherwise Phase 2.
+- **Governor:** `decideDispatch` with the latest `usage_readings` per window, the count of runs in `dispatched`/`running`, `concurrency.maxRuns` and the `usage` policy. `dispatch` → send the repository dispatch, set `status: dispatched`, `dispatchedAt`. `hold` → insert a `queue` row and post a Linear thought ("Queued until <time>: <reason>"). `probe` → the probe doesn't exist until step 4; decide whether to dispatch anyway (fail open, since every run records fresh readings) or hold. Suggest: fail open and log it, until step 4.
+- **Linear:** replace the acknowledgement with an honest one ("Working on it: implement run queued/started"); move the issue to Building on dispatch using `factory.yaml` status names (resolve to IDs through the API). After the report: outcome `done` with a PR → In Review is the stage machine's next state, but with no review stage in Phase 1 leave it for the human (you moved TAS-7 to Awaiting Merge yourself). Linear's GitHub integration already moves the issue to Done on merge, so the router must not fight it. On `failed`/`blocked`/`needs_input`, post a Linear `error`/`response` when the agent didn't, and leave the status.
+- **Slack:** mirror start and finish to `#tastebook-factory` (`C0CBSE2Q6FQ`, `SLACK_BOT_TOKEN` exists): one thread per work item; store its `ts` in `work_items.slackThreadTs`.
+- **Config loading:** the console needs `projects/tastebook/factory.yaml` at runtime. Vercel's root directory is `apps/console`, so reading a file outside it is unreliable; options are generating a TS module from the YAML at build time, or a `next.config.ts` `outputFileTracingIncludes`. Decide when building.
+- **Logic placement:** keep the decisions pure in `packages/core` (event → actions, report → Linear/Slack updates) with Vitest tests; route handlers and `lib/` do the I/O.
+- **New secret (user action):** a GitHub token for `POST /repos/milobedini/tastebook/dispatches`: a fine-grained personal access token limited to `tastebook` with Contents read and write (required for repository dispatch). Name it `GITHUB_DISPATCH_TOKEN`; the user adds it with `vercel env add` in their own terminal. Add it to `.env.example`.
+- **Exit check for step 3:** create a tiny TAS issue (the Linear connector can create it; the user delegates), and it reaches a PR without any hand step.
+
+#### Open follow-ups (not step 3)
+
+- Evidence hosting for the verify stage (Phase 2): see Open questions.
+- Narrower Linear credential for runs, and transcript storage: see Open questions.
+- `factory init` must create the `factory` label in GitHub and Linear (both exist for Tastebook now).
+- Usage readings in hand-written SQL need `"window"` quoted (reserved word); Drizzle quotes it.
 
 ### Things learnt during setup
 
