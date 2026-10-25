@@ -27,7 +27,7 @@ Phase 0 exit check passed 2026-10-24: delegating TAS-6 to `@Tastebook` recorded 
 Spike done 2026-10-25 (Claude Code 2.1.310, `claude-code-action` v1.0.262, tastebook PR #1, closed). Results are under Things learnt. Order for the rest of Phase 1:
 
 1. ~~Tables `work_items`, `runs`, `usage_readings`, `queue`.~~ Done 2026-10-25 (migration `0001`).
-2. Reusable `.github/workflows/stage.yml` and its caller in `tastebook`: brief in, stage subagent, report and usage back to an authenticated console endpoint. Built 2026-10-25; waiting on its first live run.
+2. Reusable `.github/workflows/stage.yml` and its caller in `tastebook`: brief in, stage subagent, report and usage back to an authenticated console endpoint. Done 2026-10-25: TAS-7 ran end to end (dispatched by hand) and opened tastebook PR #4 with green CI.
 3. Router: delegation → work item → governor → `repository_dispatch` (masked Linear token) or queue; Linear session and Slack thread updates.
 4. Scheduled probe and queue release (GitHub Actions).
 5. Console login, then the Usage page.
@@ -54,6 +54,9 @@ Spike done 2026-10-25 (Claude Code 2.1.310, `claude-code-action` v1.0.262, taste
 - `claude-code-action` revokes the Claude App token in its own last step, and skips the App token exchange when the workflow file differs from the default branch's. Use `github_token: ${{ github.token }}` unless the App identity is needed.
 - `gh pr comment --attach` rejects `GITHUB_TOKEN` ("unsupported authentication type"), both inside the agent run and in a plain step. The Claude App token is the same kind of installation token, so it is expected to fail the same way (not tested).
 - **Stage run design** (2026-10-25): the console dispatches `factory-stage` with `{run_id, model, prompt}` (`buildDispatchPayload` in core). The project's `factory.yml` passes those to `stage.yml`, which checks them, runs the project's optional `.github/actions/factory-setup` composite action, then calls `POST /api/runs/<id>/start` with a GitHub OIDC token (audience: the console URL). The console checks the repository, the stage workflow path, the `repository_dispatch` event and the run's status, records the Actions run, and returns a Linear token valid for at least 90 minutes. Nothing secret travels in the public dispatch payload, and there is no shared secret. The agent never sees the OIDC request variables (the action removes them). `POST /api/runs/<id>/report` uses a fresh OIDC token bound to the same Actions run.
+- First stage run (TAS-7, 2026-10-25): the Claude App token exchange works from a reusable workflow called by a `repository_dispatch` caller on `main`. Pushes and the PR come from `claude[bot]` and trigger CI. Implement on Opus took about 2 minutes, an API-equivalent $0.52, and 2% of each usage window. The agent's final `response` reached the Linear session.
+- A project needs a `factory` label in both its GitHub repo and its Linear team before the first run; `factory init` should create them.
+- The Linear connector acts as the user, so status changes made through it appear under the user's name.
 - Linear `agentSessionUpdate(id: String!, input: AgentSessionUpdateInput!)`: `plan` replaces the whole plan, items `{content, status}` with status `pending`, `inProgress`, `completed` or `canceled`; `addedExternalUrls` takes `{label, url}`. `linear.py` matches.
 
 ## Decisions
