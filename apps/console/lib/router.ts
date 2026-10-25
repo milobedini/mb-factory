@@ -56,6 +56,7 @@ import {
   slackSpecGateSettled,
   slackStartedText,
   slackThreadText,
+  specUrl,
   stageAfterPrClosed,
   stageForAgent,
   startedThought,
@@ -773,14 +774,13 @@ const settleSpecGate = async (
   if (workItem.stage !== 'spec_review' || !ts) {
     return;
   }
-  const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
   const by = from.via === 'slack' ? `by ${from.name}` : 'in Linear';
   await Promise.all([
     editInThread(
       project,
       workItem,
       ts,
-      slackSpecGateSettled(request?.trigger === 'spec_approved' ? 'approved' : 'changes', by, prUrl)
+      slackSpecGateSettled(request?.trigger === 'spec_approved' ? 'approved' : 'changes', by, specUrl(workItem))
     ),
     getDb().update(workItems).set({ specGateSlackTs: null }).where(eq(workItems.id, workItem.id))
   ]);
@@ -943,7 +943,11 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
     await startQuestions(project, workItem, run, next.questions);
   }
   if (next.stage === 'spec_review') {
-    const gate = slackSpecGateMessage(workItem.id, { prUrl, issueUrl: workItem.issueUrl });
+    const gate = slackSpecGateMessage(workItem.id, {
+      specUrl: specUrl(workItem),
+      prUrl,
+      issueUrl: workItem.issueUrl
+    });
     const ts = await replyInThread(project, workItem, gate);
     await getDb()
       .update(workItems)

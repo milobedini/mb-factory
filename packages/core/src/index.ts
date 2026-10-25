@@ -131,7 +131,8 @@ export {
   slackPlainText,
   slackQuestionCard,
   slackSpecGateMessage,
-  slackSpecGateSettled
+  slackSpecGateSettled,
+  specUrl
 } from './slack';
 export type { AgentRole, Stage, StageContext, StageEvent, Transition } from './stages';
 export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, STAGES, TERMINAL_STAGES, transition } from './stages';

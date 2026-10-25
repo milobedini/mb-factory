@@ -132,16 +132,39 @@ const currentQuestionBlocks = (question: CardQuestion, later: PositionedQuestion
 export const SPEC_APPROVE = 'Approve';
 export const SPEC_CHANGE = 'Change something';
 
+// Specs live at `specs/<ISSUE-ID>.md` on the work item's branch; GitHub renders the file, which reads better than the
+// PR's diff. Without a branch, the PR is the next best thing.
+export const specUrl = ({
+  repository,
+  branch,
+  issueIdentifier,
+  prNumber
+}: {
+  repository: string;
+  branch: string | null;
+  issueIdentifier: string;
+  prNumber: number | null;
+}): string | null => {
+  if (branch) {
+    return `https://github.com/${repository}/blob/${encodeURI(branch)}/specs/${encodeURIComponent(issueIdentifier)}.md`;
+  }
+  return prNumber ? `https://github.com/${repository}/pull/${prNumber}` : null;
+};
+
+const specLink = (url: string | null, label: string): string => (url ? `<${url}|${label}>` : label);
+
 // The spec approval gate in the thread: the same two answers as in Linear, read by the router just as strictly.
 export const slackSpecGateMessage = (
   workItemId: string,
-  { prUrl, issueUrl }: { prUrl: string | null; issueUrl: string }
+  { specUrl: spec, prUrl, issueUrl }: { specUrl: string | null; prUrl: string | null; issueUrl: string }
 ): SlackMessage => {
-  const spec = prUrl ? `<${prUrl}|The spec>` : 'The spec';
+  const pr = prUrl ? ` (<${prUrl}|PR>)` : '';
   return {
     text: 'The spec is ready for review.',
     blocks: [
-      section(`${spec} is ready for review. Approve it to start building, or say what should change.`),
+      section(
+        `${specLink(spec, 'The spec')}${pr} is ready for review. Approve it to start building, or say what should change.`
+      ),
       {
         type: 'actions',
         elements: [
@@ -160,13 +183,12 @@ export const slackSpecGateMessage = (
 export const slackSpecGateSettled = (
   outcome: 'approved' | 'changes',
   by: string,
-  prUrl: string | null
+  spec: string | null
 ): SlackMessage => {
-  const spec = prUrl ? `<${prUrl}|The spec>` : 'The spec';
   const text =
     outcome === 'approved'
-      ? `✓ ${spec} was approved ${escapeSlack(by)}. Building starts next.`
-      : `Changes to ${prUrl ? `<${prUrl}|the spec>` : 'the spec'} were asked for ${escapeSlack(by)}.`;
+      ? `✓ ${specLink(spec, 'The spec')} was approved ${escapeSlack(by)}. Building starts next.`
+      : `Changes to ${specLink(spec, 'the spec')} were asked for ${escapeSlack(by)}.`;
   return {
     text: outcome === 'approved' ? 'The spec was approved.' : 'Changes to the spec were asked for.',
     blocks: [section(text)]

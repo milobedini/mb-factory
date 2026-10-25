@@ -12,7 +12,8 @@ import {
   slackPlainText,
   slackQuestionCard,
   slackSpecGateMessage,
-  slackSpecGateSettled
+  slackSpecGateSettled,
+  specUrl
 } from './slack';
 
 const config = parseFactoryConfig(
@@ -132,9 +133,15 @@ describe('slackQuestionCard', () => {
 describe('the spec gate', () => {
   it('offers Approve and Change something with the same values as Linear, and how to approve with suggestions', () => {
     const blocks = blocksOf(
-      slackSpecGateMessage(workItemId, { prUrl: 'https://github.com/milobedini/tastebook/pull/11', issueUrl })
+      slackSpecGateMessage(workItemId, {
+        specUrl: 'https://github.com/milobedini/tastebook/blob/tas-14-x/specs/TAS-14.md',
+        prUrl: 'https://github.com/milobedini/tastebook/pull/11',
+        issueUrl
+      })
     );
-    expect(blocks[0]?.text?.text).toContain('<https://github.com/milobedini/tastebook/pull/11|The spec>');
+    expect(blocks[0]?.text?.text).toBe(
+      '<https://github.com/milobedini/tastebook/blob/tas-14-x/specs/TAS-14.md|The spec> (<https://github.com/milobedini/tastebook/pull/11|PR>) is ready for review. Approve it to start building, or say what should change.'
+    );
     const buttons = blocks.find(({ type }) => type === 'actions')?.elements ?? [];
     expect(buttons.map(({ value }) => JSON.parse(value ?? '{}'))).toEqual([
       { w: workItemId, a: 'Approve' },
@@ -151,6 +158,21 @@ describe('the spec gate', () => {
     expect(blocksOf(slackSpecGateSettled('changes', 'in Linear', null))[0]?.text?.text).toBe(
       'Changes to the spec were asked for in Linear.'
     );
+  });
+});
+
+describe('specUrl', () => {
+  const workItem = { repository: 'milobedini/tastebook', issueIdentifier: 'TAS-15', prNumber: 12 };
+
+  it('points at the rendered spec file on the branch', () => {
+    expect(specUrl({ ...workItem, branch: 'tas-15-let-visitors-search-recipes-by-title' })).toBe(
+      'https://github.com/milobedini/tastebook/blob/tas-15-let-visitors-search-recipes-by-title/specs/TAS-15.md'
+    );
+  });
+
+  it('falls back to the PR, then to nothing', () => {
+    expect(specUrl({ ...workItem, branch: null })).toBe('https://github.com/milobedini/tastebook/pull/12');
+    expect(specUrl({ ...workItem, branch: null, prNumber: null })).toBeNull();
   });
 });
 
