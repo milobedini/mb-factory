@@ -1,3 +1,5 @@
+export type { Brief, DispatchPayload } from './brief';
+export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
 export type { FactoryConfig, UsagePolicy } from './config';
 export { factoryConfigSchema, parseFactoryConfig, usagePolicySchema } from './config';
 export type {
@@ -19,6 +21,10 @@ export {
   USAGE_STATUSES,
   USAGE_WINDOWS
 } from './governor';
+export type { ClaimCheck, StageRunClaims } from './oidc';
+export { checkStageRunClaims, GITHUB_OIDC_ISSUER, STAGE_WORKFLOW } from './oidc';
+export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } from './run-report';
+export { runReportSchema, stageReportSchema, summariseRun } from './run-report';
 export type { RunOutcome, RunStatus, RunTrigger, WorkOrigin } from './runs';
 export { RUN_OUTCOMES, RUN_STATUSES, RUN_TRIGGERS, WORK_ORIGINS } from './runs';
 export { decryptSecret, encryptSecret } from './secrets';

@@ -58,6 +58,7 @@ export const workItems = pgTable(
     id: uuid().primaryKey().defaultRandom(),
     project: text().notNull(),
     repository: text().notNull(),
+    linearOrganizationId: text().notNull(),
     linearIssueId: text().notNull().unique(),
     issueIdentifier: text().notNull(),
     issueUrl: text().notNull(),

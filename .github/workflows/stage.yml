@@ -1,0 +1,118 @@
+# One factory stage run. Project repos call this from a repository_dispatch workflow; the console sends the dispatch.
+name: Factory stage
+
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        description: The console's run ID
+        type: string
+        required: true
+      model:
+        description: Model for the run, from factory.yaml (after any governor downshift)
+        type: string
+        required: true
+      prompt:
+        description: The dispatcher prompt with the brief, rendered by the console
+        type: string
+        required: true
+      factory_ref:
+        description: Ref of mb-factory whose plugin the run loads
+        type: string
+        default: main
+      console_url:
+        type: string
+        default: https://mb-factory-console.vercel.app
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: factory-run-${{ inputs.run_id }}
+    permissions:
+      contents: read
+      # Authenticates to the console and to the Claude GitHub App token exchange.
+      id-token: write
+    env:
+      RUN_ID: ${{ inputs.run_id }}
+      MODEL: ${{ inputs.model }}
+      FACTORY_REF: ${{ inputs.factory_ref }}
+      CONSOLE_URL: ${{ inputs.console_url }}
+    steps:
+      - name: Check the inputs
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "::error::run_id is not a UUID"; exit 1; }
+          [[ "$MODEL" =~ ^[a-z0-9.-]+$ ]] || { echo "::error::model has unexpected characters"; exit 1; }
+          [[ "$FACTORY_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::factory_ref has unexpected characters"; exit 1; }
+          [[ "$CONSOLE_URL" =~ ^https://[A-Za-z0-9.-]+$ ]] || { echo "::error::console_url must be an https origin"; exit 1; }
+          echo "FACTORY_REPORT_PATH=$RUNNER_TEMP/factory-report.json" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch the factory plugin
+        run: git clone --quiet --depth 1 --branch "$FACTORY_REF" https://github.com/milobedini/mb-factory.git "$RUNNER_TEMP/mb-factory"
+
+      - name: Set up the project
+        if: hashFiles('.github/actions/factory-setup/action.yml') != ''
+        uses: ./.github/actions/factory-setup
+
+      - name: Start the run
+        id: start
+        run: |
+          audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
+          oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          echo "::add-mask::$oidc"
+          response=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" "$CONSOLE_URL/api/runs/$RUN_ID/start")
+          linear_token=$(jq -r .linearAccessToken <<< "$response")
+          echo "::add-mask::$linear_token"
+          {
+            echo "LINEAR_ACCESS_TOKEN=$linear_token"
+            echo "LINEAR_AGENT_SESSION_ID=$(jq -r .agentSessionId <<< "$response")"
+          } >> "$GITHUB_ENV"
+
+      - name: Run the stage
+        id: claude
+        timeout-minutes: 50
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: ${{ inputs.prompt }}
+          claude_args: |
+            --model ${{ inputs.model }}
+            --plugin-dir ${{ runner.temp }}/mb-factory/plugin
+            --allowedTools Agent,Bash,Read,Edit,Write,Glob,Grep,Skill,TodoWrite
+
+      - name: Report the run
+        if: always() && steps.start.outcome == 'success'
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          CONCLUSION: ${{ steps.claude.outputs.conclusion }}
+        run: |
+          events='[]'
+          if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
+            # The file has been a JSON array; accept JSON lines too. Keep only the events the console reads, without message text.
+            events=$(jq -cs 'if length == 1 and (.[0] | type) == "array" then .[0] else . end
+              | [.[] | select(.type == "rate_limit_event" or .type == "result") | del(.result, .permission_denials)]' "$EXECUTION_FILE")
+          fi
+          report=null
+          if [[ -f "$FACTORY_REPORT_PATH" && $(stat -c %s "$FACTORY_REPORT_PATH") -lt 1000000 ]] && jq -e . "$FACTORY_REPORT_PATH" > /dev/null 2>&1; then
+            report=$(jq -c . "$FACTORY_REPORT_PATH")
+          fi
+          jq -n --arg conclusion "$CONCLUSION" --argjson report "$report" --argjson events "$events" \
+            '{conclusion: $conclusion, report: $report, events: $events}' > "$RUNNER_TEMP/run-report.json"
+
+          audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
+          oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          echo "::add-mask::$oidc"
+          curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
+            --data @"$RUNNER_TEMP/run-report.json" "$CONSOLE_URL/api/runs/$RUN_ID/report"

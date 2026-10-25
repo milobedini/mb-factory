@@ -27,7 +27,10 @@ const refreshAccessToken = async (refreshToken: string): Promise<LinearTokenResp
   return (await response.json()) as LinearTokenResponse;
 };
 
-export const getLinearAccessToken = async (organizationId: string): Promise<string> => {
+export const getLinearAccessToken = async (
+  organizationId: string,
+  { minValidityMs = REFRESH_MARGIN_MS }: { minValidityMs?: number } = {}
+): Promise<string> => {
   const key = requireEnv('TOKEN_ENCRYPTION_KEY');
   const [installation] = await getDb()
     .select()
@@ -38,7 +41,7 @@ export const getLinearAccessToken = async (organizationId: string): Promise<stri
   if (!installation) {
     throw new Error(`No Linear installation for organisation ${organizationId}`);
   }
-  if (installation.accessTokenExpiresAt.getTime() - Date.now() > REFRESH_MARGIN_MS) {
+  if (installation.accessTokenExpiresAt.getTime() - Date.now() > minValidityMs) {
     return decryptSecret(installation.accessToken, key);
   }
 

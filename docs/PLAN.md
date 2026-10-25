@@ -27,7 +27,7 @@ Phase 0 exit check passed 2026-10-24: delegating TAS-6 to `@Tastebook` recorded 
 Spike done 2026-10-25 (Claude Code 2.1.310, `claude-code-action` v1.0.262, tastebook PR #1, closed). Results are under Things learnt. Order for the rest of Phase 1:
 
 1. ~~Tables `work_items`, `runs`, `usage_readings`, `queue`.~~ Done 2026-10-25 (migration `0001`).
-2. Reusable `workflows/stage.yml` and its caller in `tastebook`: brief in, stage subagent, report and usage back to an authenticated console endpoint.
+2. Reusable `.github/workflows/stage.yml` and its caller in `tastebook`: brief in, stage subagent, report and usage back to an authenticated console endpoint. Built 2026-10-25; waiting on its first live run.
 3. Router: delegation → work item → governor → `repository_dispatch` (masked Linear token) or queue; Linear session and Slack thread updates.
 4. Scheduled probe and queue release (GitHub Actions).
 5. Console login, then the Usage page.
@@ -44,7 +44,7 @@ Spike done 2026-10-25 (Claude Code 2.1.310, `claude-code-action` v1.0.262, taste
 - Linear also offers client-credentials tokens (app actor, ~30 days, no refresh). Candidate for giving Actions runs their own token (Phase 1).
 - `openapi-typescript` needs the TypeScript JS API, which TypeScript 7 doesn't ship, and pnpm overrides don't reach peer dependencies. It lives in its own workspace package (`tools/openapi`) with `typescript` aliased to `@typescript/typescript6`, as in the Xelix front end.
 - MSW 3 renamed `onUnhandledRequest` to `onUnhandledFrame`. `openapi-fetch` keeps the `fetch` it saw at creation, so the client passes `fetch: (request) => globalThis.fetch(request)` for MSW to intercept it in tests.
-- Biome formats YAML. Exclude generated files (`backend/schema.yml`) or the contract check fails.
+- Biome formats YAML. Exclude generated files (`backend/schema.yml`) or the contract check fails. The same goes for `pnpm-lock.yaml`: lint-staged had reformatted it, so every install rewrote the whole file.
 - `astral-sh/setup-uv` publishes no major tags: pin the full version (`@v10.3.2`).
 - zsh treats `config[url]=…` as a glob: quote bracketed `gh api -f` fields.
 - `vercel env update` asks for confirmation even with a value on stdin; pass `--yes`. A hidden secret can't be read back, so rotating means generating a new value and setting it in both places from one shell.
@@ -53,6 +53,7 @@ Spike done 2026-10-25 (Claude Code 2.1.310, `claude-code-action` v1.0.262, taste
 - `claude-code-action`: job-level `env` reaches Claude's Bash tool despite the action's own `env:` block, and so does `env` in the `settings` input. `--plugin-dir` in `claude_args` loads the plugin from a clone of this repo. `execution_file` (`$RUNNER_TEMP/claude-execution-output.json`) is a JSON array of the `stream-json` events: `system/init` (agents, skills, plugins), `rate_limit_event` (`rate_limit_info.unifiedWindows.five_hour` / `seven_day`) and `result` (tokens, `total_cost_usd`, `duration_ms`, `num_turns`, `modelUsage`). Run telemetry needs no extra probe.
 - `claude-code-action` revokes the Claude App token in its own last step, and skips the App token exchange when the workflow file differs from the default branch's. Use `github_token: ${{ github.token }}` unless the App identity is needed.
 - `gh pr comment --attach` rejects `GITHUB_TOKEN` ("unsupported authentication type"), both inside the agent run and in a plain step. The Claude App token is the same kind of installation token, so it is expected to fail the same way (not tested).
+- **Stage run design** (2026-10-25): the console dispatches `factory-stage` with `{run_id, model, prompt}` (`buildDispatchPayload` in core). The project's `factory.yml` passes those to `stage.yml`, which checks them, runs the project's optional `.github/actions/factory-setup` composite action, then calls `POST /api/runs/<id>/start` with a GitHub OIDC token (audience: the console URL). The console checks the repository, the stage workflow path, the `repository_dispatch` event and the run's status, records the Actions run, and returns a Linear token valid for at least 90 minutes. Nothing secret travels in the public dispatch payload, and there is no shared secret. The agent never sees the OIDC request variables (the action removes them). `POST /api/runs/<id>/report` uses a fresh OIDC token bound to the same Actions run.
 - Linear `agentSessionUpdate(id: String!, input: AgentSessionUpdateInput!)`: `plan` replaces the whole plan, items `{content, status}` with status `pending`, `inProgress`, `completed` or `canceled`; `addedExternalUrls` takes `{label, url}`. `linear.py` matches.
 
 ## Decisions
@@ -97,7 +98,7 @@ Spike done 2026-10-25 (Claude Code 2.1.310, `claude-code-action` v1.0.262, taste
                          • stage state machine, WIP cap  └─► Postgres: work items, runs, events, scores
                          • refresh Linear app token → pass to run (masked)
                                          ▲
- Stage workflow end ── run report (usage, duration, outcome, transcript artifact) ─┘
+ Stage workflow end ── run report (usage, duration, outcome) ─┘
 
  Cloud scheduled tasks: health check · dependency audit · docs drift · backlog grooming · scorers
 ```
@@ -293,7 +294,7 @@ mb-factory/
   plugin/                    Claude Code plugin (installed into project runs)
     agents/                  triage.md, spec.md, implement.md, review.md, verify.md
     skills/                  linear, slack-report, github-pr, code-review rubric, ui-verification, spec-writing
-  workflows/                 reusable GitHub workflows (stage.yml) called from project repos
+  .github/workflows/stage.yml  reusable stage workflow called from project repos (GitHub only allows them under .github/workflows)
   cli/                       `factory init` / `factory doctor` for onboarding a project
   projects/tastebook/        factory.yaml (repos, Linear team/status IDs, Slack channel, Notion IDs, models, limits)
 ```
@@ -312,7 +313,7 @@ mb-factory/
 
 ## Open questions
 
-- Linear token delivery to Actions: the router refreshes the app token and passes it masked in the dispatch payload (to be validated in Phase 1).
+- Transcripts: artifacts on a public repo can be downloaded by any signed-in GitHub user, and a transcript can hold tool output, so runs don't upload one yet. Options: private Vercel Blob written by the report step, or a trimmed transcript in Postgres.
 - Usage readings: confirm the probe's utilisation figures against `/usage`. (Run telemetry is settled: `execution_file` includes `rate_limit_event`.)
 - Evidence hosting from CI (needed by the verify stage, Phase 2): `gh --attach` with `GITHUB_TOKEN` failed (2026-10-25). Remaining options in the agreed order: (2) a classic token as an Actions secret used only in a separate, agent-free upload step, (3) Vercel Blob.
 - Tastebook hosting (Vercel for the frontend; backend host to be decided) and preview environments for verification.

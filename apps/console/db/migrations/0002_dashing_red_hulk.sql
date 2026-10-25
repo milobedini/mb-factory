@@ -1,0 +1,1 @@
+ALTER TABLE "work_items" ADD COLUMN "linear_organization_id" text NOT NULL;

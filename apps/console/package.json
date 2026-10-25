@@ -15,6 +15,7 @@
     "@mb-factory/core": "workspace:*",
     "@neondatabase/serverless": "1.2.0",
     "drizzle-orm": "0.45.4",
+    "jose": "6.2.13",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"
