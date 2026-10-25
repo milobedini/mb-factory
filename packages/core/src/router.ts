@@ -150,6 +150,15 @@ export const linearStatusFor = (config: FactoryConfig, stage: Stage): string =>
 export const shouldMoveIssue = (currentStateType: string): boolean =>
   currentStateType !== 'completed' && currentStateType !== 'canceled';
 
+// Phase 1 has no review stage, so a delivered PR goes straight to the human merge gate. Phase 2 sends it to review.
+export const stageAfterRun = (
+  run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null },
+  hasPr: boolean
+): Stage | undefined =>
+  run.agent === 'implement' && run.status === 'finished' && run.outcome === 'done' && hasPr
+    ? 'awaiting_merge'
+    : undefined;
+
 export type QueueEntry = { runId: string; priority: Priority; heldAt: Date };
 
 export const orderQueue = <T extends QueueEntry>(entries: T[]): T[] =>

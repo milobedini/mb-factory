@@ -18,6 +18,7 @@ import {
   shouldResume,
   slackFinishedText,
   slackThreadText,
+  stageAfterRun,
   stageForAgent
 } from './router';
 
@@ -271,6 +272,21 @@ describe('closingActivity', () => {
     const limitHit = { ...run, status: 'limit_hit' as const, outcome: null };
     expect(closingActivity(limitHit, { ...open, resuming: true })).toMatchObject({ type: 'thought' });
     expect(closingActivity(limitHit, open)).toMatchObject({ type: 'error' });
+  });
+});
+
+describe('stageAfterRun', () => {
+  const done = { agent: 'implement' as const, status: 'finished' as const, outcome: 'done' as const };
+
+  it('hands a delivered PR to the human merge gate', () => {
+    expect(stageAfterRun(done, true)).toBe('awaiting_merge');
+  });
+
+  it('leaves the stage alone without a PR, for other outcomes, and for other agents', () => {
+    expect(stageAfterRun(done, false)).toBeUndefined();
+    expect(stageAfterRun({ ...done, outcome: 'needs_input' }, true)).toBeUndefined();
+    expect(stageAfterRun({ ...done, status: 'limit_hit', outcome: null }, true)).toBeUndefined();
+    expect(stageAfterRun({ ...done, agent: 'spec' }, true)).toBeUndefined();
   });
 });
 

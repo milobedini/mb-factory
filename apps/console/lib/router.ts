@@ -4,6 +4,7 @@ import type {
   RunRequest,
   RunStatus,
   SessionEvent,
+  Stage,
   UsageReading,
   UsageWindow
 } from '@mb-factory/core';
@@ -24,6 +25,7 @@ import {
   slackFinishedText,
   slackStartedText,
   slackThreadText,
+  stageAfterRun,
   stageForAgent,
   startedThought,
   USAGE_WINDOWS
@@ -141,6 +143,22 @@ const holdRun = async (
   await Promise.all([postActivity(workItem, { type: 'thought', body: text }), replyInThread(project, workItem, text)]);
 };
 
+// Records the stage and moves the Linear issue to its status; a failed move is logged, not fatal.
+const moveWorkItem = async (project: FactoryConfig, workItem: WorkItem, stage: Stage): Promise<void> => {
+  await Promise.all([
+    getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id)),
+    attempt('linear status', { issue: workItem.issueIdentifier }, async () => {
+      const move = await moveIssueToStatus(
+        workItem.linearOrganizationId,
+        workItem.linearIssueId,
+        linearStatusFor(project, stage),
+        shouldMoveIssue
+      );
+      log('info', 'linear status', { issue: workItem.issueIdentifier, stage, ...move });
+    })
+  ]);
+};
+
 const failDispatch = async ({ run, workItem }: RunWithWorkItem, error: unknown, now: Date): Promise<void> => {
   log('error', 'run dispatch failed', { runId: run.id, issue: workItem.issueIdentifier, error: errorMessage(error) });
   await getDb()
@@ -227,18 +245,7 @@ const startRun = async (
   await Promise.all([
     postActivity(workItem, { type: 'thought', body: startedThought(run.agent) }),
     replyInThread(project, workItem, slackStartedText(run.agent)),
-    stage ? db.update(workItems).set({ stage, updatedAt: now }).where(eq(workItems.id, workItem.id)) : undefined,
-    stage
-      ? attempt('linear status', { issue: workItem.issueIdentifier }, async () => {
-          const move = await moveIssueToStatus(
-            workItem.linearOrganizationId,
-            workItem.linearIssueId,
-            linearStatusFor(project, stage),
-            shouldMoveIssue
-          );
-          log('info', 'linear status', { issue: workItem.issueIdentifier, stage, ...move });
-        })
-      : undefined
+    stage ? moveWorkItem(project, workItem, stage) : undefined
   ]);
   return 'started';
 };
@@ -463,10 +470,12 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
       : false;
   const closing = closingActivity(run, { agentClosed, resuming });
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
+  const nextStage = stageAfterRun(run, workItem.prNumber !== null);
 
   await Promise.all([
     closing ? postActivity(workItem, closing) : undefined,
-    replyInThread(project, workItem, slackFinishedText({ ...run, prUrl, actionsRunUrl: run.actionsRunUrl }))
+    replyInThread(project, workItem, slackFinishedText({ ...run, prUrl, actionsRunUrl: run.actionsRunUrl })),
+    nextStage ? moveWorkItem(project, workItem, nextStage) : undefined
   ]);
   if (resuming) {
     await dispatchRun(project, await createRun(project, workItem, resumeRequestFor(run.agent), run.id));
