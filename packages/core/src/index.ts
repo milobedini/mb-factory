@@ -73,6 +73,7 @@ export {
   shouldMoveIssue,
   shouldResume,
   slackFinishedText,
+  slackReplyText,
   slackStartedText,
   slackThreadText,
   stageForAgent,

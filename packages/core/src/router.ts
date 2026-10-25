@@ -486,7 +486,29 @@ const slackLink = (url: string, label: string): string => `<${url}|${escapeSlack
 export const slackThreadText = (issue: { identifier: string; url: string; title: string | null }): string =>
   `${slackLink(issue.url, issue.identifier)}${issue.title ? ` ${escapeSlack(issue.title)}` : ''}`;
 
-export const slackStartedText = (agent: AgentRole): string => `Started the ${agent} run.`;
+const STARTED_BECAUSE: Record<RunTrigger, (round: number | undefined) => string> = {
+  delegated: () => '',
+  prompted: () => ' for the reply in Linear',
+  spec_approved: () => ' now the spec is approved',
+  delivered: () => ' on the PR',
+  review_findings: (round) => ` to fix the review findings${round ? ` from round ${round}` : ''}`,
+  ci_failed: () => ' to fix the failed CI run',
+  rerun: () => ' again, after the usage limit reset'
+};
+
+// Says why, so the thread reads as a timeline on its own.
+export const slackStartedText = (run: { agent: AgentRole; trigger: RunTrigger }, round?: number): string =>
+  `Started the ${run.agent} run${STARTED_BECAUSE[run.trigger](round)}.`;
+
+const MAX_MIRRORED_REPLY = 280;
+
+// A human's reply in the Linear session, mirrored into the thread; long replies link to the issue for the rest.
+export const slackReplyText = (body: string, issueUrl: string): string => {
+  const flat = body.replace(/\s+/g, ' ').trim();
+  const clipped = flat.length > MAX_MIRRORED_REPLY;
+  const quoted = escapeSlack(clipped ? `${flat.slice(0, MAX_MIRRORED_REPLY)}…` : flat);
+  return `Reply in Linear: “${quoted}”${clipped ? ` ${slackLink(issueUrl, 'Read it all')}` : ''}`;
+};
 
 const OUTCOME_COPY: Record<RunOutcome, string> = {
   done: 'finished',

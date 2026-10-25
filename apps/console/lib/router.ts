@@ -33,6 +33,7 @@ import {
   shouldMoveIssue,
   shouldResume,
   slackFinishedText,
+  slackReplyText,
   slackStartedText,
   slackThreadText,
   stageAfterPrClosed,
@@ -236,7 +237,7 @@ const startRun = async (
   const stage = stageForAgent(run.agent);
   await Promise.all([
     postActivity(workItem, { type: 'thought', body: startedThought(run.agent) }),
-    replyInThread(project, workItem, slackStartedText(run.agent)),
+    replyInThread(project, workItem, slackStartedText(run, briefRound(run, workItem.reviewRounds))),
     stage ? moveWorkItem(project, workItem, stage) : undefined
   ]);
   return 'started';
@@ -499,10 +500,14 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
     await stopWorkItem(project, workItem);
     return;
   }
+  await replyInThread(project, workItem, slackReplyText(event.body, workItem.issueUrl));
   const request = runRequestFor(event, workItem.stage);
   if (!request) {
     // The Change something option on its own: ask what to change, and keep waiting in Spec Review.
-    await postActivity(workItem, { type: 'elicitation', body: CHANGES_QUESTION });
+    await Promise.all([
+      postActivity(workItem, { type: 'elicitation', body: CHANGES_QUESTION }),
+      replyInThread(project, workItem, CHANGES_QUESTION)
+    ]);
     return;
   }
   await dispatchRun(project, await createRun(project, workItem, request));

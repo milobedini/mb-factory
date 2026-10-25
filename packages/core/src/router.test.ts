@@ -23,6 +23,8 @@ import {
   shouldMoveIssue,
   shouldResume,
   slackFinishedText,
+  slackReplyText,
+  slackStartedText,
   slackThreadText,
   stageForAgent,
   startsReviewLoop
@@ -547,6 +549,41 @@ describe('CI failures', () => {
     ).toBe(2);
     expect(consecutiveCiFixes([run('implement', 'spec_approved'), run('implement', 'ci_failed')])).toBe(0);
     expect(consecutiveCiFixes([])).toBe(0);
+  });
+});
+
+describe('slack timeline', () => {
+  it.each([
+    [{ agent: 'triage', trigger: 'delegated' }, undefined, 'Started the triage run.'],
+    [{ agent: 'implement', trigger: 'prompted' }, undefined, 'Started the implement run for the reply in Linear.'],
+    [
+      { agent: 'implement', trigger: 'spec_approved' },
+      undefined,
+      'Started the implement run now the spec is approved.'
+    ],
+    [{ agent: 'review', trigger: 'delivered' }, 1, 'Started the review run on the PR.'],
+    [
+      { agent: 'implement', trigger: 'review_findings' },
+      1,
+      'Started the implement run to fix the review findings from round 1.'
+    ],
+    [{ agent: 'implement', trigger: 'ci_failed' }, undefined, 'Started the implement run to fix the failed CI run.'],
+    [{ agent: 'spec', trigger: 'rerun' }, undefined, 'Started the spec run again, after the usage limit reset.']
+  ] as const)('says why %o started', (run, round, text) => {
+    expect(slackStartedText(run, round)).toBe(text);
+  });
+
+  const issueUrl = 'https://linear.app/tastebook/issue/TAS-12';
+
+  it('mirrors a reply on one line, escaped', () => {
+    expect(slackReplyText('The tests pin <0.1.0>\n\n& shouldn’t.', issueUrl)).toBe(
+      'Reply in Linear: “The tests pin &lt;0.1.0&gt; &amp; shouldn’t.”'
+    );
+  });
+
+  it('clips a long reply and links to the rest', () => {
+    const text = slackReplyText('x'.repeat(300), issueUrl);
+    expect(text).toBe(`Reply in Linear: “${'x'.repeat(280)}…” <${issueUrl}|Read it all>`);
   });
 });
 
