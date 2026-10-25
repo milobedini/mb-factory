@@ -28,7 +28,7 @@ import {
   startedThought,
   USAGE_WINDOWS
 } from '@mb-factory/core';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
 import { queue, runs, usageReadings, workItems } from '@/db/schema';
@@ -44,6 +44,7 @@ import { findRun } from './runs';
 import { postSlackMessage } from './slack-api';
 
 type WorkItem = typeof workItems.$inferSelect;
+type Run = typeof runs.$inferSelect;
 
 const ACTIVE_STATUSES: RunStatus[] = ['dispatched', 'running'];
 const OPEN_STATUSES: RunStatus[] = ['queued', ...ACTIVE_STATUSES];
@@ -152,27 +153,49 @@ const failDispatch = async ({ run, workItem }: RunWithWorkItem, error: unknown, 
   });
 };
 
+// Serialises claims, so two dispatchers can't both see a free slot.
+const DISPATCH_LOCK = sql`select pg_advisory_xact_lock(hashtext('mb-factory:dispatch'))`;
+
+// Claims the run only if, under the lock, the cap and the one-run-per-issue rule still hold.
+const claimRun = async (project: FactoryConfig, run: Run, model: string, now: Date): Promise<boolean> => {
+  const db = getDb();
+  const active = sql.raw(ACTIVE_STATUSES.map((status) => `'${status}'`).join(', '));
+  const [, claimed] = await db.batch([
+    db.execute(DISPATCH_LOCK),
+    db
+      .update(runs)
+      .set({ status: 'dispatched', dispatchedAt: now, model })
+      .where(
+        and(
+          eq(runs.id, run.id),
+          eq(runs.status, 'queued'),
+          sql`(select count(*) from ${runs} as active where active.status in (${active})) < ${project.concurrency.maxRuns}`,
+          sql`not exists (select 1 from ${runs} as active where active.work_item_id = ${run.workItemId} and active.status in (${active}))`
+        )
+      )
+      .returning({ id: runs.id })
+  ]);
+  return claimed.length > 0;
+};
+
+type StartResult = 'started' | 'not_claimed' | 'skipped';
+
 const startRun = async (
   project: FactoryConfig,
   found: RunWithWorkItem,
   downshift: boolean,
   now: Date
-): Promise<void> => {
+): Promise<StartResult> => {
   const { run, workItem } = found;
   const db = getDb();
   if (!workItem.agentSessionId) {
     log('warn', 'run not dispatched: work item has no agent session', { runId: run.id });
-    return;
+    return 'skipped';
   }
   const model = modelFor(project, run.agent, downshift);
-  // Claim first: the stage workflow's start call only accepts a dispatched run, and a second dispatcher loses here.
-  const claimed = await db
-    .update(runs)
-    .set({ status: 'dispatched', dispatchedAt: now, model })
-    .where(and(eq(runs.id, run.id), eq(runs.status, 'queued')))
-    .returning({ id: runs.id });
-  if (claimed.length === 0) {
-    return;
+  // Claim first: the stage workflow's start call only accepts a dispatched run.
+  if (!(await claimRun(project, run, model, now))) {
+    return 'not_claimed';
   }
   await db
     .update(queue)
@@ -196,7 +219,7 @@ const startRun = async (
     await sendStageDispatch(workItem.repository, payload);
   } catch (error) {
     await failDispatch(found, error, now);
-    return;
+    return 'skipped';
   }
   log('info', 'run dispatched', { runId: run.id, issue: workItem.issueIdentifier, model, downshift });
 
@@ -217,10 +240,11 @@ const startRun = async (
         })
       : undefined
   ]);
+  return 'started';
 };
 
 // Runs the governor for one queued run, then dispatches it or holds it in the queue.
-const dispatchRun = async (project: FactoryConfig, runId: string): Promise<void> => {
+const dispatchRun = async (project: FactoryConfig, runId: string, retried = false): Promise<void> => {
   const found = await findRun(runId);
   if (found?.run.status !== 'queued') {
     return;
@@ -249,7 +273,15 @@ const dispatchRun = async (project: FactoryConfig, runId: string): Promise<void>
     await holdRun(project, found, decision, now);
     return;
   }
-  await startRun(project, found, decision.downshift, now);
+  if ((await startRun(project, found, decision.downshift, now)) !== 'not_claimed') {
+    return;
+  }
+  // Another dispatch took the slot (or another run on this issue started) since the governor looked: decide again.
+  if (!retried) {
+    await dispatchRun(project, runId, true);
+    return;
+  }
+  await holdRun(project, found, { kind: 'hold', state: decision.state, reason: 'concurrency' }, now);
 };
 
 const createRun = async (
@@ -344,7 +376,7 @@ const startFromSession = async (event: Extract<SessionEvent, { kind: 'created' }
   await dispatchRun(project, await createRun(project, workItem, request));
 };
 
-const cancelRun = async (run: typeof runs.$inferSelect, workItem: WorkItem, now: Date): Promise<void> => {
+const cancelRun = async (run: Run, workItem: WorkItem, now: Date): Promise<void> => {
   const db = getDb();
   const canceled = await db
     .update(runs)
