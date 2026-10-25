@@ -31,7 +31,14 @@ export {
   GOVERNOR_WORKFLOW,
   STAGE_WORKFLOW
 } from './oidc';
-export type { AnswerResult, AnswerSource, AnswerUpdate, AskedQuestion, Question } from './questions';
+export type {
+  AnswerResult,
+  AnswerSource,
+  AnswerUpdate,
+  AskedQuestion,
+  PositionedQuestion,
+  Question
+} from './questions';
 export {
   ANSWER_SOURCES,
   answeredRequest,

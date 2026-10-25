@@ -140,6 +140,8 @@ export const questions = pgTable(
       .references(() => runs.id, { onDelete: 'cascade' }),
     position: integer().notNull(),
     prompt: text().notNull(),
+    // A few words naming the decision, for the list of questions still to come.
+    topic: text(),
     // The suggested option first.
     options: text().array().notNull(),
     answer: text(),

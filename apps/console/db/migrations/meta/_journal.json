@@ -57,6 +57,13 @@
       "when": 1792946743327,
       "tag": "0007_zippy_pride",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792947550935,
+      "tag": "0008_productive_warlock",
+      "breakpoints": true
     }
   ]
 }

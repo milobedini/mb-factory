@@ -45,6 +45,7 @@ Don't post questions yourself. Put them in the stage report's `questions` and re
 "questions": [
   {
     "prompt": "Recipes have no cooking time today. Show it as total minutes, or as prep and cook separately?",
+    "topic": "Cooking time",
     "options": ["Total minutes", "Prep and cook", "Leave it out for now"],
     "suggested": "Total minutes"
   }
@@ -52,7 +53,7 @@ Don't post questions yourself. Put them in the stage report's `questions` and re
 ```
 
 - Ask only what the issue, the code and earlier stage briefs can't answer. One round; a second only for questions the answers created.
-- `prompt` reads on its own: the decision and why it matters, in one or two sentences. `options` are two to four distinct labels of at most 80 characters. `suggested` is the label you'd pick. At most ten questions, most important first.
+- `prompt` reads on its own: the decision and why it matters, in one or two sentences. `options` are two to four distinct labels of at most 80 characters. `suggested` is the label you'd pick. `topic` names the decision in a few words (at most 60 characters): each question lists the ones still to come as topic and suggestion, so the human can take the rest of your suggestions knowingly. At most ten questions, most important first.
 - Before the report, post one `thought` saying what's coming ("Three questions before I write the spec."), and no `response` or elicitation: the questions are the run's last word.
 - An answer marked "in their own words" may match no option: read it for intent. One marked "your default" means the human took your suggestion.
 - Record each answer where the next stage will find it: in the spec's Decisions as `Asked: <question, short> → <answer>`, or in the stage brief.

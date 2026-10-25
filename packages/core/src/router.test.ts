@@ -443,14 +443,14 @@ describe('nextStepAfterRun', () => {
 
   it('hands the questions a stage reported to the router to ask', () => {
     expect(nextStepAfterRun(asking('triage'), loop)).toEqual({
-      questions: [{ prompt: 'Store images where?', options: ['Blob', 'Disk'] }]
+      questions: [{ prompt: 'Store images where?', topic: null, options: ['Blob', 'Disk'] }]
     });
   });
 
   it('asks a spec’s questions while it waits in Spec Review', () => {
     expect(nextStepAfterRun(asking('spec'), { ...loop, hasPr: true })).toEqual({
       stage: 'spec_review',
-      questions: [{ prompt: 'Store images where?', options: ['Blob', 'Disk'] }]
+      questions: [{ prompt: 'Store images where?', topic: null, options: ['Blob', 'Disk'] }]
     });
   });
 

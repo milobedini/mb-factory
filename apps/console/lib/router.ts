@@ -298,10 +298,11 @@ const dispatchRun = async (project: FactoryConfig, runId: string, retried = fals
   await holdRun(project, found, { kind: 'hold', state: decision.state, reason: 'concurrency' }, now);
 };
 
-const toAsked = ({ id, position, prompt, options, answer, answerSource }: QuestionRow): AskedQuestion => ({
+const toAsked = ({ id, position, prompt, topic, options, answer, answerSource }: QuestionRow): AskedQuestion => ({
   id,
   position,
   prompt,
+  topic,
   options,
   answer,
   answerSource
@@ -324,17 +325,17 @@ const closeOpenQuestions = async (workItem: WorkItem): Promise<void> => {
   }
 };
 
-// One question in Linear as a select, and in the thread as text.
+// One question in Linear as a select, and in the thread as text, each with the questions still to come.
 const askQuestion = async (
   project: FactoryConfig,
   workItem: WorkItem,
   question: AskedQuestion,
-  total: number
+  round: AskedQuestion[]
 ): Promise<void> => {
-  const { body, options } = questionElicitation(question, question.position, total);
+  const { body, options } = questionElicitation(question, round);
   await Promise.all([
     postActivity(workItem, { type: 'elicitation', body }, options),
-    replyInThread(project, workItem, slackQuestionText(question, question.position, total, workItem.issueUrl)),
+    replyInThread(project, workItem, slackQuestionText(question, round, workItem.issueUrl)),
     getDb().update(questions).set({ askedAt: new Date() }).where(eq(questions.id, question.id))
   ]);
 };
@@ -348,13 +349,22 @@ const startQuestions = async (
 ): Promise<void> => {
   const rows = await getDb()
     .insert(questions)
-    .values(reported.map(({ prompt, options }, index) => ({ runId: run.id, position: index + 1, prompt, options })))
+    .values(
+      reported.map(({ prompt, topic, options }, index) => ({
+        runId: run.id,
+        position: index + 1,
+        prompt,
+        topic,
+        options
+      }))
+    )
     .onConflictDoNothing()
     .returning();
   log('info', 'questions recorded', { runId: run.id, issue: workItem.issueIdentifier, count: rows.length });
-  const first = rows.map(toAsked).find(({ position }) => position === 1);
+  const round = rows.map(toAsked);
+  const first = round.find(({ position }) => position === 1);
   if (first) {
-    await askQuestion(project, workItem, first, rows.length);
+    await askQuestion(project, workItem, first, round);
   }
 };
 
@@ -400,7 +410,7 @@ const answerQuestion = async (project: FactoryConfig, workItem: WorkItem, body: 
     return true;
   }
   if (result.next) {
-    await askQuestion(project, workItem, result.next, open.round.length);
+    await askQuestion(project, workItem, result.next, open.round);
     return true;
   }
   const answered = open.round.map((question) => ({

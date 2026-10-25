@@ -12,6 +12,7 @@ export const MAX_QUESTIONS = 10;
 const MAX_OPTIONS = 4;
 const MAX_OPTION_LENGTH = 80;
 const MAX_PROMPT_LENGTH = 1000;
+const MAX_TOPIC_LENGTH = 60;
 const MAX_ANSWER_LENGTH = 2000;
 
 const FOR_ALL = 'Use the defaults for all';
@@ -29,6 +30,8 @@ const normalise = (text: string): string =>
 const questionSchema = z
   .looseObject({
     prompt: z.string().trim().min(1).max(MAX_PROMPT_LENGTH),
+    // A few words naming the decision, for the list of questions still to come.
+    topic: z.string().trim().min(1).max(MAX_TOPIC_LENGTH).nullish().catch(null),
     options: z.array(z.string().trim().min(1).max(MAX_OPTION_LENGTH)).min(2).max(MAX_OPTIONS),
     suggested: z.string().trim().nullish()
   })
@@ -40,7 +43,7 @@ const questionSchema = z
   });
 
 // A question as the router asks it: the suggested option first.
-export type Question = { prompt: string; options: string[] };
+export type Question = { prompt: string; topic: string | null; options: string[] };
 
 const reportQuestionsSchema = z.looseObject({ questions: z.array(z.unknown()).nullish() });
 
@@ -53,30 +56,60 @@ export const readQuestions = (report: unknown): Question[] =>
       if (!read.success) {
         return [];
       }
-      const { prompt, options, suggested } = read.data;
+      const { prompt, topic, options, suggested } = read.data;
       const first = options.find((option) => suggested && normalise(option) === normalise(suggested)) ?? options[0];
-      return first ? [{ prompt, options: [first, ...options.filter((option) => option !== first)] }] : [];
+      return first
+        ? [{ prompt, topic: topic ?? null, options: [first, ...options.filter((option) => option !== first)] }]
+        : [];
     })
     .slice(0, MAX_QUESTIONS);
 
-// What the router posts for one question: a Linear select, suggested option first. The defaults shortcut appears
-// while at least one more question follows; on the last it would only repeat the suggestion.
+export type PositionedQuestion = Question & { position: number };
+
+const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+const topicOf = ({ topic, prompt }: Question): string => {
+  const flat = oneLine(topic ?? prompt);
+  return flat.length > MAX_TOPIC_LENGTH ? `${flat.slice(0, MAX_TOPIC_LENGTH)}…` : flat;
+};
+
+const laterThan = (question: PositionedQuestion, round: PositionedQuestion[]): PositionedQuestion[] =>
+  round.filter(({ position }) => position > question.position).toSorted((a, b) => a.position - b.position);
+
+// What the router posts for one question: a Linear select, suggested option first. While more questions follow, it
+// lists them with their suggestions, so the defaults shortcut is an informed choice; on the last question the
+// shortcut would only repeat the suggestion.
 export const questionElicitation = (
-  question: Question,
-  position: number,
-  total: number
+  question: PositionedQuestion,
+  round: PositionedQuestion[]
 ): { body: string; options: string[] } => {
-  const heading = total > 1 ? `Question ${position} of ${total}: ` : '';
-  const shortcut = position < total ? [position === 1 ? FOR_ALL : FOR_THE_REST] : [];
+  const total = round.length;
+  const later = laterThan(question, round);
+  const heading = total > 1 ? `Question ${question.position} of ${total}: ` : '';
+  const shortcut = question.position === 1 ? FOR_ALL : FOR_THE_REST;
+  const upcoming =
+    later.length > 0
+      ? [
+          '',
+          'Still to come, with my suggestions:',
+          ...later.map((next) => `${next.position}. ${topicOf(next)} → ${next.options[0]}`),
+          '',
+          `${shortcut} takes my suggestion here and for each of these.`
+        ]
+      : [];
   return {
-    body: `${heading}${question.prompt}\n\nSuggested: ${question.options[0]}. Pick an option, or reply in your own words.`,
-    options: [...question.options, ...shortcut]
+    body: [
+      `${heading}${question.prompt}`,
+      '',
+      `Suggested: ${question.options[0]}. Pick an option, or reply in your own words.`,
+      ...upcoming
+    ].join('\n'),
+    options: [...question.options, ...(later.length > 0 ? [shortcut] : [])]
   };
 };
 
-export type AskedQuestion = Question & {
+export type AskedQuestion = PositionedQuestion & {
   id: string;
-  position: number;
   answer: string | null;
   answerSource: AnswerSource | null;
 };
@@ -119,8 +152,6 @@ const SOURCE_COPY: Record<AnswerSource, string> = {
   default: 'your default'
 };
 
-const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
-
 // The answered run's prompt: every question with its answer, in the order asked.
 export const answersPrompt = (round: AskedQuestion[]): string =>
   [
@@ -143,12 +174,22 @@ export const answeredRequest = (agent: AgentRole, round: AskedQuestion[]): RunRe
 const escapeSlack = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // The question as it appears in the work item's thread, until the thread can answer it itself.
-export const slackQuestionText = (question: Question, position: number, total: number, issueUrl: string): string => {
-  const heading = total > 1 ? `Question ${position} of ${total}` : 'Question';
+export const slackQuestionText = (
+  question: PositionedQuestion,
+  round: PositionedQuestion[],
+  issueUrl: string
+): string => {
+  const heading = round.length > 1 ? `Question ${question.position} of ${round.length}` : 'Question';
   const [suggested, ...others] = question.options.map(escapeSlack);
+  const later = laterThan(question, round).map(
+    (next) => `${next.position}. ${escapeSlack(topicOf(next))} (${escapeSlack(next.options[0] ?? '')})`
+  );
   return [
     `${heading}: ${escapeSlack(oneLine(question.prompt))}`,
     `Suggested: ${suggested}${others.length > 0 ? `. Or: ${others.join(' · ')}` : ''}.`,
+    later.length > 0 ? `Then, as suggested: ${later.join(' · ')}.` : undefined,
     `<${issueUrl}|Answer in Linear>`
-  ].join(' ');
+  ]
+    .filter((part) => part !== undefined)
+    .join(' ');
 };
