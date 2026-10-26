@@ -136,7 +136,9 @@ const githubGet = async <T>(path: string, action: string): Promise<T> => {
   return (await response.json()) as T;
 };
 
-const MERGEABLE_POLL_MS = 2000;
+// GitHub usually answers within seconds but has taken longer than 20 s after a merge (TAS-33, 26 Oct), so the pauses
+// grow to a little over two minutes in all; the push check runs after the webhook has been answered.
+const MERGEABLE_PAUSES_MS = [2, 2, 2, 2, 2, 5, 10, 20, 30, 60].map((seconds) => seconds * 1000);
 
 export type MergeState = { mergeable: boolean | null; base: string };
 
@@ -148,9 +150,13 @@ type Pull = {
 };
 
 // Whether a PR merges into its base branch; `mergeable` is null while GitHub works it out, and can be an answer for
-// the old heads just after a push (`currentMergeable`). Asking starts the work, so an unknown is asked again a few
-// times, a couple of seconds apart.
-export const pullMergeState = async (repository: string, prNumber: number, attempts = 10): Promise<MergeState> => {
+// the old heads just after a push (`currentMergeable`). Asking starts the work, so an unknown is asked again after each
+// pause in turn.
+export const pullMergeState = async (
+  repository: string,
+  prNumber: number,
+  pauses: number[] = MERGEABLE_PAUSES_MS
+): Promise<MergeState> => {
   const pull = await githubGet<Pull>(`/repos/${repository}/pulls/${prNumber}`, 'pull request');
   const [branch, testMerge] = await Promise.all([
     githubGet<{ commit: { sha: string } }>(
@@ -167,11 +173,12 @@ export const pullMergeState = async (repository: string, prNumber: number, attem
     baseHead: branch.commit.sha,
     prHead: pull.head.sha
   });
-  if (mergeable !== null || attempts <= 1) {
+  const [pause, ...rest] = pauses;
+  if (mergeable !== null || pause === undefined) {
     return { mergeable, base: pull.base.ref };
   }
-  await sleep(MERGEABLE_POLL_MS);
-  return pullMergeState(repository, prNumber, attempts - 1);
+  await sleep(pause);
+  return pullMergeState(repository, prNumber, rest);
 };
 
 type WorkflowRuns = { workflow_runs: { workflow_id: number; status: string; conclusion: string | null }[] };

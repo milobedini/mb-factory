@@ -54,7 +54,7 @@ const conflictFor = async (workItem: WorkItem): Promise<string | null> => {
     return null;
   }
   try {
-    const { mergeable, base } = await pullMergeState(workItem.repository, workItem.prNumber, 1);
+    const { mergeable, base } = await pullMergeState(workItem.repository, workItem.prNumber, []);
     return mergeable === false ? base : null;
   } catch (error) {
     log('warn', 'inbox merge state failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
