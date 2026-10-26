@@ -26,8 +26,8 @@ on:
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
-      # The project's own GitHub App, which can push workflow files (Anthropic's Claude app can't). Without both, the
-      # run uses the Claude app through the action's OIDC exchange.
+      # The project's own GitHub App, which can push workflow files (Anthropic's Claude app can't). Only implement runs
+      # use it; other runs, and every run without both, use the Claude app through the action's OIDC exchange.
       FACTORY_APP_CLIENT_ID:
         required: false
       FACTORY_APP_PRIVATE_KEY:
@@ -80,6 +80,7 @@ jobs:
           oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
           echo "::add-mask::$oidc"
           response=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" "$CONSOLE_URL/api/runs/$RUN_ID/start")
+          echo "agent=$(jq -r '.agent // empty' <<< "$response")" >> "$GITHUB_OUTPUT"
           # A scheduled job's run reports only to the console, so it gets no Linear token or session.
           linear_token=$(jq -r '.linearAccessToken // empty' <<< "$response")
           if [[ -n "$linear_token" ]]; then
@@ -92,11 +93,14 @@ jobs:
 
       - name: Get the factory app's token
         id: app-token
-        if: env.HAS_FACTORY_APP == 'true'
+        # Triage, spec, review and the scheduled checks read the most untrusted text and never need to write workflows.
+        if: env.HAS_FACTORY_APP == 'true' && steps.start.outputs.agent == 'implement'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
           private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write

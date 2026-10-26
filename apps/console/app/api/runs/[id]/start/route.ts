@@ -36,12 +36,13 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
   if (!workItem) {
     // A job reports only to the console, so its run gets no Linear token.
     log('info', 'run started', { runId: id, actionsRunId: check.claims.run_id, job: found.run.job });
-    return Response.json({ linearAccessToken: null, agentSessionId: null });
+    return Response.json({ agent: found.run.agent, linearAccessToken: null, agentSessionId: null });
   }
 
   const linearAccessToken = await getLinearAccessToken(workItem.linearOrganizationId, {
     minValidityMs: RUN_TOKEN_VALIDITY_MS
   });
   log('info', 'run started', { runId: id, actionsRunId: check.claims.run_id, issue: workItem.issueIdentifier });
-  return Response.json({ linearAccessToken, agentSessionId: workItem.agentSessionId });
+  // The stage workflow gives only implement runs the project app's token, which can push workflow files.
+  return Response.json({ agent: found.run.agent, linearAccessToken, agentSessionId: workItem.agentSessionId });
 };
