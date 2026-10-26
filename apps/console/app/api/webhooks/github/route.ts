@@ -4,7 +4,7 @@ import { after } from 'next/server';
 import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
 import { log } from '@/lib/log';
-import { handleGitHubEvent } from '@/lib/router';
+import { handleGitHubEvent, releaseQueueOnActivity } from '@/lib/router';
 
 type GitHubWebhook = {
   action?: string;
@@ -45,6 +45,7 @@ export const POST = async (request: Request) => {
     merged: event.pull_request?.merged
   });
 
+  after(() => releaseQueueOnActivity('github webhook'));
   if (isNew) {
     after(async () => {
       try {

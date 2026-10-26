@@ -4,7 +4,7 @@ import { after } from 'next/server';
 import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
 import { log } from '@/lib/log';
-import { handleSlackAction } from '@/lib/router';
+import { handleSlackAction, releaseQueueOnActivity } from '@/lib/router';
 
 type InteractionPayload = {
   type?: string;
@@ -49,6 +49,7 @@ export const POST = async (request: Request) => {
   });
   log('info', 'slack interaction received', { type: payload.type, action: action?.action_id, duplicate: !isNew });
 
+  after(() => releaseQueueOnActivity('slack interaction'));
   if (isNew && payload.type === 'block_actions') {
     after(() => routeAction(payload));
   }

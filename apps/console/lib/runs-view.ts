@@ -1,11 +1,13 @@
 import type { RunTotals } from '@mb-factory/core';
 import { canRerun, runTotals } from '@mb-factory/core';
 import { asc, desc, inArray } from 'drizzle-orm';
+import { after } from 'next/server';
 
 import { getDb } from '@/db/client';
 import { runs, workItems } from '@/db/schema';
 
 import { findProject } from './projects';
+import { releaseQueueOnActivity } from './router';
 import type { ConsoleUser } from './session';
 import { requireConsoleUser } from './session';
 
@@ -27,6 +29,7 @@ const WORK_ITEM_LIMIT = 25;
 // The Runs page's data: the most recently active work items, each with its runs oldest first. Checks the session first.
 export const loadRunsView = async (): Promise<RunsView> => {
   const user = await requireConsoleUser();
+  after(() => releaseQueueOnActivity('runs page'));
   const db = getDb();
   const items = await db.select().from(workItems).orderBy(desc(workItems.updatedAt)).limit(WORK_ITEM_LIMIT);
   const itemRuns =

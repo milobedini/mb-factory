@@ -722,6 +722,17 @@ export const releaseQueue = async (): Promise<void> => {
   }, Promise.resolve());
 };
 
+// Held work whose reason may have cleared, released on any sign of activity: a webhook, a usage reading, a console
+// page. A usage hold then lifts soon after its window resets whenever anything is going on, without a timer; quiet
+// spells still wait for the governor job. Cheap when nothing is held, and never fails the request it rides on.
+export const releaseQueueOnActivity = async (cause: string): Promise<void> => {
+  try {
+    await releaseQueue();
+  } catch (error) {
+    log('error', 'queue release on activity failed', { cause, error: errorMessage(error) });
+  }
+};
+
 const upsertWorkItem = async (
   project: FactoryConfig,
   event: Extract<SessionEvent, { kind: 'created' }>,

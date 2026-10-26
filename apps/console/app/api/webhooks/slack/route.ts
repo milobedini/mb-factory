@@ -4,7 +4,7 @@ import { after } from 'next/server';
 import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
 import { log } from '@/lib/log';
-import { handleSlackMention, handleSlackMessage } from '@/lib/router';
+import { handleSlackMention, handleSlackMessage, releaseQueueOnActivity } from '@/lib/router';
 
 type SlackPayload =
   | { type: 'url_verification'; challenge: string }
@@ -62,6 +62,7 @@ export const POST = async (request: Request) => {
     retry: request.headers.get('x-slack-retry-num')
   });
 
+  after(() => releaseQueueOnActivity('slack webhook'));
   const handle = HANDLERS[payload.event.type];
   if (isNew && handle) {
     after(() => routeEvent(payload, handle));

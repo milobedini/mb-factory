@@ -5,7 +5,7 @@ import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
 import { createAgentActivity } from '@/lib/linear-api';
 import { log } from '@/lib/log';
-import { handleAgentSessionEvent, handleIssueUpdate } from '@/lib/router';
+import { handleAgentSessionEvent, handleIssueUpdate, releaseQueueOnActivity } from '@/lib/router';
 
 type LinearWebhook = {
   type: string;
@@ -77,6 +77,7 @@ export const POST = async (request: Request) => {
     issue: event.agentSession?.issue?.identifier
   });
 
+  after(() => releaseQueueOnActivity('linear webhook'));
   if (isNew && event.type === 'AgentSessionEvent') {
     after(() => routeSessionEvent(event));
   }

@@ -1,8 +1,10 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readingsFromStatusLine } from '@mb-factory/core';
+import { after } from 'next/server';
 
 import { requireEnv } from '@/lib/env';
 import { log } from '@/lib/log';
+import { releaseQueueOnActivity } from '@/lib/router';
 import { recordReadings } from '@/lib/usage';
 
 const digest = (value: string) => createHash('sha256').update(value).digest();
@@ -24,5 +26,7 @@ export const POST = async (request: Request) => {
     return new Response('invalid body', { status: 400 });
   }
   await recordReadings(readings, 'local', now);
+  // Fresh readings are the likeliest moment for a usage hold to have cleared.
+  after(() => releaseQueueOnActivity('local usage reading'));
   return Response.json({ readings: readings.length });
 };
