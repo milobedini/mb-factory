@@ -176,7 +176,12 @@ export type CreatedIssue = { id: string; identifier: string; url: string; title:
 // Filed without a delegate: the work item has to exist before Linear tells anyone about the agent.
 export const createIssue = async (
   organizationId: string,
-  { teamKey, title, description }: { teamKey: string; title: string; description: string }
+  {
+    teamKey,
+    title,
+    description,
+    assigneeId
+  }: { teamKey: string; title: string; description: string; assigneeId: string | null }
 ): Promise<CreatedIssue> => {
   const { teams } = await linearGraphql<{ teams: { nodes: { id: string }[] } }>(
     organizationId,
@@ -190,12 +195,22 @@ export const createIssue = async (
   const { issueCreate } = await linearGraphql<{ issueCreate: { success: boolean; issue: CreatedIssue | null } }>(
     organizationId,
     'mutation IssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url title } } }',
-    { input: { teamId: team.id, title, description } }
+    { input: { teamId: team.id, title, description, ...(assigneeId ? { assigneeId } : {}) } }
   );
   if (!issueCreate.issue) {
     throw new Error('Linear created no issue');
   }
   return issueCreate.issue;
+};
+
+// The active member with this email, to own an issue someone asked for outside Linear.
+export const findUserIdByEmail = async (organizationId: string, email: string): Promise<string | null> => {
+  const { users } = await linearGraphql<{ users: { nodes: { id: string }[] } }>(
+    organizationId,
+    'query UserByEmail($email: String!) { users(filter: { email: { eqIgnoreCase: $email }, active: { eq: true } }) { nodes { id } } }',
+    { email }
+  );
+  return users.nodes[0]?.id ?? null;
 };
 
 // A session the app opens itself, for work that didn't start with a delegation or a mention in Linear.

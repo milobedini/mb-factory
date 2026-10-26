@@ -84,6 +84,7 @@ import {
   createSessionOnIssue,
   delegateIssue,
   findAppUserId,
+  findUserIdByEmail,
   hasClosingActivity,
   moveIssueToStatus
 } from './linear-api';
@@ -97,6 +98,7 @@ import {
   postSlackMessage,
   respondToSlackAction,
   slackPermalink,
+  slackUser,
   slackUserName,
   updateSlackMessage
 } from './slack-api';
@@ -903,8 +905,8 @@ export const handleSlackMention = async (payload: unknown): Promise<void> => {
     await tellThem(notAllowedToStartText(project));
     return;
   }
-  const [name, permalink] = await Promise.all([
-    slackUserName(userId).catch(() => userId),
+  const [{ name, email }, permalink] = await Promise.all([
+    slackUser(userId).catch(() => ({ name: userId, email: null })),
     slackPermalink(channel, ts).catch((error: unknown) => {
       log('warn', 'slack permalink failed', { channel, ts, error: errorMessage(error) });
       return null;
@@ -917,7 +919,17 @@ export const handleSlackMention = async (payload: unknown): Promise<void> => {
   }
 
   const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
-  const issue = await createIssue(organizationId, { teamKey: project.linear.teamKey, ...filing }).catch(
+  // Whoever asked owns the issue, as a person delegating in Linear would; the app is its delegate.
+  const assigneeId = email
+    ? await findUserIdByEmail(organizationId, email).catch((error: unknown) => {
+        log('warn', 'linear user lookup failed', { user: userId, error: errorMessage(error) });
+        return null;
+      })
+    : null;
+  if (!assigneeId) {
+    log('info', 'slack requester has no linear user', { user: userId, hasEmail: email !== null });
+  }
+  const issue = await createIssue(organizationId, { teamKey: project.linear.teamKey, ...filing, assigneeId }).catch(
     (error: unknown) => {
       log('error', 'linear issue for a slack request failed', { project: project.name, error: errorMessage(error) });
       return undefined;

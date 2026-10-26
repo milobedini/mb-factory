@@ -84,17 +84,26 @@ export const respondToSlackAction = async (responseUrl: string, text: string): P
 };
 
 type UserInfo = SlackResponse & {
-  user?: { name?: string; real_name?: string; profile?: { display_name?: string; real_name?: string } };
+  user?: {
+    name?: string;
+    real_name?: string;
+    profile?: { display_name?: string; real_name?: string; email?: string };
+  };
 };
 
-// The name people know someone by, for the Linear session and the thread.
-export const slackUserName = async (userId: string): Promise<string> => {
+// The name people know someone by, for the Linear session and the thread, and their email (`users:read.email`).
+export const slackUser = async (userId: string): Promise<{ name: string; email: string | null }> => {
   const response = await fetch(`https://slack.com/api/users.info?user=${encodeURIComponent(userId)}`, {
     headers: { Authorization: `Bearer ${requireEnv('SLACK_BOT_TOKEN')}` }
   });
   const { user } = (await response.json()) as UserInfo;
-  return user?.profile?.display_name || user?.profile?.real_name || user?.real_name || user?.name || userId;
+  return {
+    name: user?.profile?.display_name || user?.profile?.real_name || user?.real_name || user?.name || userId,
+    email: user?.profile?.email || null
+  };
 };
+
+export const slackUserName = async (userId: string): Promise<string> => (await slackUser(userId)).name;
 
 // A link to one message, for the Linear issue it became.
 export const slackPermalink = async (channel: string, ts: string): Promise<string> => {
