@@ -25,7 +25,7 @@ const sessionEventSchema = z.looseObject({
         team: z.looseObject({ key: z.string().min(1) })
       })
       .nullish(),
-    creator: z.looseObject({ id: z.string().nullish(), name: z.string().nullish() }).nullish()
+    creator: z.looseObject({ name: z.string().nullish() }).nullish()
   }),
   agentActivity: z
     .looseObject({
@@ -45,14 +45,7 @@ export type SessionIssue = {
 };
 
 export type SessionEvent =
-  | {
-      kind: 'created';
-      organizationId: string;
-      sessionId: string;
-      issue: SessionIssue;
-      requester: string | null;
-      creatorId: string | null;
-    }
+  | { kind: 'created'; organizationId: string; sessionId: string; issue: SessionIssue; requester: string | null }
   | { kind: 'prompted'; organizationId: string; sessionId: string; body: string }
   | { kind: 'stop'; organizationId: string; sessionId: string };
 
@@ -70,8 +63,7 @@ export const parseSessionEvent = (payload: unknown): SessionEvent | undefined =>
       kind: 'created',
       ...base,
       issue: { id, identifier, url, title: title ?? null, teamKey: team.key },
-      requester: agentSession.creator?.name ?? null,
-      creatorId: agentSession.creator?.id ?? null
+      requester: agentSession.creator?.name ?? null
     };
   }
   if (action !== 'prompted') {

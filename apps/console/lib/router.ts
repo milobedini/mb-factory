@@ -644,7 +644,7 @@ const upsertWorkItem = async (
   project: FactoryConfig,
   event: Extract<SessionEvent, { kind: 'created' }>,
   request: RunRequest
-): Promise<WorkItem> => {
+): Promise<WorkItem | undefined> => {
   const stage = stageForAgent(request.agent) ?? 'building';
   // A new session (re-delegation, or a mention) replaces the old one: it's where humans now expect replies.
   const current = {
@@ -666,11 +666,14 @@ const upsertWorkItem = async (
       requester: event.requester,
       ...current
     })
-    .onConflictDoUpdate({ target: workItems.linearIssueId, set: current })
+    // Claims the session: Linear also sends `created` for a session the factory opened itself, and whichever of the
+    // two gets here second finds it taken and returns no row.
+    .onConflictDoUpdate({
+      target: workItems.linearIssueId,
+      set: current,
+      setWhere: sql`${workItems.agentSessionId} is distinct from ${event.sessionId}`
+    })
     .returning();
-  if (!workItem) {
-    throw new Error('Upserting the work item returned no row');
-  }
   return workItem;
 };
 
@@ -684,30 +687,25 @@ const startFromSession = async (event: Extract<SessionEvent, { kind: 'created' }
     });
     return;
   }
-  // A session the app opened itself (a Slack request) was started when it was opened.
-  if (event.creatorId && event.creatorId === (await findAppUserId(event.organizationId))) {
-    log('info', 'agent session opened by the factory ignored', { issue: event.issue.identifier });
-    return;
-  }
   await startWork(project, event);
 };
 
 const startWork = async (project: FactoryConfig, event: Extract<SessionEvent, { kind: 'created' }>): Promise<void> => {
   // A new delegation on an issue the factory already worked on carries on from where it stood.
   const [existing] = await getDb()
-    .select({ stage: workItems.stage, agentSessionId: workItems.agentSessionId })
+    .select({ stage: workItems.stage })
     .from(workItems)
     .where(eq(workItems.linearIssueId, event.issue.id))
     .limit(1);
-  if (existing?.agentSessionId === event.sessionId) {
-    log('info', 'agent session already started', { issue: event.issue.identifier });
-    return;
-  }
   const request = runRequestFor(event, existing?.stage);
   if (!request) {
     throw new Error('A delegation always yields a run request');
   }
   const workItem = await upsertWorkItem(project, event, request);
+  if (!workItem) {
+    log('info', 'agent session already started', { issue: event.issue.identifier });
+    return;
+  }
   await openSlackThread(project, workItem, event.issue.title);
   await dispatchRun(project, await createRun(project, workItem, request));
 };
@@ -948,15 +946,15 @@ export const handleSlackMention = async (payload: unknown): Promise<void> => {
         slackThreadTs: ts,
         stage: 'researching'
       });
-    const sessionId = await createSessionOnIssue(organizationId, issue.id);
+    // Before the session opens, since Linear's `created` event for it can start the work first.
     await sayInThread(slackFiledText(issue));
+    const sessionId = await createSessionOnIssue(organizationId, issue.id);
     await startWork(project, {
       kind: 'created',
       organizationId,
       sessionId,
       issue: { ...issue, teamKey: project.linear.teamKey },
-      requester: name,
-      creatorId: null
+      requester: name
     });
   } catch (error) {
     log('error', 'starting a slack request failed', { issue: issue.identifier, error: errorMessage(error) });
