@@ -131,6 +131,7 @@ export {
 export type { CandidateIssue, ReadyIssue, ReadyList } from './ready';
 export { readyList, unblockedBy } from './ready';
 export type {
+  ChangedFile,
   CiFailureAction,
   ClosingActivity,
   ConflictAction,
@@ -168,12 +169,12 @@ export {
   formatReleaseAt,
   governDispatch,
   linearStatusFor,
-  lockfileOnlyConflict,
   MAX_CI_FIXES,
   MAX_CONFLICT_FIXES,
   modelFor,
   neverStarted,
   nextStepAfterRun,
+  onlyLockfilesChanged,
   orderQueue,
   parseSessionEvent,
   queuedThought,

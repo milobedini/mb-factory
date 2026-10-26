@@ -54,6 +54,7 @@ import {
   notAllowedToStartText,
   nothingReadyText,
   notReadyText,
+  onlyLockfilesChanged,
   orderQueue,
   parseGitHubEvent,
   parseIssueUpdate,
@@ -115,6 +116,9 @@ import { requireEnv } from './env';
 import {
   cancelActionsRun,
   commentOnPullRequest,
+  commitParents,
+  compareFiles,
+  pullHead,
   pullMergeState,
   pullRequestInfo,
   pullReviewThreads,
@@ -1651,17 +1655,19 @@ export const handleSlackAction = async (payload: unknown): Promise<void> => {
 // limit-hit run, free its slot.
 const LOCKFILE_GATE_TEXT = 'Only lockfiles conflicted, so it’s back at the merge gate without another review.';
 
-// Whether the review before a conflict fix had accepted the PR, so a fix that only regenerated lockfiles can skip
-// another review.
-const acceptedBeforeConflict = async (
-  run: { id: string; agent: AgentRole; trigger: RunTrigger; createdAt: Date },
+// Whether a conflict fix changed only lockfiles, from GitHub's record rather than the run's report: the PR's last
+// review accepted it, the new head merges the base into exactly the commit that review saw (the branch's last push
+// before it, from the webhooks), and apart from lockfiles the PR's files are the ones reviewed, byte for byte.
+const lockfileOnlyMerge = async (
+  run: { agent: AgentRole; trigger: RunTrigger; createdAt: Date },
   workItem: WorkItem
 ): Promise<boolean> => {
-  if (run.agent !== 'implement' || run.trigger !== 'conflict') {
+  const { prNumber, branch, repository } = workItem;
+  if (run.agent !== 'implement' || run.trigger !== 'conflict' || !prNumber || !branch) {
     return false;
   }
   const [review] = await getDb()
-    .select({ report: runs.report })
+    .select({ report: runs.report, createdAt: runs.createdAt })
     .from(runs)
     .where(
       and(
@@ -1673,7 +1679,42 @@ const acceptedBeforeConflict = async (
     )
     .orderBy(desc(runs.createdAt))
     .limit(1);
-  return review !== undefined && reviewVerdict(review.report) === 'accepted';
+  if (!review || reviewVerdict(review.report) !== 'accepted') {
+    return false;
+  }
+  const [reviewedPush] = await getDb()
+    .select({ head: sql<string | null>`${events.payload}->>'after'` })
+    .from(events)
+    .where(
+      and(
+        eq(events.source, 'github'),
+        eq(events.type, 'push'),
+        sql`${events.payload}->'repository'->>'full_name' = ${repository}`,
+        sql`${events.payload}->>'ref' = ${`refs/heads/${branch}`}`,
+        lt(events.receivedAt, review.createdAt)
+      )
+    )
+    .orderBy(desc(events.receivedAt))
+    .limit(1);
+  const reviewed = reviewedPush?.head;
+  if (!reviewed) {
+    return false;
+  }
+  try {
+    const head = await pullHead(repository, prNumber);
+    const [firstParent, base, ...more] = await commitParents(repository, head);
+    if (firstParent !== reviewed || !base || more.length > 0) {
+      return false;
+    }
+    const [before, after] = await Promise.all([
+      compareFiles(repository, base, reviewed),
+      compareFiles(repository, base, head)
+    ]);
+    return before !== undefined && after !== undefined && onlyLockfilesChanged(before, after);
+  } catch (error) {
+    log('warn', 'lockfile-only check failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return false;
+  }
 };
 
 export const handleRunFinished = async (runId: string): Promise<void> => {
@@ -1701,7 +1742,7 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   const retrying = shouldRetry(run, parent);
   const next = nextStepAfterRun(run, {
     hasPr: workItem.prNumber !== null,
-    acceptedBefore: await acceptedBeforeConflict(run, workItem),
+    lockfileOnlyMerge: await lockfileOnlyMerge(run, workItem),
     reviewRounds: workItem.reviewRounds,
     maxReviewRounds: project.review.maxRounds
   });

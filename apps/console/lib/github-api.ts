@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { ChecksState, DispatchPayload, ReviewThread, ScheduledRun } from '@mb-factory/core';
+import type { ChangedFile, ChecksState, DispatchPayload, ReviewThread, ScheduledRun } from '@mb-factory/core';
 import { checksState, currentMergeable, DISPATCH_EVENT } from '@mb-factory/core';
 
 import { requireEnv } from './env';
@@ -208,6 +208,31 @@ export const scheduledRuns = async (repository: string, since: Date): Promise<Sc
     createdAt: new Date(run.created_at),
     url: run.html_url
   }));
+};
+
+// A PR's head commit now.
+export const pullHead = async (repository: string, prNumber: number): Promise<string> =>
+  (await githubGet<{ head: { sha: string } }>(`/repos/${repository}/pulls/${prNumber}`, 'pull request')).head.sha;
+
+export const commitParents = async (repository: string, sha: string): Promise<string[]> =>
+  (await githubGet<{ parents: { sha: string }[] }>(`/repos/${repository}/commits/${sha}`, 'commit')).parents.map(
+    (parent) => parent.sha
+  );
+
+// The files `head` changes since its merge base with `base`, or undefined past GitHub's 300-file page, which is too
+// big a change to judge from a compare.
+export const compareFiles = async (
+  repository: string,
+  base: string,
+  head: string
+): Promise<ChangedFile[] | undefined> => {
+  const { files } = await githubGet<{ files?: ChangedFile[] }>(
+    `/repos/${repository}/compare/${base}...${head}`,
+    'compare'
+  );
+  return files && files.length < 300
+    ? files.map(({ filename, status, sha, patch }) => ({ filename, status, sha, patch }))
+    : undefined;
 };
 
 export type PullRequestInfo = {

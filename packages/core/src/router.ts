@@ -496,7 +496,7 @@ export const findingsPrompt = (round: number, findings: Finding[]): string => {
 
 export type ReviewLoop = { reviewRounds: number; maxReviewRounds: number };
 
-// Files a package manager writes from the manifests beside it: a conflict in one is resolved by regenerating it.
+// Files a package manager writes from the manifests beside it, so a merge that changes only these needs no review.
 const LOCKFILES = [
   'pnpm-lock.yaml',
   'package-lock.json',
@@ -510,13 +510,30 @@ const LOCKFILES = [
   'composer.lock'
 ];
 
-const conflictReportSchema = z.looseObject({ conflicted: z.array(z.string()).nullish() });
+const isLockfile = (path: string): boolean => LOCKFILES.includes(path.split('/').at(-1) ?? path);
 
-// A conflict fix that only regenerated lockfiles changes no reviewed code, and its run passed the full checks, so an
-// accepted PR goes straight back to the merge gate. Anything else, or an unreadable report, is reviewed again.
-export const lockfileOnlyConflict = (report: unknown): boolean => {
-  const conflicted = conflictReportSchema.safeParse(report).data?.conflicted ?? [];
-  return conflicted.length > 0 && conflicted.every((path) => LOCKFILES.includes(path.split('/').at(-1) ?? path));
+// A file in GitHub's compare of two commits: its diff (missing for a binary or very large file) and its content at the
+// later one.
+export type ChangedFile = { filename: string; status: string; sha: string | null; patch?: string | null };
+
+// A diff without its `@@` headers, whose line numbers shift when the base gains lines elsewhere in the file.
+const diffLines = (patch: string): string =>
+  patch
+    .split('\n')
+    .filter((line) => !line.startsWith('@@'))
+    .join('\n');
+
+// The PR's changes against its new base, beside its changes as reviewed: the same apart from lockfiles means merging
+// the base changed nothing the PR does, as when the base moves without a conflict. Both lists come from GitHub, never
+// from the run's own report. A file with no diff is compared by content.
+export const onlyLockfilesChanged = (reviewed: ChangedFile[], now: ChangedFile[]): boolean => {
+  const code = (files: ChangedFile[]): string[] =>
+    files
+      .filter(({ filename }) => !isLockfile(filename))
+      .map(({ filename, status, sha, patch }) => [filename, status, patch ? diffLines(patch) : sha].join('\u0000'))
+      .toSorted();
+  const [before, after] = [code(reviewed), code(now)];
+  return before.length === after.length && before.every((file, index) => file === after[index]);
 };
 
 const WAITING_ON_SPEC_REVIEW: (RunOutcome | null)[] = ['done', 'needs_input'];
@@ -555,7 +572,7 @@ const afterReview = (report: unknown, { reviewRounds, maxReviewRounds }: ReviewL
 // A delivered PR goes to review; the review's verdict sends it to the human merge gate or back for a revision.
 export const nextStepAfterRun = (
   run: { agent: AgentRole; trigger?: RunTrigger; status: RunStatus; outcome: RunOutcome | null; report: unknown },
-  { hasPr, acceptedBefore = false, ...loop }: ReviewLoop & { hasPr: boolean; acceptedBefore?: boolean }
+  { hasPr, lockfileOnlyMerge = false, ...loop }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean }
 ): NextStep => {
   const questions = run.status === 'finished' && run.outcome === 'needs_input' ? readQuestions(run.report) : [];
   const asking = questions.length > 0 ? { questions } : {};
@@ -566,7 +583,8 @@ export const nextStepAfterRun = (
     return asking;
   }
   if (run.agent === 'implement') {
-    if (hasPr && run.trigger === 'conflict' && acceptedBefore && lockfileOnlyConflict(run.report)) {
+    // An accepted PR whose conflict fix changed only lockfiles, as checked against GitHub, goes back to the gate.
+    if (hasPr && run.trigger === 'conflict' && lockfileOnlyMerge) {
       return { stage: 'awaiting_merge' };
     }
     return hasPr

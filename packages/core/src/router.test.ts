@@ -21,6 +21,7 @@ import {
   modelFor,
   neverStarted,
   nextStepAfterRun,
+  onlyLockfilesChanged,
   orderQueue,
   parseSessionEvent,
   queuedThought,
@@ -415,7 +416,7 @@ describe('closingActivity', () => {
 
 describe('nextStepAfterRun', () => {
   const finished = { status: 'finished' as const, outcome: 'done' as const, trigger: 'delegated' as const };
-  const loop = { hasPr: false, acceptedBefore: false, reviewRounds: 0, maxReviewRounds: 2 };
+  const loop = { hasPr: false, reviewRounds: 0, maxReviewRounds: 2 };
   const triaged = (next: string | null) => ({
     ...finished,
     agent: 'triage' as const,
@@ -429,24 +430,14 @@ describe('nextStepAfterRun', () => {
     });
   });
 
-  it('sends an accepted PR back to the gate when its conflict fix only regenerated lockfiles', () => {
-    const fix = (conflicted: string[] | undefined) => ({
-      ...finished,
-      agent: 'implement' as const,
-      trigger: 'conflict' as const,
-      report: { stage: 'implement', outcome: 'done', summary: 'Merged main.', conflicted }
-    });
-    const delivered = { ...loop, hasPr: true, acceptedBefore: true };
-    expect(nextStepAfterRun(fix(['pnpm-lock.yaml', 'backend/uv.lock']), delivered)).toEqual({
-      stage: 'awaiting_merge'
-    });
-    expect(nextStepAfterRun(fix(['pnpm-lock.yaml', 'frontend/src/main.tsx']), delivered)).toMatchObject({
-      stage: 'in_review'
-    });
-    expect(nextStepAfterRun(fix(undefined), delivered)).toMatchObject({ stage: 'in_review' });
-    expect(nextStepAfterRun(fix(['pnpm-lock.yaml']), { ...delivered, acceptedBefore: false })).toMatchObject({
-      stage: 'in_review'
-    });
+  it('sends a PR back to the gate when its conflict fix changed only lockfiles, and to review otherwise', () => {
+    const fix = { ...finished, agent: 'implement' as const, trigger: 'conflict' as const, report: null };
+    const delivered = { ...loop, hasPr: true };
+    expect(nextStepAfterRun(fix, { ...delivered, lockfileOnlyMerge: true })).toEqual({ stage: 'awaiting_merge' });
+    expect(nextStepAfterRun(fix, delivered)).toMatchObject({ stage: 'in_review' });
+    expect(
+      nextStepAfterRun({ ...fix, trigger: 'review_findings' as const }, { ...delivered, lockfileOnlyMerge: true })
+    ).toMatchObject({ stage: 'in_review' });
   });
 
   it.each([
@@ -852,6 +843,40 @@ describe('Slack text', () => {
     ).toBe(
       'The implement run hit the usage limit; it resumes once the window resets. <https://github.com/milobedini/tastebook/actions/runs/1|run log>'
     );
+  });
+});
+
+describe('onlyLockfilesChanged', () => {
+  const file = (filename: string, sha: string, status = 'modified') => ({ filename, status, sha });
+  const reviewed = [file('frontend/src/main.tsx', 'a1'), file('pnpm-lock.yaml', 'l1'), file('backend/uv.lock', 'u1')];
+
+  it('holds when only lockfiles differ from the reviewed files', () => {
+    expect(onlyLockfilesChanged(reviewed, [file('pnpm-lock.yaml', 'l2'), file('frontend/src/main.tsx', 'a1')])).toBe(
+      true
+    );
+  });
+
+  it('compares diffs without their line numbers, so the base gaining lines elsewhere in a file still holds', () => {
+    const doc = (sha: string, patch: string) => ({ ...file('AGENTS.md', sha), patch });
+    expect(
+      onlyLockfilesChanged([doc('d1', '@@ -10,3 +10,4 @@\n a\n+b\n c')], [doc('d2', '@@ -14,3 +14,4 @@\n a\n+b\n c')])
+    ).toBe(true);
+    expect(
+      onlyLockfilesChanged([doc('d1', '@@ -10,3 +10,4 @@\n a\n+b\n c')], [doc('d2', '@@ -10,3 +10,4 @@\n a\n+B\n c')])
+    ).toBe(false);
+  });
+
+  it('fails when reviewed code changed, appeared or went', () => {
+    expect(onlyLockfilesChanged(reviewed, [file('frontend/src/main.tsx', 'a2'), file('pnpm-lock.yaml', 'l2')])).toBe(
+      false
+    );
+    expect(
+      onlyLockfilesChanged(reviewed, [
+        file('frontend/src/main.tsx', 'a1'),
+        file('frontend/src/extra.ts', 'e1', 'added')
+      ])
+    ).toBe(false);
+    expect(onlyLockfilesChanged(reviewed, [file('pnpm-lock.yaml', 'l2')])).toBe(false);
   });
 });
 
