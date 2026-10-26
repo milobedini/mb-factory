@@ -414,8 +414,8 @@ describe('closingActivity', () => {
 });
 
 describe('nextStepAfterRun', () => {
-  const finished = { status: 'finished' as const, outcome: 'done' as const };
-  const loop = { hasPr: false, reviewRounds: 0, maxReviewRounds: 2 };
+  const finished = { status: 'finished' as const, outcome: 'done' as const, trigger: 'delegated' as const };
+  const loop = { hasPr: false, acceptedBefore: false, reviewRounds: 0, maxReviewRounds: 2 };
   const triaged = (next: string | null) => ({
     ...finished,
     agent: 'triage' as const,
@@ -426,6 +426,26 @@ describe('nextStepAfterRun', () => {
     expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, { ...loop, hasPr: true })).toEqual({
       stage: 'in_review',
       request: { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null }
+    });
+  });
+
+  it('sends an accepted PR back to the gate when its conflict fix only regenerated lockfiles', () => {
+    const fix = (conflicted: string[] | undefined) => ({
+      ...finished,
+      agent: 'implement' as const,
+      trigger: 'conflict' as const,
+      report: { stage: 'implement', outcome: 'done', summary: 'Merged main.', conflicted }
+    });
+    const delivered = { ...loop, hasPr: true, acceptedBefore: true };
+    expect(nextStepAfterRun(fix(['pnpm-lock.yaml', 'backend/uv.lock']), delivered)).toEqual({
+      stage: 'awaiting_merge'
+    });
+    expect(nextStepAfterRun(fix(['pnpm-lock.yaml', 'frontend/src/main.tsx']), delivered)).toMatchObject({
+      stage: 'in_review'
+    });
+    expect(nextStepAfterRun(fix(undefined), delivered)).toMatchObject({ stage: 'in_review' });
+    expect(nextStepAfterRun(fix(['pnpm-lock.yaml']), { ...delivered, acceptedBefore: false })).toMatchObject({
+      stage: 'in_review'
     });
   });
 

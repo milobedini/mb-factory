@@ -168,6 +168,7 @@ export {
   formatReleaseAt,
   governDispatch,
   linearStatusFor,
+  lockfileOnlyConflict,
   MAX_CI_FIXES,
   MAX_CONFLICT_FIXES,
   modelFor,

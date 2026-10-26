@@ -11,6 +11,7 @@ import type {
   ReadyOutcome,
   RunRequest,
   RunStatus,
+  RunTrigger,
   SessionEvent,
   SlackAction,
   SlackMessage,
@@ -76,6 +77,7 @@ import {
   retryText,
   reviewersFor,
   reviewThreadsToResolve,
+  reviewVerdict,
   runRequestFor,
   SPEC_GATE_GONE,
   STOPPED_RESPONSE,
@@ -104,7 +106,7 @@ import {
   withRerunButton,
   wrongChannelText
 } from '@mb-factory/core';
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
 import { events, questions, queue, runs, stageChanges, workItems } from '@/db/schema';
@@ -1647,6 +1649,33 @@ export const handleSlackAction = async (payload: unknown): Promise<void> => {
 
 // After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a
 // limit-hit run, free its slot.
+const LOCKFILE_GATE_TEXT = 'Only lockfiles conflicted, so it’s back at the merge gate without another review.';
+
+// Whether the review before a conflict fix had accepted the PR, so a fix that only regenerated lockfiles can skip
+// another review.
+const acceptedBeforeConflict = async (
+  run: { id: string; agent: AgentRole; trigger: RunTrigger; createdAt: Date },
+  workItem: WorkItem
+): Promise<boolean> => {
+  if (run.agent !== 'implement' || run.trigger !== 'conflict') {
+    return false;
+  }
+  const [review] = await getDb()
+    .select({ report: runs.report })
+    .from(runs)
+    .where(
+      and(
+        eq(runs.workItemId, workItem.id),
+        eq(runs.agent, 'review'),
+        eq(runs.status, 'finished'),
+        lt(runs.createdAt, run.createdAt)
+      )
+    )
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  return review !== undefined && reviewVerdict(review.report) === 'accepted';
+};
+
 export const handleRunFinished = async (runId: string): Promise<void> => {
   const found = await findRun(runId);
   const project = found && findProject(found.workItem.project);
@@ -1672,6 +1701,7 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   const retrying = shouldRetry(run, parent);
   const next = nextStepAfterRun(run, {
     hasPr: workItem.prNumber !== null,
+    acceptedBefore: await acceptedBeforeConflict(run, workItem),
     reviewRounds: workItem.reviewRounds,
     maxReviewRounds: project.review.maxRounds
   });
@@ -1687,10 +1717,14 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
       : false;
   const closing = next.questions || retrying ? undefined : closingActivity(run, { agentClosed, resuming });
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
-  const finishedText = slackFinishedText(
-    { ...run, prUrl, actionsRunUrl: run.actionsRunUrl },
-    { questions: next.questions?.length, specReview: next.stage === 'spec_review' }
-  );
+  const skippedReview = run.agent === 'implement' && next.stage === 'awaiting_merge';
+  const finishedText = [
+    slackFinishedText(
+      { ...run, prUrl, actionsRunUrl: run.actionsRunUrl },
+      { questions: next.questions?.length, specReview: next.stage === 'spec_review' }
+    ),
+    ...(skippedReview ? [LOCKFILE_GATE_TEXT] : [])
+  ].join('\n');
   const rerunnable =
     run.status === 'finished' &&
     run.outcome === 'failed' &&

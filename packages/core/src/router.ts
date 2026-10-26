@@ -496,6 +496,29 @@ export const findingsPrompt = (round: number, findings: Finding[]): string => {
 
 export type ReviewLoop = { reviewRounds: number; maxReviewRounds: number };
 
+// Files a package manager writes from the manifests beside it: a conflict in one is resolved by regenerating it.
+const LOCKFILES = [
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'yarn.lock',
+  'bun.lock',
+  'uv.lock',
+  'poetry.lock',
+  'Cargo.lock',
+  'Gemfile.lock',
+  'go.sum',
+  'composer.lock'
+];
+
+const conflictReportSchema = z.looseObject({ conflicted: z.array(z.string()).nullish() });
+
+// A conflict fix that only regenerated lockfiles changes no reviewed code, and its run passed the full checks, so an
+// accepted PR goes straight back to the merge gate. Anything else, or an unreadable report, is reviewed again.
+export const lockfileOnlyConflict = (report: unknown): boolean => {
+  const conflicted = conflictReportSchema.safeParse(report).data?.conflicted ?? [];
+  return conflicted.length > 0 && conflicted.every((path) => LOCKFILES.includes(path.split('/').at(-1) ?? path));
+};
+
 const WAITING_ON_SPEC_REVIEW: (RunOutcome | null)[] = ['done', 'needs_input'];
 
 const afterReview = (report: unknown, { reviewRounds, maxReviewRounds }: ReviewLoop): NextStep => {
@@ -531,8 +554,8 @@ const afterReview = (report: unknown, { reviewRounds, maxReviewRounds }: ReviewL
 // A spec run with its PR open is waiting on approval, whether it reports that as done or as needing input.
 // A delivered PR goes to review; the review's verdict sends it to the human merge gate or back for a revision.
 export const nextStepAfterRun = (
-  run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null; report: unknown },
-  { hasPr, ...loop }: ReviewLoop & { hasPr: boolean }
+  run: { agent: AgentRole; trigger?: RunTrigger; status: RunStatus; outcome: RunOutcome | null; report: unknown },
+  { hasPr, acceptedBefore = false, ...loop }: ReviewLoop & { hasPr: boolean; acceptedBefore?: boolean }
 ): NextStep => {
   const questions = run.status === 'finished' && run.outcome === 'needs_input' ? readQuestions(run.report) : [];
   const asking = questions.length > 0 ? { questions } : {};
@@ -543,6 +566,9 @@ export const nextStepAfterRun = (
     return asking;
   }
   if (run.agent === 'implement') {
+    if (hasPr && run.trigger === 'conflict' && acceptedBefore && lockfileOnlyConflict(run.report)) {
+      return { stage: 'awaiting_merge' };
+    }
     return hasPr
       ? { stage: 'in_review', request: { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null } }
       : {};
