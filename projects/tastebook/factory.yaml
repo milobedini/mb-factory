@@ -39,7 +39,7 @@ review:
   maxRounds: 2
 
 concurrency:
-  maxRuns: 2
+  maxRuns: 5
 
 usage:
   fiveHour:
