@@ -1,7 +1,6 @@
 import type { RunTotals } from '@mb-factory/core';
 import { canRerun, jobTitle, runTotals } from '@mb-factory/core';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { after } from 'next/server';
 
 import { getDb } from '@/db/client';
 import { runs, workItems } from '@/db/schema';
@@ -49,7 +48,9 @@ const loadJobRuns = (): Promise<JobRuns[]> =>
 // The Runs page's data: the most recently active work items, each with its runs oldest first. Checks the session first.
 export const loadRunsView = async (): Promise<RunsView> => {
   const user = await requireConsoleUser();
-  after(() => releaseQueueOnActivity('runs page'));
+  // Before the reads, so the page shows what this released. Not in `after()`: a page's fetches are refused once it
+  // has rendered, and the database driver fetches.
+  await releaseQueueOnActivity('runs page');
   const db = getDb();
   const [items, jobs] = await Promise.all([
     db.select().from(workItems).orderBy(desc(workItems.updatedAt)).limit(WORK_ITEM_LIMIT),
