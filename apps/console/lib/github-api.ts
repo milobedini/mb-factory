@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { ChecksState, DispatchPayload } from '@mb-factory/core';
 import { checksState, DISPATCH_EVENT } from '@mb-factory/core';
 
@@ -62,13 +63,8 @@ export const startGovernorProbe = async (): Promise<void> => {
   }
 };
 
-type WorkflowRuns = { workflow_runs: { workflow_id: number; status: string; conclusion: string | null }[] };
-
-// A PR branch's CI for the Inbox: the latest pull_request run of each workflow (GitHub lists newest first). Actions
-// read is enough, where the check-runs API would need the Checks permission too.
-export const branchChecks = async (repository: string, branch: string): Promise<ChecksState> => {
-  const query = new URLSearchParams({ branch, event: 'pull_request', per_page: '50' });
-  const response = await fetch(`${API_URL}/repos/${repository}/actions/runs?${query}`, {
+const githubGet = async <T>(path: string, action: string): Promise<T> => {
+  const response = await fetch(`${API_URL}${path}`, {
     headers: {
       Accept: 'application/vnd.github+json',
       Authorization: `Bearer ${requireEnv('GITHUB_DISPATCH_TOKEN')}`,
@@ -76,9 +72,39 @@ export const branchChecks = async (repository: string, branch: string): Promise<
     }
   });
   if (!response.ok) {
-    throw await failure('workflow runs', response);
+    throw await failure(action, response);
   }
-  const { workflow_runs: workflowRuns } = (await response.json()) as WorkflowRuns;
+  return (await response.json()) as T;
+};
+
+const MERGEABLE_POLL_MS = 2000;
+
+export type MergeState = { mergeable: boolean | null; base: string };
+
+// Whether a PR merges into its base branch; `mergeable` is null while GitHub works it out. Asking starts that, so a
+// `null` is asked again a few times, a couple of seconds apart.
+export const pullMergeState = async (repository: string, prNumber: number, attempts = 5): Promise<MergeState> => {
+  const { mergeable, base } = await githubGet<{ mergeable: boolean | null; base: { ref: string } }>(
+    `/repos/${repository}/pulls/${prNumber}`,
+    'pull request'
+  );
+  if (mergeable !== null || attempts <= 1) {
+    return { mergeable, base: base.ref };
+  }
+  await sleep(MERGEABLE_POLL_MS);
+  return pullMergeState(repository, prNumber, attempts - 1);
+};
+
+type WorkflowRuns = { workflow_runs: { workflow_id: number; status: string; conclusion: string | null }[] };
+
+// A PR branch's CI for the Inbox: the latest pull_request run of each workflow (GitHub lists newest first). Actions
+// read is enough, where the check-runs API would need the Checks permission too.
+export const branchChecks = async (repository: string, branch: string): Promise<ChecksState> => {
+  const query = new URLSearchParams({ branch, event: 'pull_request', per_page: '50' });
+  const { workflow_runs: workflowRuns } = await githubGet<WorkflowRuns>(
+    `/repos/${repository}/actions/runs?${query}`,
+    'workflow runs'
+  );
   const latest = workflowRuns.filter(
     (run, index) => workflowRuns.findIndex(({ workflow_id }) => workflow_id === run.workflow_id) === index
   );

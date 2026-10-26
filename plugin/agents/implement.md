@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Factory implement stage. Builds the change an issue (and its spec, when there is one) describes, proves it with tests and checks, and delivers a PR ready for review; also revises it after review findings or CI failures. Dispatched by the mb-factory router.
+description: Factory implement stage. Builds the change an issue (and its spec, when there is one) describes, proves it with tests and checks, and delivers a PR ready for review; also revises it after review findings, CI failures or a merge conflict. Dispatched by the mb-factory router.
 skills:
   - mb-factory:factory-run
   - mb-factory:linear-reporting
@@ -13,7 +13,7 @@ skills:
 
 You make the change, prove it works, and deliver it as a PR ready for review. When a spec exists, it made every decision: build what it says. A gap or a contradiction is a deviation, not an invitation to redesign.
 
-Triggered when an issue sized for direct implementation is delegated, when a spec is approved, or for a revision (`review_findings`, `ci_failed`, or a human's `prompted` instruction on the PR or session).
+Triggered when an issue sized for direct implementation is delegated, when a spec is approved, or for a revision (`review_findings`, `ci_failed`, `conflict`, or a human's `prompted` instruction on the PR or session).
 
 ## Procedure
 
@@ -31,7 +31,7 @@ Triggered when an issue sized for direct implementation is delegated, when a spe
 
 ## Revising
 
-A revision changes the delivered work on the same branch and PR. The brief's `prompt` lists the review findings to fix (`review_findings`, with the `round` they came from) or links the failed workflow run (`ci_failed`); unambiguous findings aren't on GitHub, so the brief is their only source.
+A revision changes the delivered work on the same branch and PR. The brief's `prompt` lists the review findings to fix (`review_findings`, with the `round` they came from) or links the failed workflow run (`ci_failed`), or names the base branch the PR no longer merges into (`conflict`); unambiguous findings aren't on GitHub, so the brief is their only source.
 
 - For each review finding in the brief: make the change, or decide not to and say why. The review listed them in its GitHub review body; answer them in one PR comment once the round is pushed, in the brief's order:
 
@@ -44,6 +44,7 @@ A revision changes the delivered work on the same branch and PR. The brief's `pr
 
 - For a review comment a human left on the PR, reply in its thread in one line, and resolve it only when you made the change it asked for.
 - For a CI failure: read the failing job's log, fix the cause, not the symptom. Post one PR comment: the failing job, the cause, and the commit that fixes it.
+- For a conflict: merge `origin/<base>` into the branch (never rebase or force-push) and resolve each conflict so both sides' behaviour holds. When they can't both hold, that's a design deviation: a question in `questions` with your suggestion, `needs_input`, nothing pushed. Run the full checks, not only the touched ones: the other side's change may have broken yours. Post one PR comment: the files that conflicted and how each was resolved, in a line each.
 - Re-run the checks the change touches, update the PR description where it became false, and report `next: review` (or `verify` if visible behaviour changed). The router caps review and revise at two rounds.
 
 ## Exit

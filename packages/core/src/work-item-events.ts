@@ -6,7 +6,7 @@ import type { Stage } from './stages';
 import { STAGES, TERMINAL_STAGES, transition } from './stages';
 
 // GitHub's pull_request and push webhooks: only the fields the router reads.
-const repositorySchema = z.looseObject({ full_name: z.string().min(1) });
+const repositorySchema = z.looseObject({ full_name: z.string().min(1), default_branch: z.string().nullish() });
 
 const pullRequestEventSchema = z.looseObject({
   action: z.string(),
@@ -43,6 +43,7 @@ const workflowRunEventSchema = z.looseObject({
 export type GitHubEvent =
   | { kind: 'pr_closed'; repository: string; number: number; branch: string; merged: boolean }
   | { kind: 'human_push'; repository: string; branch: string; login: string; commits: number }
+  | { kind: 'default_branch_moved'; repository: string; branch: string }
   | { kind: 'ci_failed'; repository: string; prNumbers: number[]; workflow: string; url: string | null };
 
 const FAILED_CONCLUSIONS = ['failure', 'timed_out'];
@@ -102,6 +103,10 @@ export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEve
   }
   const { ref, deleted, forced, repository, sender, commits } = parsed.data;
   const count = commits?.length ?? 0;
+  // Anything landing on the default branch, a merge or a direct push, can make open PRs conflict.
+  if (!deleted && repository.default_branch && ref === `${BRANCH_REF}${repository.default_branch}`) {
+    return { kind: 'default_branch_moved', repository: repository.full_name, branch: repository.default_branch };
+  }
   // The factory pushes as a bot, and merging a PR deletes its branch with an empty push from whoever merged.
   if (!ref.startsWith(BRANCH_REF) || deleted || sender.type !== 'User' || (count === 0 && !forced)) {
     return undefined;

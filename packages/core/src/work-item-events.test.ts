@@ -90,6 +90,17 @@ describe('parseGitHubEvent', () => {
     expect(parseGitHubEvent('push', push(overrides))).toBeUndefined();
   });
 
+  it('reads anything landing on the default branch, from a person or a bot', () => {
+    const onMain = {
+      ref: 'refs/heads/main',
+      repository: { full_name: 'milobedini/tastebook', default_branch: 'main' }
+    };
+    const moved = { kind: 'default_branch_moved', repository: 'milobedini/tastebook', branch: 'main' };
+    expect(parseGitHubEvent('push', push(onMain))).toEqual(moved);
+    expect(parseGitHubEvent('push', push({ ...onMain, sender: { login: 'claude[bot]', type: 'Bot' } }))).toEqual(moved);
+    expect(parseGitHubEvent('push', push({ ...onMain, deleted: true, commits: [] }))).toBeUndefined();
+  });
+
   it('ignores other events and malformed payloads', () => {
     expect(parseGitHubEvent('check_suite', { action: 'completed' })).toBeUndefined();
     expect(parseGitHubEvent('push', { ref: 'refs/heads/x' })).toBeUndefined();

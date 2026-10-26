@@ -5,7 +5,7 @@ import { asc, inArray, notInArray } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import { questions, runs, workItems } from '@/db/schema';
 
-import { branchChecks } from './github-api';
+import { branchChecks, pullMergeState } from './github-api';
 import { log } from './log';
 import type { ConsoleUser } from './session';
 import { requireConsoleUser } from './session';
@@ -21,6 +21,8 @@ export type InboxItem = {
   threadUrl: string | null;
   // CI on the PR, for work waiting to be merged; null when GitHub couldn't say.
   checks: ChecksState | null;
+  // Whether a PR waiting to be merged conflicts with its base branch, and which branch that is.
+  conflictsWith: string | null;
   summary: string | null;
 };
 
@@ -37,6 +39,20 @@ const actionUrlFor = (workItem: WorkItem, entry: InboxEntry, actionsRunUrl: stri
     return prUrl ? `${prUrl}/files` : null;
   }
   return entry.kind === 'run_ended' ? actionsRunUrl : null;
+};
+
+// One look, without waiting for GitHub to finish working it out: the page refreshes anyway.
+const conflictFor = async (workItem: WorkItem): Promise<string | null> => {
+  if (!workItem.prNumber) {
+    return null;
+  }
+  try {
+    const { mergeable, base } = await pullMergeState(workItem.repository, workItem.prNumber, 1);
+    return mergeable === false ? base : null;
+  } catch (error) {
+    log('warn', 'inbox merge state failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return null;
+  }
 };
 
 const checksFor = async (workItem: WorkItem): Promise<ChecksState | null> => {
@@ -101,6 +117,7 @@ export const loadInboxView = async (): Promise<InboxView> => {
           ? slackMessageUrl(workspaceUrl, workItem.slackChannelId, workItem.slackThreadTs)
           : null,
       checks: entry.kind === 'awaiting_merge' ? await checksFor(workItem) : null,
+      conflictsWith: entry.kind === 'awaiting_merge' ? await conflictFor(workItem) : null,
       summary: latest?.summary ?? null
     }))
   );

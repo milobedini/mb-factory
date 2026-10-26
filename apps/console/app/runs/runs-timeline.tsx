@@ -15,6 +15,7 @@ const TRIGGER_COPY: Record<RunTrigger, string> = {
   delivered: 'PR delivered',
   review_findings: 'review findings',
   ci_failed: 'CI failed',
+  conflict: 'merge conflict',
   rerun: 'resumed after the limit',
   console: 're-run from the console',
   answered: 'answers'

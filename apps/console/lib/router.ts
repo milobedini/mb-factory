@@ -21,9 +21,12 @@ import {
   canRerun,
   ciHandOverText,
   closingActivity,
+  conflictFixesSince,
+  conflictHandOverText,
   consecutiveCiFixes,
   consoleRerunRequest,
   decideCiFailure,
+  decideConflict,
   decideIssueUpdate,
   emptyMentionText,
   governDispatch,
@@ -70,13 +73,13 @@ import {
   stoppedText,
   wrongChannelText
 } from '@mb-factory/core';
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
-import { questions, queue, runs, workItems } from '@/db/schema';
+import { events, questions, queue, runs, workItems } from '@/db/schema';
 
 import { requireEnv } from './env';
-import { cancelActionsRun, requestReviewers, sendStageDispatch } from './github-api';
+import { cancelActionsRun, pullMergeState, requestReviewers, sendStageDispatch } from './github-api';
 import type { AgentActivityContent } from './linear-api';
 import {
   createAgentActivity,
@@ -212,10 +215,87 @@ const requestMergeReview = (project: FactoryConfig, workItem: WorkItem) => {
     : undefined;
 };
 
-// Records the stage and moves the Linear issue to its status; a failed move is logged, not fatal.
+// When anything last landed on a branch, from the recorded push webhooks.
+const branchMovedAt = async (repository: string, branch: string): Promise<Date | null> => {
+  const [latest] = await getDb()
+    .select({ at: events.receivedAt })
+    .from(events)
+    .where(
+      and(
+        eq(events.source, 'github'),
+        eq(events.type, 'push'),
+        sql`${events.payload}->'repository'->>'full_name' = ${repository}`,
+        sql`${events.payload}->>'ref' = ${`refs/heads/${branch}`}`
+      )
+    )
+    .orderBy(desc(events.receivedAt))
+    .limit(1);
+  return latest?.at ?? null;
+};
+
+type ConflictCheck = 'clean' | 'fixing' | 'handed_over' | 'left';
+
+// A delivered PR that no longer merges goes back to implement, once for each state of its base branch, then to a
+// person. A PR GitHub can't decide on yet counts as clean: the next push to the base branch or the gate asks again.
+const checkConflict = async (project: FactoryConfig, workItem: WorkItem): Promise<ConflictCheck> => {
+  const { prNumber } = workItem;
+  if (!prNumber) {
+    return 'clean';
+  }
+  const state = await pullMergeState(workItem.repository, prNumber).catch((error: unknown) => {
+    log('warn', 'merge state check failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return undefined;
+  });
+  if (state?.mergeable !== false) {
+    return 'clean';
+  }
+  const [history, movedAt] = await Promise.all([
+    getDb()
+      .select({ agent: runs.agent, trigger: runs.trigger, status: runs.status, createdAt: runs.createdAt })
+      .from(runs)
+      .where(eq(runs.workItemId, workItem.id)),
+    branchMovedAt(workItem.repository, state.base)
+  ]);
+  const action = decideConflict(
+    { branch: state.base },
+    {
+      stage: workItem.stage,
+      openRuns: history.filter(({ status }) => OPEN_STATUSES.includes(status)).length,
+      conflictFixes: conflictFixesSince(history, movedAt ?? new Date(0))
+    }
+  );
+  log('info', 'merge conflict', { issue: workItem.issueIdentifier, base: state.base, action: action.kind });
+  if (action.kind === 'fix') {
+    await dispatchRun(project, await createRun(project, workItem, action.request));
+    return 'fixing';
+  }
+  if (action.kind === 'hand_over') {
+    const prUrl = `https://github.com/${workItem.repository}/pull/${prNumber}`;
+    const text = conflictHandOverText(state.base, prUrl);
+    await Promise.all([postActivity(workItem, { type: 'error', body: text }), replyInThread(project, workItem, text)]);
+    return 'handed_over';
+  }
+  return 'left';
+};
+
+// At the merge gate a PR that no longer merges goes back before anyone is asked to review it.
+const enterMergeGate = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
+  if ((await checkConflict(project, workItem)) !== 'fixing') {
+    await requestMergeReview(project, workItem);
+  }
+};
+
+// Records the stage and moves the Linear issue to its status; a failed move is logged, not fatal. The merge gate's
+// checks follow the move, since a conflict fix moves the work item on again.
 const moveWorkItem = async (project: FactoryConfig, workItem: WorkItem, stage: Stage): Promise<void> => {
+  await moveTo(project, workItem, stage);
+  if (stage === 'awaiting_merge') {
+    await enterMergeGate(project, workItem);
+  }
+};
+
+const moveTo = async (project: FactoryConfig, workItem: WorkItem, stage: Stage): Promise<void> => {
   await Promise.all([
-    stage === 'awaiting_merge' ? requestMergeReview(project, workItem) : undefined,
     getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id)),
     attempt('linear status', { issue: workItem.issueIdentifier }, async () => {
       const move = await moveIssueToStatus(
@@ -1181,8 +1261,28 @@ const handleCiFailure = async (event: Extract<GitHubEvent, { kind: 'ci_failed' }
   }
 };
 
+// Something landed on the default branch: every delivered PR into it may conflict now.
+const handleDefaultBranchMoved = async (event: Extract<GitHubEvent, { kind: 'default_branch_moved' }>) => {
+  const delivered = await getDb()
+    .select()
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.repository, event.repository),
+        inArray(workItems.stage, ['in_review', 'awaiting_merge']),
+        isNotNull(workItems.prNumber)
+      )
+    );
+  await Promise.all(
+    delivered.map(async (workItem) => {
+      const project = findProject(workItem.project);
+      return project ? checkConflict(project, workItem) : undefined;
+    })
+  );
+};
+
 // A factory PR merged or closed settles its work item; a person pushing to its branch counts against autonomy; a
-// failed check on a delivered PR goes back to implement.
+// failed check on a delivered PR, or one that stops merging, goes back to implement.
 export const handleGitHubEvent = async (eventName: string, payload: unknown): Promise<void> => {
   const event = parseGitHubEvent(eventName, payload);
   if (!event) {
@@ -1190,6 +1290,10 @@ export const handleGitHubEvent = async (eventName: string, payload: unknown): Pr
   }
   if (event.kind === 'ci_failed') {
     await handleCiFailure(event);
+    return;
+  }
+  if (event.kind === 'default_branch_moved') {
+    await handleDefaultBranchMoved(event);
     return;
   }
   if (event.kind === 'human_push') {

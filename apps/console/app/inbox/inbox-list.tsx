@@ -38,7 +38,7 @@ const CHECKS_COPY: Record<ChecksState, { label: string; className: string } | nu
 };
 
 const InboxRow = ({ item, now }: { item: InboxItem; now: Date }) => {
-  const { workItem, entry, actionUrl, threadUrl, checks, summary } = item;
+  const { workItem, entry, actionUrl, threadUrl, checks, conflictsWith, summary } = item;
   const { title, action } = describe(entry);
   const checksCopy = checks ? CHECKS_COPY[checks] : null;
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
@@ -63,6 +63,7 @@ const InboxRow = ({ item, now }: { item: InboxItem; now: Date }) => {
       <p className="text-warn text-sm">
         {title}
         {checksCopy && <span className={`ml-2 ${checksCopy.className}`}>· {checksCopy.label}</span>}
+        {conflictsWith && <span className="text-danger ml-2">· Conflicts with {conflictsWith}</span>}
       </p>
       {summary && <p className="text-foreground/80 text-sm">{summary}</p>}
       <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">

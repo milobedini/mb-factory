@@ -8,8 +8,11 @@ import {
   briefRound,
   canRerun,
   closingActivity,
+  conflictFixesSince,
+  conflictHandOverText,
   consecutiveCiFixes,
   decideCiFailure,
+  decideConflict,
   findingsPrompt,
   formatReleaseAt,
   governDispatch,
@@ -724,5 +727,52 @@ describe('Slack text', () => {
     ).toBe(
       'The implement run hit the usage limit; it resumes once the window resets. <https://github.com/milobedini/tastebook/actions/runs/1|run log>'
     );
+  });
+});
+
+describe('decideConflict', () => {
+  it('sends a delivered PR that no longer merges back to implement', () => {
+    expect(decideConflict({ branch: 'main' }, { stage: 'awaiting_merge', openRuns: 0, conflictFixes: 0 })).toEqual({
+      kind: 'fix',
+      request: {
+        agent: 'implement',
+        trigger: 'conflict',
+        priority: 'in_flight',
+        prompt: 'The PR conflicts with main. Merge origin/main into the branch and resolve the conflicts.'
+      }
+    });
+  });
+
+  it('leaves it while a run is going or before a PR is delivered', () => {
+    expect(decideConflict({ branch: 'main' }, { stage: 'in_review', openRuns: 1, conflictFixes: 0 })).toEqual({
+      kind: 'ignore'
+    });
+    expect(decideConflict({ branch: 'main' }, { stage: 'spec_review', openRuns: 0, conflictFixes: 0 })).toEqual({
+      kind: 'ignore'
+    });
+  });
+
+  it('hands over once this state of the default branch has had its attempt', () => {
+    expect(decideConflict({ branch: 'main' }, { stage: 'awaiting_merge', openRuns: 0, conflictFixes: 1 })).toEqual({
+      kind: 'hand_over'
+    });
+    expect(conflictHandOverText('main', 'https://github.com/milobedini/tastebook/pull/14')).toBe(
+      'The PR still conflicts with main after I tried to resolve it, so I’ve stopped there; it needs a look: https://github.com/milobedini/tastebook/pull/14'
+    );
+  });
+
+  it('counts conflict fixes made since the default branch last moved', () => {
+    const moved = new Date('2026-10-26T09:00:00Z');
+    const run = (
+      trigger: 'conflict' | 'ci_failed',
+      minutesAfter: number,
+      agent: 'implement' | 'review' = 'implement'
+    ) => ({
+      agent,
+      trigger,
+      createdAt: new Date(moved.getTime() + minutesAfter * 60_000)
+    });
+    expect(conflictFixesSince([run('conflict', -5), run('conflict', 2), run('ci_failed', 3)], moved)).toBe(1);
+    expect(conflictFixesSince([run('conflict', -5)], moved)).toBe(0);
   });
 });

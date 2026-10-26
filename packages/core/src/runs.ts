@@ -7,6 +7,7 @@ export const RUN_TRIGGERS = [
   'prompted',
   'review_findings',
   'ci_failed',
+  'conflict',
   'spec_approved',
   'delivered',
   'rerun',

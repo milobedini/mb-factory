@@ -310,6 +310,42 @@ export const decideCiFailure = (
   };
 };
 
+export type ConflictAction = { kind: 'fix'; request: RunRequest } | { kind: 'hand_over' } | { kind: 'ignore' };
+
+// Conflict fixes get one attempt for each state of the default branch: a later merge there can conflict afresh.
+export const MAX_CONFLICT_FIXES = 1;
+
+// Implement runs that resolved a conflict, made since the default branch last moved.
+export const conflictFixesSince = (runs: { agent: AgentRole; trigger: RunTrigger; createdAt: Date }[], since: Date) =>
+  runs.filter(({ agent, trigger, createdAt }) => agent === 'implement' && trigger === 'conflict' && createdAt > since)
+    .length;
+
+// A delivered PR that no longer merges goes back to implement, unless a run is already going (it's checked again when
+// the PR reaches the merge gate) or this state of the default branch already had its attempt.
+export const decideConflict = (
+  { branch }: { branch: string },
+  { stage, openRuns, conflictFixes }: { stage: Stage; openRuns: number; conflictFixes: number }
+): ConflictAction => {
+  if (!CI_FIXABLE_STAGES.includes(stage) || openRuns > 0) {
+    return { kind: 'ignore' };
+  }
+  if (conflictFixes >= MAX_CONFLICT_FIXES) {
+    return { kind: 'hand_over' };
+  }
+  return {
+    kind: 'fix',
+    request: {
+      agent: 'implement',
+      trigger: 'conflict',
+      priority: 'in_flight',
+      prompt: `The PR conflicts with ${branch}. Merge origin/${branch} into the branch and resolve the conflicts.`
+    }
+  };
+};
+
+export const conflictHandOverText = (branch: string, prUrl: string | null): string =>
+  `The PR still conflicts with ${branch} after I tried to resolve it, so I’ve stopped there; it needs a look${prUrl ? `: ${prUrl}` : '.'}`;
+
 export const ciHandOverText = (workflow: string, url: string | null): string =>
   `The ${workflow} workflow failed again after ${MAX_CI_FIXES} fixes, so I’ve stopped there; it needs a look${url ? `: ${url}` : '.'}`;
 
@@ -537,6 +573,7 @@ const STARTED_BECAUSE: Record<RunTrigger, (round: number | undefined) => string>
   delivered: () => ' on the PR',
   review_findings: (round) => ` to fix the review findings${round ? ` from round ${round}` : ''}`,
   ci_failed: () => ' to fix the failed CI run',
+  conflict: () => ' to resolve a merge conflict',
   rerun: () => ' again, after the usage limit reset',
   console: () => ' again, from the console',
   answered: () => ' with your answers'
