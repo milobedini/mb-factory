@@ -81,6 +81,8 @@ export const workItems = pgTable(
     prNumber: integer(),
     // Pushes by people to the work item's branch: a merged PR with none counts as autonomous.
     humanPushes: integer().notNull().default(0),
+    // Linear's estimate (1, 2, 3, 5 or 8), as triage set it, for usage by PR size.
+    estimate: integer(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
   },
@@ -134,6 +136,22 @@ export const runs = pgTable(
     check('runs_work_item_or_job', sql`(${table.workItemId} is null) = (${table.job} is not null)`),
     check('runs_job_has_project', sql`${table.job} is null or ${table.project} is not null`)
   ]
+);
+
+// Every stage a work item entered, with when: its own moves and the ones it followed from Linear or GitHub. Stage times
+// on the dashboard come from here.
+export const stageChanges = pgTable(
+  'stage_changes',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workItemId: uuid()
+      .notNull()
+      .references(() => workItems.id, { onDelete: 'cascade' }),
+    stage: text({ enum: STAGES }).notNull(),
+    cause: text().notNull(),
+    at: timestamp({ withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [index('stage_changes_work_item_idx').on(table.workItemId, table.at)]
 );
 
 // One row per scheduled slot that fired: inserting it is what fires the slot, so it runs once however many wakes

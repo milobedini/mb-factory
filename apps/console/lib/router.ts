@@ -84,7 +84,7 @@ import {
 import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
-import { events, questions, queue, runs, workItems } from '@/db/schema';
+import { events, questions, queue, runs, stageChanges, workItems } from '@/db/schema';
 
 import { requireEnv } from './env';
 import { cancelActionsRun, pullMergeState, pullRequestInfo, requestReviewers, sendStageDispatch } from './github-api';
@@ -138,6 +138,22 @@ const attempt = async (label: string, fields: Record<string, unknown>, effect: (
     log('error', `${label} failed`, { ...fields, error: errorMessage(error) });
   }
 };
+
+// For the dashboard's stage times. A repeat of the work item's latest stage is skipped, so a move the router made and
+// then hears about again counts once. Never fails the step it records.
+const recordStageChange = (workItem: Pick<WorkItem, 'id' | 'issueIdentifier'>, stage: Stage, cause: string) =>
+  attempt('stage change', { issue: workItem.issueIdentifier, stage }, () =>
+    getDb().execute(sql`
+      insert into ${stageChanges} (work_item_id, stage, cause)
+      select ${workItem.id}::uuid, ${stage}::text, ${cause}::text
+      where (
+        select latest.stage from ${stageChanges} as latest
+        where latest.work_item_id = ${workItem.id}
+        order by latest.at desc
+        limit 1
+      ) is distinct from ${stage}::text
+    `)
+  );
 
 const postActivity = (workItem: WorkItem, content: AgentActivityContent, select?: string[]) => {
   const { agentSessionId } = workItem;
@@ -315,6 +331,7 @@ const moveWorkItem = async (project: FactoryConfig, workItem: WorkItem, stage: S
 const moveTo = async (project: FactoryConfig, workItem: WorkItem, stage: Stage): Promise<void> => {
   await Promise.all([
     getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id)),
+    recordStageChange(workItem, stage, 'factory'),
     attempt('linear status', { issue: workItem.issueIdentifier }, async () => {
       const move = await moveIssueToStatus(
         workItem.linearOrganizationId,
@@ -852,6 +869,9 @@ const upsertWorkItem = async (
       setWhere: sql`${workItems.agentSessionId} is distinct from ${event.sessionId}`
     })
     .returning();
+  if (workItem) {
+    await recordStageChange(workItem, workItem.stage, 'delegated');
+  }
   return workItem;
 };
 
@@ -957,7 +977,10 @@ const stopForCause = async (project: FactoryConfig, workItem: WorkItem, cause: S
 
 // Records the stage without moving the Linear issue: the event came from Linear or GitHub, which already show it.
 const recordStage = async (workItem: WorkItem, stage: Stage, cause: string): Promise<void> => {
-  await getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id));
+  await Promise.all([
+    getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id)),
+    recordStageChange(workItem, stage, cause)
+  ]);
   log('info', 'work item stage followed', { issue: workItem.issueIdentifier, from: workItem.stage, to: stage, cause });
   // Only a merge or a close should end the merge gate; anything else (a person, or an integration's automation) is
   // worth a look in the health check.
@@ -1320,6 +1343,9 @@ export const handleIssueUpdate = async (payload: unknown): Promise<void> => {
   if (!workItem || !project) {
     return;
   }
+  if (update.estimate !== workItem.estimate) {
+    await getDb().update(workItems).set({ estimate: update.estimate }).where(eq(workItems.id, workItem.id));
+  }
   const actions = decideIssueUpdate(update, {
     config: project,
     appUserId: await findAppUserId(update.organizationId),
@@ -1433,6 +1459,7 @@ const takeOnDependencyPr = async (pr: DependencyPr, work: DependencyWork): Promi
   if (!workItem) {
     return;
   }
+  await recordStageChange(workItem, workItem.stage, 'dependabot');
   await openSlackThread(project, workItem, issue.title);
   const [threaded] = await getDb().select().from(workItems).where(eq(workItems.id, workItem.id)).limit(1);
   await replyInThread(project, threaded ?? workItem, dependencyTakenText(pr, work, issue));

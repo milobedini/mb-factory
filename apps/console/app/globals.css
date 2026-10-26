@@ -6,6 +6,9 @@
   --ok: #15803d;
   --warn: #b45309;
   --danger: #b91c1c;
+  /* Chart series in fixed order, checked for colour-blind separation against both backgrounds. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
 }
 
 @theme inline {
@@ -14,6 +17,8 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -25,6 +30,8 @@
     --ok: #4ade80;
     --warn: #fbbf24;
     --danger: #f87171;
+    --series-1: #3987e5;
+    --series-2: #d95926;
   }
 }
 

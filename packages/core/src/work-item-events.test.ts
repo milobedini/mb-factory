@@ -213,7 +213,14 @@ describe('parseIssueUpdate', () => {
       issueId: 'issue-1',
       identifier: 'TAS-9',
       actorId: HUMAN,
+      estimate: null,
       state: { name: 'Awaiting Merge', type: 'started' }
+    });
+  });
+
+  it('reads the estimate whatever changed', () => {
+    expect(parseIssueUpdate(issueUpdate({ data: { estimate: 3 }, updatedFrom: { labelIds: [] } }))).toMatchObject({
+      estimate: 3
     });
   });
 

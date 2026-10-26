@@ -394,6 +394,8 @@ const readReview = (report: unknown): { verdict: ReviewVerdict; fixable: Finding
   };
 };
 
+export const reviewVerdict = (report: unknown): ReviewVerdict => readReview(report).verdict;
+
 const MAX_FINDINGS_IN_BRIEF = 25;
 const MAX_FIELD_LENGTH = 600;
 

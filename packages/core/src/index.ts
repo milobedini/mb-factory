@@ -2,6 +2,28 @@ export type { Brief, DispatchPayload, JobBrief } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
 export type { FactoryConfig, Job, UsagePolicy } from './config';
 export { factoryConfigSchema, jobSchema, parseFactoryConfig, reviewersFor, usagePolicySchema } from './config';
+export type {
+  BreakdownRow,
+  Dashboard,
+  DashboardInput,
+  DashboardQuestion,
+  DashboardRange,
+  DashboardRun,
+  DashboardStageChange,
+  DashboardWorkItem,
+  ExpensiveItem,
+  SizeRow,
+  StageMedian
+} from './dashboard';
+export {
+  DASHBOARD_RANGES,
+  DEFAULT_DASHBOARD_RANGE,
+  dashboardMetrics,
+  median,
+  readDashboardRange,
+  sizeLabel,
+  timeInStages
+} from './dashboard';
 export type { Bump, DependencyPr, DependencyWork } from './dependencies';
 export { DEPENDABOT_LOGIN, dependencyIssue, dependencyTakenText, isMajorBump, readBump } from './dependencies';
 export type {
@@ -131,6 +153,7 @@ export {
   REVIEW_VERDICTS,
   readSpecReply,
   resumeRequestFor,
+  reviewVerdict,
   runRequestFor,
   STOPPED_RESPONSE,
   shouldMoveIssue,
