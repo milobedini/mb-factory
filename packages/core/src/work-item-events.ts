@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import type { FactoryConfig } from './config';
+import type { DependencyPr } from './dependencies';
+import { DEPENDABOT_LOGIN } from './dependencies';
 import { linearStatusFor } from './router';
 import type { Stage } from './stages';
 import { STAGES, TERMINAL_STAGES, transition } from './stages';
@@ -13,6 +15,9 @@ const pullRequestEventSchema = z.looseObject({
   repository: repositorySchema,
   pull_request: z.looseObject({
     number: z.int().positive(),
+    title: z.string().nullish(),
+    html_url: z.url({ protocol: /^https$/ }).nullish(),
+    user: z.looseObject({ login: z.string() }).nullish(),
     merged: z.boolean().nullish(),
     head: z.looseObject({ ref: z.string().min(1), repo: z.looseObject({ full_name: z.string() }).nullish() })
   })
@@ -42,6 +47,7 @@ const workflowRunEventSchema = z.looseObject({
 
 export type GitHubEvent =
   | { kind: 'pr_closed'; repository: string; number: number; branch: string; merged: boolean }
+  | ({ kind: 'dependency_pr_opened' } & DependencyPr)
   | { kind: 'human_push'; repository: string; branch: string; login: string; commits: number }
   | { kind: 'default_branch_moved'; repository: string; branch: string }
   | { kind: 'ci_failed'; repository: string; prNumbers: number[]; workflow: string; url: string | null };
@@ -78,12 +84,28 @@ export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEve
   }
   if (eventName === 'pull_request') {
     const parsed = pullRequestEventSchema.safeParse(payload);
-    if (!parsed.success || parsed.data.action !== 'closed') {
+    if (!parsed.success) {
       return undefined;
     }
-    const { repository, pull_request } = parsed.data;
+    const { action, repository, pull_request } = parsed.data;
     // Factory PRs never come from forks; anyone can open one with a factory branch's name, so they're ignored.
     if (pull_request.head.repo?.full_name !== repository.full_name) {
+      return undefined;
+    }
+    if (action === 'opened') {
+      const { title, html_url: url, user } = pull_request;
+      return user?.login === DEPENDABOT_LOGIN && title && url
+        ? {
+            kind: 'dependency_pr_opened',
+            repository: repository.full_name,
+            number: pull_request.number,
+            branch: pull_request.head.ref,
+            title,
+            url
+          }
+        : undefined;
+    }
+    if (action !== 'closed') {
       return undefined;
     }
     return {

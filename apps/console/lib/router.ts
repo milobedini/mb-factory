@@ -1,6 +1,8 @@
 import type {
   AgentRole,
   AskedQuestion,
+  DependencyPr,
+  DependencyWork,
   FactoryConfig,
   GitHubEvent,
   GovernedDecision,
@@ -25,12 +27,16 @@ import {
   conflictHandOverText,
   consecutiveCiFixes,
   consoleRerunRequest,
+  DEPENDABOT_LOGIN,
   decideCiFailure,
   decideConflict,
   decideIssueUpdate,
+  dependencyIssue,
+  dependencyTakenText,
   emptyMentionText,
   governDispatch,
   isAllowedSlackUser,
+  isMajorBump,
   isOpenRun,
   linearSlackReplyText,
   linearStatusFor,
@@ -49,6 +55,7 @@ import {
   QUESTION_GONE,
   questionElicitation,
   queuedThought,
+  readBump,
   resumeRequestFor,
   reviewersFor,
   runRequestFor,
@@ -79,7 +86,7 @@ import { getDb } from '@/db/client';
 import { events, questions, queue, runs, workItems } from '@/db/schema';
 
 import { requireEnv } from './env';
-import { cancelActionsRun, pullMergeState, requestReviewers, sendStageDispatch } from './github-api';
+import { cancelActionsRun, pullMergeState, pullRequestInfo, requestReviewers, sendStageDispatch } from './github-api';
 import { findJob, jobBriefFor, jobTitleOf, postJobMessage } from './job-runs';
 import type { AgentActivityContent } from './linear-api';
 import {
@@ -1337,8 +1344,12 @@ const handleCiFailure = async (event: Extract<GitHubEvent, { kind: 'ci_failed' }
     .from(workItems)
     .where(and(eq(workItems.repository, event.repository), inArray(workItems.prNumber, event.prNumbers)))
     .limit(1);
-  const project = workItem && findProject(workItem.project);
-  if (!workItem || !project) {
+  if (!workItem) {
+    await takeOnFailedDependencyPr(event);
+    return;
+  }
+  const project = findProject(workItem.project);
+  if (!project) {
     return;
   }
   const history = await getDb()
@@ -1360,6 +1371,109 @@ const handleCiFailure = async (event: Extract<GitHubEvent, { kind: 'ci_failed' }
     const text = ciHandOverText(event.workflow, event.url);
     await Promise.all([postActivity(workItem, { type: 'error', body: text }), replyInThread(project, workItem, text)]);
   }
+};
+
+// A Dependabot PR that needs work becomes a work item on its branch, filed in Linear with what to do, and starts the
+// way a Slack request does: the work item exists before the session opens, so whichever of the console and Linear's
+// session event claims the session starts the same implement run, which reads its instructions from the issue.
+const takeOnDependencyPr = async (pr: DependencyPr, work: DependencyWork): Promise<void> => {
+  const project = allProjects().find((candidate) => repositoryOf(candidate) === pr.repository);
+  if (!project) {
+    return;
+  }
+  const [existing] = await getDb()
+    .select({ id: workItems.id })
+    .from(workItems)
+    .where(and(eq(workItems.repository, pr.repository), eq(workItems.prNumber, pr.number)))
+    .limit(1);
+  if (existing) {
+    return;
+  }
+  const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
+  const filing = dependencyIssue(pr, work);
+  const issue = await createIssue(organizationId, {
+    teamKey: project.linear.teamKey,
+    ...filing,
+    assigneeId: null
+  }).catch((error: unknown) => {
+    log('error', 'linear issue for a dependency pr failed', { pr: pr.number, error: errorMessage(error) });
+    return undefined;
+  });
+  if (!issue) {
+    return;
+  }
+  log('info', 'dependency pr taken on', { pr: pr.number, issue: issue.identifier, work: work.kind });
+  const [workItem] = await getDb()
+    .insert(workItems)
+    .values({
+      project: project.name,
+      repository: pr.repository,
+      linearOrganizationId: organizationId,
+      linearIssueId: issue.id,
+      issueIdentifier: issue.identifier,
+      issueUrl: issue.url,
+      title: issue.title,
+      origin: 'dependabot',
+      requester: 'Dependabot',
+      stage: 'building',
+      branch: pr.branch,
+      prNumber: pr.number
+    })
+    .returning();
+  if (!workItem) {
+    return;
+  }
+  await openSlackThread(project, workItem, issue.title);
+  const [threaded] = await getDb().select().from(workItems).where(eq(workItems.id, workItem.id)).limit(1);
+  await replyInThread(project, threaded ?? workItem, dependencyTakenText(pr, work, issue));
+  try {
+    const sessionId = await createSessionOnIssue(organizationId, issue.id);
+    await startWork(project, {
+      kind: 'created',
+      organizationId,
+      sessionId,
+      issue: { ...issue, teamKey: project.linear.teamKey },
+      requester: 'Dependabot'
+    });
+  } catch (error) {
+    log('error', 'starting a dependency pr failed', { issue: issue.identifier, error: errorMessage(error) });
+    await replyInThread(
+      project,
+      threaded ?? workItem,
+      `I couldn’t start on it. Delegate <${issue.url}|${issue.identifier}> to @${project.alias} in Linear to start.`
+    );
+    return;
+  }
+  await attempt('linear delegate', { issue: issue.identifier }, async () =>
+    delegateIssue(organizationId, issue.id, await findAppUserId(organizationId))
+  );
+};
+
+// A major version needs real work; anything else waits for CI to say whether it does.
+const handleDependencyPrOpened = async (pr: DependencyPr): Promise<void> => {
+  const bump = readBump(pr.title);
+  if (bump && isMajorBump(bump)) {
+    await takeOnDependencyPr(pr, { kind: 'major', bump });
+  }
+};
+
+// CI failed on a PR the factory isn't working on: if Dependabot opened it, the factory fixes it.
+const takeOnFailedDependencyPr = async (event: Extract<GitHubEvent, { kind: 'ci_failed' }>): Promise<void> => {
+  const [number] = event.prNumbers;
+  if (number === undefined || event.prNumbers.length > 1) {
+    return;
+  }
+  const pull = await pullRequestInfo(event.repository, number).catch((error: unknown) => {
+    log('warn', 'pull request lookup failed', { pr: number, error: errorMessage(error) });
+    return undefined;
+  });
+  if (pull?.author !== DEPENDABOT_LOGIN || pull.headRepository !== event.repository) {
+    return;
+  }
+  await takeOnDependencyPr(
+    { repository: event.repository, number, branch: pull.branch, title: pull.title, url: pull.url },
+    { kind: 'ci_failed', workflow: event.workflow, runUrl: event.url }
+  );
 };
 
 // Something landed on the default branch: every delivered PR into it may conflict now.
@@ -1397,6 +1511,10 @@ export const handleGitHubEvent = async (eventName: string, payload: unknown): Pr
     await handleDefaultBranchMoved(event);
     return;
   }
+  if (event.kind === 'dependency_pr_opened') {
+    await handleDependencyPrOpened(event);
+    return;
+  }
   if (event.kind === 'human_push') {
     const pushed = await getDb()
       .update(workItems)
@@ -1420,6 +1538,10 @@ export const handleGitHubEvent = async (eventName: string, payload: unknown): Pr
   const stage = stageAfterPrClosed(workItem.stage, event.merged);
   if (stage) {
     await recordStage(workItem, stage, event.merged ? 'pr merged' : 'pr closed');
+  }
+  if (stage && workItem.origin === 'dependabot') {
+    // Linear's GitHub integration links a PR by the issue ID in its branch or text, which Dependabot's don't carry.
+    await moveTo(project, workItem, stage);
   }
   await replyInThread(project, workItem, prClosedText(event.number, event.merged));
   await stopForCause(project, workItem, { kind: 'pr_closed', number: event.number, merged: event.merged });

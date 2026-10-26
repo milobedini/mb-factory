@@ -67,6 +67,30 @@ describe('parseGitHubEvent', () => {
     expect(parseGitHubEvent('pull_request', { ...pullRequestClosed(false), action: 'opened' })).toBeUndefined();
   });
 
+  it('reads a PR Dependabot opened, and only Dependabot', () => {
+    const opened = {
+      action: 'opened',
+      repository: { full_name: 'milobedini/tastebook' },
+      pull_request: {
+        number: 16,
+        title: 'Bump vite from 7.1.0 to 8.0.0',
+        html_url: 'https://github.com/milobedini/tastebook/pull/16',
+        head: { ref: 'dependabot/npm_and_yarn/vite-8.0.0', repo: { full_name: 'milobedini/tastebook' } },
+        user: { login: 'dependabot[bot]' }
+      }
+    };
+    expect(parseGitHubEvent('pull_request', opened)).toEqual({
+      kind: 'dependency_pr_opened',
+      repository: 'milobedini/tastebook',
+      number: 16,
+      branch: 'dependabot/npm_and_yarn/vite-8.0.0',
+      title: 'Bump vite from 7.1.0 to 8.0.0',
+      url: 'https://github.com/milobedini/tastebook/pull/16'
+    });
+    const byPerson = { ...opened, pull_request: { ...opened.pull_request, user: { login: 'milobedini' } } };
+    expect(parseGitHubEvent('pull_request', byPerson)).toBeUndefined();
+  });
+
   it('reads a human push to a branch with its commit count', () => {
     expect(parseGitHubEvent('push', push({}))).toEqual({
       kind: 'human_push',

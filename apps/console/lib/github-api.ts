@@ -110,3 +110,28 @@ export const branchChecks = async (repository: string, branch: string): Promise<
   );
   return checksState(latest);
 };
+
+export type PullRequestInfo = {
+  author: string;
+  title: string;
+  url: string;
+  branch: string;
+  // Where the head branch lives: a fork's PR is never taken on.
+  headRepository: string | null;
+};
+
+export const pullRequestInfo = async (repository: string, prNumber: number): Promise<PullRequestInfo> => {
+  const pull = await githubGet<{
+    user: { login: string };
+    title: string;
+    html_url: string;
+    head: { ref: string; repo: { full_name: string } | null };
+  }>(`/repos/${repository}/pulls/${prNumber}`, 'pull request');
+  return {
+    author: pull.user.login,
+    title: pull.title,
+    url: pull.html_url,
+    branch: pull.head.ref,
+    headRepository: pull.head.repo?.full_name ?? null
+  };
+};

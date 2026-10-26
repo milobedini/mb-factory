@@ -1,4 +1,5 @@
-export const WORK_ORIGINS = ['linear', 'slack'] as const;
+// `dependabot`: a Dependabot PR the factory took on because it needed work.
+export const WORK_ORIGINS = ['linear', 'slack', 'dependabot'] as const;
 
 export type WorkOrigin = (typeof WORK_ORIGINS)[number];
 
