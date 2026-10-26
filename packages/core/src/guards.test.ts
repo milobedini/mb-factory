@@ -37,7 +37,7 @@ describe('guardIssue', () => {
     expect(issue.estimate).toBeNull();
     expect(issue.description).toContain('Raised while working on [TAS-30](https://linear.app/tastebook/issue/TAS-30)');
     expect(issue.description).toContain('[its PR](https://github.com/milobedini/tastebook/pull/40)');
-    expect(issue.description).toContain('Fingerprint: `guard:TAS-30:lint rule against unscoped recipe queries`');
+    expect(issue.description).toContain('Fingerprint: `guard:tas-30:lint-rule-against-unscoped-recipe-queries`');
   });
 
   it('escapes the agent’s text so it can’t render links or images', () => {
@@ -61,6 +61,10 @@ describe('guardIssue', () => {
 });
 
 describe('guardFingerprint', () => {
+  it('keeps only a slug of the title, so backticks can’t break out of the code span', () => {
+    expect(guardFingerprint('TAS-30', { ...guard, title: 'Lint `x` ![y](z)' })).toBe('guard:tas-30:lint-x-y-z');
+  });
+
   it('ignores case and spacing in the title', () => {
     expect(guardFingerprint('TAS-30', { ...guard, title: 'LINT rule against unscoped  recipe queries ' })).toBe(
       guardFingerprint('TAS-30', guard)
