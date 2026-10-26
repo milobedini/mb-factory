@@ -169,6 +169,31 @@ export const canRerun = (
   return run.outcome === 'done' && !stoppedForHuman && next.stage === undefined && next.request === undefined;
 };
 
+type RunEnd = {
+  agent: AgentRole;
+  status: RunStatus;
+  outcome: RunOutcome | null;
+  report: unknown;
+  costUsd: number | null;
+};
+
+// A run whose agent never started: a setup step failed (a download, the runner) before Claude ran, so there's no
+// report and no usage. Nothing about the work caused it.
+export const neverStarted = ({ status, outcome, report, costUsd }: RunEnd): boolean =>
+  status === 'finished' && outcome === 'failed' && report === null && costUsd === null;
+
+// Such a run is tried once more by itself; a retry that fails the same way waits for a person.
+export const shouldRetry = (run: RunEnd, parent: RunEnd | undefined): boolean =>
+  neverStarted(run) && !(parent && parent.agent === run.agent && neverStarted(parent));
+
+export const retryText = (agent: AgentRole, actionsRunUrl: string | null): string =>
+  `The ${agent} run didn’t start: a setup step failed before the agent ran${
+    actionsRunUrl ? ` (${slackLink(actionsRunUrl, 'run log')})` : ''
+  }. Trying again.`;
+
+// The outcomes that leave a work item waiting on a person, shown in Linear as the Blocked label.
+export const BLOCKING_OUTCOMES: (RunOutcome | null)[] = ['blocked', 'failed'];
+
 // Re-run from the console: the same stage again, ahead of new work.
 export const consoleRerunRequest = (agent: AgentRole): RunRequest => ({
   agent,
@@ -597,7 +622,7 @@ const STARTED_BECAUSE: Record<RunTrigger, (round: number | undefined) => string>
   ci_failed: () => ' to fix the failed CI run',
   conflict: () => ' to resolve a merge conflict',
   rerun: () => ' again, after the usage limit reset',
-  console: () => ' again, from the console',
+  console: () => ' again',
   answered: () => ' with your answers',
   scheduled: () => ', as scheduled'
 };

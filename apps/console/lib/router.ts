@@ -20,6 +20,7 @@ import type {
 import {
   afterAnswers,
   applyAnswer,
+  BLOCKING_OUTCOMES,
   briefRound,
   buildDispatchPayload,
   CHANGES_QUESTION,
@@ -67,10 +68,12 @@ import {
   queuedThought,
   READY_HEADING,
   READY_UNREADABLE,
+  RERUN_GONE,
   readBump,
   readQuestions,
   readSpecParts,
   resumeRequestFor,
+  retryText,
   reviewersFor,
   runRequestFor,
   SPEC_GATE_GONE,
@@ -78,6 +81,7 @@ import {
   settleReadyMessage,
   shouldMoveIssue,
   shouldResume,
+  shouldRetry,
   slackFiledText,
   slackFinishedText,
   slackIssueFromRequest,
@@ -96,6 +100,7 @@ import {
   TERMINAL_STAGES,
   unblockedBy,
   unblockedHeading,
+  withRerunButton,
   wrongChannelText
 } from '@mb-factory/core';
 import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -124,7 +129,8 @@ import {
   findAppUserId,
   findUserIdByEmail,
   hasClosingActivity,
-  moveIssueToStatus
+  moveIssueToStatus,
+  setBlockedLabel
 } from './linear-api';
 import { log } from './log';
 import { currentPause } from './pause';
@@ -754,14 +760,29 @@ const answerQuestion = async (
   return true;
 };
 
+// Takes the Blocked label off once the work moves on, when its latest run had put it there.
+const clearBlocked = async (workItem: WorkItem): Promise<void> => {
+  const [latest] = await getDb()
+    .select({ status: runs.status, outcome: runs.outcome })
+    .from(runs)
+    .where(eq(runs.workItemId, workItem.id))
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  if (latest?.status === 'finished' && BLOCKING_OUTCOMES.includes(latest.outcome)) {
+    await attempt('linear blocked label', { issue: workItem.issueIdentifier }, () =>
+      setBlockedLabel(workItem.linearOrganizationId, workItem.linearIssueId, false)
+    );
+  }
+};
+
 const createRun = async (
   project: FactoryConfig,
   workItem: WorkItem,
   request: RunRequest,
   parentRunId: string | null = null
 ): Promise<string> => {
-  // New work on the item makes any questions still open moot.
-  await closeOpenQuestions(project, workItem);
+  // New work on the item makes any questions still open moot, and ends any wait on a person.
+  await Promise.all([closeOpenQuestions(project, workItem), clearBlocked(workItem)]);
   const [run] = await getDb()
     .insert(runs)
     .values({
@@ -1045,6 +1066,9 @@ const recordStage = async (workItem: WorkItem, stage: Stage, cause: string): Pro
     recordStageChange(workItem, stage, cause)
   ]);
   log('info', 'work item stage followed', { issue: workItem.issueIdentifier, from: workItem.stage, to: stage, cause });
+  if (TERMINAL_STAGES.includes(stage)) {
+    await clearBlocked(workItem);
+  }
   // Only a merge or a close should end the merge gate; anything else (a person, or an integration's automation) is
   // worth a look in the health check.
   if (workItem.stage === 'awaiting_merge' && stage !== 'awaiting_merge' && !TERMINAL_STAGES.includes(stage)) {
@@ -1527,6 +1551,28 @@ const findWorkItemById = async (id: string): Promise<WorkItem | undefined> => {
   return workItem;
 };
 
+// A failed run's Re-run button: the same as Re-run in the console, with the same rules.
+const handleRerunTap = async (
+  runId: string,
+  userId: string,
+  tellTapper: (text: string) => Promise<void>
+): Promise<void> => {
+  const found = await findRun(runId);
+  const project = found && findProject(found.workItem.project);
+  if (!found || !project) {
+    return;
+  }
+  if (!isAllowedSlackUser(project, userId)) {
+    log('info', 'slack re-run tap from someone not allowed', { issue: found.workItem.issueIdentifier, user: userId });
+    await tellTapper(notAllowedText(project));
+    return;
+  }
+  const name = await slackUserName(userId).catch(() => userId);
+  if (!(await rerunFromConsole(runId, `${name} in Slack`))) {
+    await tellTapper(RERUN_GONE);
+  }
+};
+
 // A tap on a question's or the spec gate's button, or a ready message's. Only the current question and a spec still in
 // review take an answer; the messages themselves are redrawn by the answer, wherever it came from.
 export const handleSlackAction = async (payload: unknown): Promise<void> => {
@@ -1538,6 +1584,10 @@ export const handleSlackAction = async (payload: unknown): Promise<void> => {
     attempt('slack action response', { user: action.userId }, () => respondToSlackAction(action.responseUrl, text));
   if (action.kind === 'delegate') {
     await handleDelegateTap(action, tellTapper);
+    return;
+  }
+  if (action.kind === 'rerun') {
+    await handleRerunTap(action.runId, action.userId, tellTapper);
     return;
   }
   const tapped = action.kind === 'question' ? await findQuestionWithWorkItem(action.questionId) : undefined;
@@ -1580,6 +1630,21 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   }
   const { run, workItem } = found;
   const resuming = shouldResume(run);
+  const [parent] = run.parentRunId
+    ? await getDb()
+        .select({
+          agent: runs.agent,
+          status: runs.status,
+          outcome: runs.outcome,
+          report: runs.report,
+          costUsd: runs.costUsd
+        })
+        .from(runs)
+        .where(eq(runs.id, run.parentRunId))
+        .limit(1)
+    : [];
+  // A run whose agent never started is tried once more by itself; nobody need be watching.
+  const retrying = shouldRetry(run, parent);
   const next = nextStepAfterRun(run, {
     hasPr: workItem.prNumber !== null,
     reviewRounds: workItem.reviewRounds,
@@ -1595,8 +1660,22 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
           }
         )
       : false;
-  const closing = next.questions ? undefined : closingActivity(run, { agentClosed, resuming });
+  const closing = next.questions || retrying ? undefined : closingActivity(run, { agentClosed, resuming });
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
+  const finishedText = slackFinishedText(
+    { ...run, prUrl, actionsRunUrl: run.actionsRunUrl },
+    { questions: next.questions?.length, specReview: next.stage === 'spec_review' }
+  );
+  const rerunnable =
+    run.status === 'finished' &&
+    run.outcome === 'failed' &&
+    canRerun(run, {
+      stage: workItem.stage,
+      hasPr: workItem.prNumber !== null,
+      reviewRounds: workItem.reviewRounds,
+      maxReviewRounds: project.review.maxRounds
+    });
+  const waitsOnPerson = run.status === 'finished' && BLOCKING_OUTCOMES.includes(run.outcome) && !retrying;
   if (next.reviewRounds !== undefined) {
     // Recorded before the revision dispatches, so its brief names the round it's fixing.
     await getDb()
@@ -1610,11 +1689,17 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
     replyInThread(
       project,
       workItem,
-      slackFinishedText(
-        { ...run, prUrl, actionsRunUrl: run.actionsRunUrl },
-        { questions: next.questions?.length, specReview: next.stage === 'spec_review' }
-      )
+      retrying
+        ? retryText(run.agent, run.actionsRunUrl)
+        : rerunnable
+          ? withRerunButton(finishedText, run.id)
+          : finishedText
     ),
+    waitsOnPerson
+      ? attempt('linear blocked label', { issue: workItem.issueIdentifier }, () =>
+          setBlockedLabel(workItem.linearOrganizationId, workItem.linearIssueId, true)
+        )
+      : undefined,
     next.stage ? moveWorkItem(project, workItem, next.stage) : undefined
   ]);
   if (next.questions) {
@@ -1637,6 +1722,11 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   }
   if (resuming) {
     await dispatchRun(project, await createRun(project, workItem, resumeRequestFor(run.agent), run.id));
+  }
+  if (retrying) {
+    log('info', 'run never started, retrying', { runId, issue: workItem.issueIdentifier, agent: run.agent });
+    const again = { agent: run.agent, trigger: run.trigger, priority: run.priority, prompt: run.prompt };
+    await dispatchRun(project, await createRun(project, workItem, again, run.id));
   }
   await fileGuards(project, found);
   await releaseQueue();

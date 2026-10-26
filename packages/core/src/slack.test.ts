@@ -29,6 +29,7 @@ import {
   slackSpecGateSettled,
   specUrl,
   unblockedHeading,
+  withRerunButton,
   wrongChannelText
 } from './slack';
 
@@ -294,6 +295,13 @@ describe('parseSlackAction', () => {
     expect(parseSlackAction(payload(JSON.stringify({ d: ['TAS-25'] })))).toMatchObject({
       message: { ts: '1792947100.000300', text: '', blocks: [] }
     });
+  });
+
+  it('reads a Re-run button', () => {
+    const { blocks } = withRerunButton('The review run failed.', workItemId);
+    const [rerun] = (blocks[1]?.elements ?? []) as { value: string }[];
+    expect(rerun).toBeDefined();
+    expect(parseSlackAction(payload(rerun?.value ?? ''))).toMatchObject({ kind: 'rerun', runId: workItemId });
   });
 
   it('ignores buttons it didn’t make', () => {

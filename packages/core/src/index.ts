@@ -140,6 +140,7 @@ export type {
   SpecReply
 } from './router';
 export {
+  BLOCKING_OUTCOMES,
   briefRound,
   CHANGES_QUESTION,
   canRerun,
@@ -158,6 +159,7 @@ export {
   MAX_CI_FIXES,
   MAX_CONFLICT_FIXES,
   modelFor,
+  neverStarted,
   nextStepAfterRun,
   orderQueue,
   parseSessionEvent,
@@ -165,11 +167,13 @@ export {
   REVIEW_VERDICTS,
   readSpecReply,
   resumeRequestFor,
+  retryText,
   reviewVerdict,
   runRequestFor,
   STOPPED_RESPONSE,
   shouldMoveIssue,
   shouldResume,
+  shouldRetry,
   slackFinishedText,
   slackReplyText,
   slackStartedText,
@@ -225,6 +229,7 @@ export {
   QUESTION_GONE,
   READY_HEADING,
   READY_UNREADABLE,
+  RERUN_GONE,
   SPEC_APPROVE,
   SPEC_CHANGE,
   SPEC_GATE_GONE,
@@ -239,6 +244,7 @@ export {
   slackSpecGateSettled,
   specUrl,
   unblockedHeading,
+  withRerunButton,
   wrongChannelText
 } from './slack';
 export type { AgentRole, JobAgent, Stage, StageContext, StageEvent, Transition } from './stages';

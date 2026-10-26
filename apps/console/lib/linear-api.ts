@@ -388,6 +388,56 @@ export const fileSubIssues = async (
   }, Promise.resolve([]));
 };
 
+const BLOCKED_LABEL = 'Blocked';
+const BLOCKED_COLOUR = '#eb5757';
+
+type IssueForLabel = {
+  issue: { team: { id: string }; labels: { nodes: { id: string; name: string }[] } } | null;
+  issueLabels: { nodes: { id: string; name: string; team: { id: string } | null }[] };
+};
+
+// The red Blocked label on an issue while its work waits on a person; the label is created on the team the first time.
+export const setBlockedLabel = async (organizationId: string, issueId: string, blocked: boolean): Promise<void> => {
+  const { issue, issueLabels } = await linearGraphql<IssueForLabel>(
+    organizationId,
+    'query IssueForLabel($id: String!, $name: String!) { issue(id: $id) { team { id } labels { nodes { id name } } } issueLabels(filter: { name: { eqIgnoreCase: $name } }) { nodes { id name team { id } } } }',
+    { id: issueId, name: BLOCKED_LABEL }
+  );
+  if (!issue) {
+    return;
+  }
+  const onIssue = issue.labels.nodes.find(({ name }) => name.toLowerCase() === BLOCKED_LABEL.toLowerCase());
+  if (!blocked) {
+    if (onIssue) {
+      await linearGraphql(
+        organizationId,
+        'mutation LabelOff($id: String!, $labelId: String!) { issueRemoveLabel(id: $id, labelId: $labelId) { success } }',
+        { id: issueId, labelId: onIssue.id }
+      );
+    }
+    return;
+  }
+  if (onIssue) {
+    return;
+  }
+  const usable = issueLabels.nodes.filter(({ team }) => !team || team.id === issue.team.id);
+  const existing = usable.find(({ team }) => team?.id === issue.team.id) ?? usable[0];
+  const labelId =
+    existing?.id ??
+    (
+      await linearGraphql<{ issueLabelCreate: { issueLabel: { id: string } } }>(
+        organizationId,
+        'mutation LabelCreate($input: IssueLabelCreateInput!) { issueLabelCreate(input: $input) { issueLabel { id } } }',
+        { input: { name: BLOCKED_LABEL, color: BLOCKED_COLOUR, teamId: issue.team.id } }
+      )
+    ).issueLabelCreate.issueLabel.id;
+  await linearGraphql(
+    organizationId,
+    'mutation LabelOn($id: String!, $labelId: String!) { issueAddLabel(id: $id, labelId: $labelId) { success } }',
+    { id: issueId, labelId }
+  );
+};
+
 // The issue's workflow state type (`triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled`), or null when
 // Linear can't find it.
 export const issueStateType = async (organizationId: string, issueId: string): Promise<string | null> => {

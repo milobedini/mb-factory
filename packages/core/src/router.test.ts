@@ -18,14 +18,17 @@ import {
   governDispatch,
   linearStatusFor,
   modelFor,
+  neverStarted,
   nextStepAfterRun,
   orderQueue,
   parseSessionEvent,
   queuedThought,
   readSpecReply,
+  retryText,
   runRequestFor,
   shouldMoveIssue,
   shouldResume,
+  shouldRetry,
   slackFinishedText,
   slackReplyText,
   slackStartedText,
@@ -647,6 +650,36 @@ describe('CI failures', () => {
   });
 });
 
+describe('retrying a run that never started', () => {
+  const ended = {
+    agent: 'review' as const,
+    status: 'finished' as const,
+    outcome: 'failed' as const,
+    report: null,
+    costUsd: null
+  };
+
+  it('knows a run whose agent never started from one that failed while working', () => {
+    expect(neverStarted(ended)).toBe(true);
+    expect(neverStarted({ ...ended, costUsd: 0.4 })).toBe(false);
+    expect(neverStarted({ ...ended, report: { outcome: 'failed' } })).toBe(false);
+    expect(neverStarted({ ...ended, outcome: 'blocked' })).toBe(false);
+  });
+
+  it('retries once, and not a retry that failed the same way', () => {
+    expect(shouldRetry(ended, undefined)).toBe(true);
+    expect(shouldRetry(ended, { ...ended, outcome: 'done', report: {}, costUsd: 0.6, agent: 'implement' })).toBe(true);
+    expect(shouldRetry(ended, ended)).toBe(false);
+    expect(shouldRetry({ ...ended, costUsd: 1 }, undefined)).toBe(false);
+  });
+
+  it('says it is trying again, with the run log', () => {
+    expect(retryText('review', 'https://github.com/o/r/actions/runs/1')).toBe(
+      'The review run didn’t start: a setup step failed before the agent ran (<https://github.com/o/r/actions/runs/1|run log>). Trying again.'
+    );
+  });
+});
+
 describe('canRerun', () => {
   const open = { stage: 'building' as const, hasPr: false, reviewRounds: 0, maxReviewRounds: 2 };
   const run = (
@@ -702,7 +735,7 @@ describe('slack timeline', () => {
     ],
     [{ agent: 'implement', trigger: 'ci_failed' }, undefined, 'Started the implement run to fix the failed CI run.'],
     [{ agent: 'spec', trigger: 'rerun' }, undefined, 'Started the spec run again, after the usage limit reset.'],
-    [{ agent: 'review', trigger: 'console' }, 2, 'Started the review run again, from the console.'],
+    [{ agent: 'review', trigger: 'console' }, 2, 'Started the review run again.'],
     [{ agent: 'spec', trigger: 'answered' }, undefined, 'Started the spec run with your answers.']
   ] as const)('says why %o started', (run, round, text) => {
     expect(slackStartedText(run, round)).toBe(text);

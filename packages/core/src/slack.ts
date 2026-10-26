@@ -35,6 +35,7 @@ export const MAX_READY_ROWS = 10;
 const buttonValueSchema = z.union([
   z.object({ q: z.uuid(), a: z.string().min(1) }),
   z.object({ w: z.uuid(), a: z.string().min(1) }),
+  z.object({ r: z.uuid() }),
   z.object({
     d: z
       .array(z.string().regex(/^[A-Z][A-Z0-9]*-\d+$/))
@@ -292,6 +293,7 @@ export type SlackAction = {
   | { kind: 'question'; questionId: string; body: string }
   | { kind: 'spec_gate'; workItemId: string; body: string }
   | { kind: 'delegate'; identifiers: string[]; message: TappedMessage | null }
+  | { kind: 'rerun'; runId: string }
 );
 
 const parseValue = (value: string | null | undefined): ButtonValue | undefined => {
@@ -324,6 +326,9 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
       identifiers: value.d,
       message: message ? { ts: message.ts, text: message.text ?? '', blocks: message.blocks ?? [] } : null
     };
+  }
+  if ('r' in value) {
+    return { ...base, kind: 'rerun', runId: value.r };
   }
   return 'q' in value
     ? { ...base, kind: 'question', questionId: value.q, body: value.a }
@@ -497,3 +502,11 @@ export const delegateFailedText = (identifiers: string[], alias: string): string
   `I couldn’t start ${listed(identifiers)}, so ${identifiers.length === 1 ? 'it’s' : 'they’re'} still listed. Try again, or delegate to @${alias} in Linear. The details are in the console log.`;
 
 export const READY_UNREADABLE = 'I couldn’t read Linear, so nothing was delegated. Try again in a minute.';
+
+// A failed run's message in the thread, with a button that runs the stage again, as Re-run does in the console.
+export const withRerunButton = (text: string, runId: string): SlackMessage => ({
+  text,
+  blocks: [section(text), { type: 'actions', elements: [button('rerun', 'Re-run', { r: runId })] }]
+});
+
+export const RERUN_GONE = 'That run can’t be re-run now: a newer run has started, or the work moved on.';

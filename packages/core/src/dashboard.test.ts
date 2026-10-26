@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DashboardInput, DashboardRun, DashboardStageChange, DashboardWorkItem } from './dashboard';
-import { dashboardMetrics, median, readDashboardRange, sizeLabel, timeInStages } from './dashboard';
+import { blockedWaitMs, dashboardMetrics, median, readDashboardRange, sizeLabel, timeInStages } from './dashboard';
 
 const MINUTE = 60 * 1000;
 const now = new Date('2026-10-26T12:00:00Z');
@@ -119,6 +119,24 @@ describe('timeInStages', () => {
       researching: 10 * MINUTE,
       building: 10 * MINUTE
     });
+  });
+});
+
+describe('blockedWaitMs', () => {
+  it('counts from each blocked or failed run to the next run, or the end', () => {
+    const blocked = run({
+      outcome: 'blocked',
+      createdAt: at('2026-10-25T09:00:00Z'),
+      finishedAt: at('2026-10-25T09:10:00Z')
+    });
+    const next = run({ createdAt: at('2026-10-25T09:40:00Z'), finishedAt: at('2026-10-25T09:50:00Z') });
+    const failed = run({
+      outcome: 'failed',
+      createdAt: at('2026-10-25T10:00:00Z'),
+      finishedAt: at('2026-10-25T10:05:00Z')
+    });
+    expect(blockedWaitMs([failed, next, blocked], at('2026-10-25T10:20:00Z'))).toBe((30 + 15) * 60_000);
+    expect(blockedWaitMs([next], at('2026-10-25T10:20:00Z'))).toBe(0);
   });
 });
 

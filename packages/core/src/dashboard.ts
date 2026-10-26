@@ -1,4 +1,4 @@
-import { reviewVerdict } from './router';
+import { BLOCKING_OUTCOMES, reviewVerdict } from './router';
 import type { RunOutcome, RunStatus, RunTrigger, WorkOrigin } from './runs';
 import type { AgentRole, Stage } from './stages';
 import { HUMAN_GATES, STAGES, TERMINAL_STAGES } from './stages';
@@ -204,10 +204,25 @@ const reviewStats = (runs: DashboardRun[], from: Date, to: Date): Dashboard['rev
   };
 };
 
-const WAITS: { label: string; stage?: Stage }[] = [
+// Time a work item sat blocked: from each run that ended blocked or failed to the next run, or the merge.
+export const blockedWaitMs = (itemRuns: DashboardRun[], end: Date): number => {
+  const ordered = itemRuns.toSorted((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return ordered.reduce((total, run, index) => {
+    if (run.status !== 'finished' || !BLOCKING_OUTCOMES.includes(run.outcome) || !run.finishedAt) {
+      return total;
+    }
+    const until = ordered[index + 1]?.createdAt ?? end;
+    return total + Math.max(0, Math.min(until.getTime(), end.getTime()) - run.finishedAt.getTime());
+  }, 0);
+};
+
+type Wait = { label: string; stage?: Stage; of?: 'answering' | 'blocked' };
+
+const WAITS: Wait[] = [
   { label: 'Spec review', stage: 'spec_review' },
   { label: 'Awaiting merge', stage: 'awaiting_merge' },
-  { label: 'Answering questions' }
+  { label: 'Answering questions', of: 'answering' },
+  { label: 'Blocked', of: 'blocked' }
 ];
 
 export const dashboardMetrics = ({
@@ -237,12 +252,14 @@ export const dashboardMetrics = ({
       const answeringMs = questionWaitMs(questionsFor.get(item.id) ?? [], item.createdAt, mergedAt);
       const cycleMs = mergedAt.getTime() - item.createdAt.getTime();
       const itemRuns = runsFor.get(item.id) ?? [];
+      const blockedMs = blockedWaitMs(itemRuns, mergedAt);
       return {
         item,
         stages,
         answeringMs,
+        blockedMs,
         cycleMs,
-        humanWaitMs: Math.min(gateMs + answeringMs, cycleMs),
+        humanWaitMs: Math.min(gateMs + answeringMs + blockedMs, cycleMs),
         costUsd: sumOrNull(itemRuns.map(({ costUsd }) => costUsd)),
         tokens: sumOrNull(itemRuns.map(runTokens)),
         runMs: sumOrNull(itemRuns.map(runMs))
@@ -255,9 +272,11 @@ export const dashboardMetrics = ({
     return medianMs === null ? [] : [{ stage, medianMs, items: spent.length }];
   });
 
-  const waits = WAITS.flatMap(({ label, stage }) => {
+  const waits = WAITS.flatMap(({ label, stage, of }) => {
     const spent = merged
-      .map(({ stages, answeringMs }) => (stage ? (stages.get(stage) ?? 0) : answeringMs))
+      .map(({ stages, answeringMs, blockedMs }) =>
+        stage ? (stages.get(stage) ?? 0) : of === 'blocked' ? blockedMs : answeringMs
+      )
       .filter((ms) => ms > 0);
     const medianMs = median(spent);
     return medianMs === null ? [] : [{ label, medianMs, items: spent.length }];
