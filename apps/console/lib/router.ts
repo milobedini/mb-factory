@@ -25,6 +25,7 @@ import {
   consoleRerunRequest,
   decideCiFailure,
   decideIssueUpdate,
+  emptyMentionText,
   governDispatch,
   isAllowedSlackUser,
   isOpenRun,
@@ -33,11 +34,13 @@ import {
   modelFor,
   nextStepAfterRun,
   notAllowedText,
+  notAllowedToStartText,
   orderQueue,
   parseGitHubEvent,
   parseIssueUpdate,
   parseSessionEvent,
   parseSlackAction,
+  parseSlackMention,
   parseSlackThreadReply,
   prClosedText,
   QUESTION_GONE,
@@ -50,7 +53,9 @@ import {
   STOPPED_RESPONSE,
   shouldMoveIssue,
   shouldResume,
+  slackFiledText,
   slackFinishedText,
+  slackIssueFromRequest,
   slackQuestionCard,
   slackReplyText,
   slackSpecGateMessage,
@@ -62,7 +67,8 @@ import {
   stageForAgent,
   startedThought,
   startsReviewLoop,
-  stoppedText
+  stoppedText,
+  wrongChannelText
 } from '@mb-factory/core';
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
@@ -72,16 +78,25 @@ import { questions, queue, runs, workItems } from '@/db/schema';
 import { requireEnv } from './env';
 import { cancelActionsRun, requestReviewers, sendStageDispatch } from './github-api';
 import type { AgentActivityContent } from './linear-api';
-import { createAgentActivity, findAppUserId, hasClosingActivity, moveIssueToStatus } from './linear-api';
+import {
+  createAgentActivity,
+  createIssue,
+  createSessionOnIssue,
+  delegateIssue,
+  findAppUserId,
+  hasClosingActivity,
+  moveIssueToStatus
+} from './linear-api';
 import { log } from './log';
 import { currentPause } from './pause';
-import { findProject, findProjectByTeamKey, repositoryOf } from './projects';
+import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
 import type { RunWithWorkItem } from './runs';
 import { findRun } from './runs';
 import {
   postSlackEphemeral,
   postSlackMessage,
   respondToSlackAction,
+  slackPermalink,
   slackUserName,
   updateSlackMessage
 } from './slack-api';
@@ -669,12 +684,25 @@ const startFromSession = async (event: Extract<SessionEvent, { kind: 'created' }
     });
     return;
   }
+  // A session the app opened itself (a Slack request) was started when it was opened.
+  if (event.creatorId && event.creatorId === (await findAppUserId(event.organizationId))) {
+    log('info', 'agent session opened by the factory ignored', { issue: event.issue.identifier });
+    return;
+  }
+  await startWork(project, event);
+};
+
+const startWork = async (project: FactoryConfig, event: Extract<SessionEvent, { kind: 'created' }>): Promise<void> => {
   // A new delegation on an issue the factory already worked on carries on from where it stood.
   const [existing] = await getDb()
-    .select({ stage: workItems.stage })
+    .select({ stage: workItems.stage, agentSessionId: workItems.agentSessionId })
     .from(workItems)
     .where(eq(workItems.linearIssueId, event.issue.id))
     .limit(1);
+  if (existing?.agentSessionId === event.sessionId) {
+    log('info', 'agent session already started', { issue: event.issue.identifier });
+    return;
+  }
   const request = runRequestFor(event, existing?.stage);
   if (!request) {
     throw new Error('A delegation always yields a run request');
@@ -852,6 +880,95 @@ export const handleSlackMessage = async (payload: unknown): Promise<void> => {
   const name = await slackUserName(reply.userId).catch(() => reply.userId);
   log('info', 'slack reply', { issue: workItem.issueIdentifier, user: reply.userId });
   await handleReply(project, workItem, reply.body, { via: 'slack', name });
+};
+
+// A top-level mention is a request: it's filed in Linear and worked on in the mention's thread. The work item exists,
+// with that thread, before the session opens, so every message about the work lands there.
+export const handleSlackMention = async (payload: unknown): Promise<void> => {
+  const mention = parseSlackMention(payload);
+  if (!mention) {
+    return;
+  }
+  const { channel, ts, userId } = mention;
+  const tellThem = (text: string) =>
+    attempt('slack ephemeral', { channel, user: userId }, () => postSlackEphemeral({ channel, user: userId, text }));
+  const sayInThread = (text: string) =>
+    attempt('slack reply', { channel }, () => postSlackMessage({ channel, threadTs: ts, text }));
+  const project = findProjectBySlackChannel(channel);
+  if (!project) {
+    const channels = allProjects().flatMap(({ slack }) => (slack ? [`<#${slack.channelId}>`] : []));
+    await tellThem(wrongChannelText(channels));
+    return;
+  }
+  if (!isAllowedSlackUser(project, userId)) {
+    log('info', 'slack request from someone not allowed', { project: project.name, user: userId });
+    await tellThem(notAllowedToStartText(project));
+    return;
+  }
+  const [name, permalink] = await Promise.all([
+    slackUserName(userId).catch(() => userId),
+    slackPermalink(channel, ts).catch((error: unknown) => {
+      log('warn', 'slack permalink failed', { channel, ts, error: errorMessage(error) });
+      return null;
+    })
+  ]);
+  const filing = slackIssueFromRequest(mention.request, { name, permalink });
+  if (!filing) {
+    await tellThem(emptyMentionText(project));
+    return;
+  }
+
+  const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
+  const issue = await createIssue(organizationId, { teamKey: project.linear.teamKey, ...filing }).catch(
+    (error: unknown) => {
+      log('error', 'linear issue for a slack request failed', { project: project.name, error: errorMessage(error) });
+      return undefined;
+    }
+  );
+  if (!issue) {
+    await sayInThread('I couldn’t file this in Linear, so nothing has started. The details are in the console log.');
+    return;
+  }
+  log('info', 'slack request filed', { issue: issue.identifier, user: userId });
+
+  try {
+    await getDb()
+      .insert(workItems)
+      .values({
+        project: project.name,
+        repository: repositoryOf(project),
+        linearOrganizationId: organizationId,
+        linearIssueId: issue.id,
+        issueIdentifier: issue.identifier,
+        issueUrl: issue.url,
+        title: issue.title,
+        origin: 'slack',
+        requester: name,
+        slackChannelId: channel,
+        slackThreadTs: ts,
+        stage: 'researching'
+      });
+    const sessionId = await createSessionOnIssue(organizationId, issue.id);
+    await sayInThread(slackFiledText(issue));
+    await startWork(project, {
+      kind: 'created',
+      organizationId,
+      sessionId,
+      issue: { ...issue, teamKey: project.linear.teamKey },
+      requester: name,
+      creatorId: null
+    });
+  } catch (error) {
+    log('error', 'starting a slack request failed', { issue: issue.identifier, error: errorMessage(error) });
+    await sayInThread(
+      `I filed <${issue.url}|${issue.identifier}> but couldn’t start on it. Delegate it to @${project.alias} in Linear to start.`
+    );
+    return;
+  }
+  // Shows in Linear who's working on it, and lets undelegating stop the work as it does for any other issue.
+  await attempt('linear delegate', { issue: issue.identifier }, async () =>
+    delegateIssue(organizationId, issue.id, await findAppUserId(organizationId))
+  );
 };
 
 const findQuestionWithWorkItem = async (questionId: string) => {

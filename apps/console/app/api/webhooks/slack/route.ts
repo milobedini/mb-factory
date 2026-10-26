@@ -4,20 +4,28 @@ import { after } from 'next/server';
 import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
 import { log } from '@/lib/log';
-import { handleSlackMessage } from '@/lib/router';
+import { handleSlackMention, handleSlackMessage } from '@/lib/router';
 
 type SlackPayload =
   | { type: 'url_verification'; challenge: string }
   | { type: 'event_callback'; event_id: string; event: { type: string; channel?: string; user?: string } };
 
-const routeMessage = async (payload: SlackPayload): Promise<void> => {
+const routeEvent = async (payload: SlackPayload, handle: (payload: unknown) => Promise<void>): Promise<void> => {
   try {
-    await handleSlackMessage(payload);
+    await handle(payload);
   } catch (error) {
-    log('error', 'slack message routing failed', {
+    log('error', 'slack event routing failed', {
+      type: payload.type === 'event_callback' ? payload.event.type : payload.type,
       error: error instanceof Error ? error.message : String(error)
     });
   }
+};
+
+// Thread replies steer work and top-level mentions start it. A mention in a thread arrives as both; the `message`
+// is the one acted on, and the mention handler ignores it.
+const HANDLERS: Record<string, (payload: unknown) => Promise<void>> = {
+  message: handleSlackMessage,
+  app_mention: handleSlackMention
 };
 
 export const POST = async (request: Request) => {
@@ -54,9 +62,9 @@ export const POST = async (request: Request) => {
     retry: request.headers.get('x-slack-retry-num')
   });
 
-  // Thread replies steer work; a mention arrives as `message` too, which is the one acted on.
-  if (isNew && payload.event.type === 'message') {
-    after(() => routeMessage(payload));
+  const handle = HANDLERS[payload.event.type];
+  if (isNew && handle) {
+    after(() => routeEvent(payload, handle));
   }
 
   return new Response(null, { status: 200 });

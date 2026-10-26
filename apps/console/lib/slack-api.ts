@@ -95,3 +95,16 @@ export const slackUserName = async (userId: string): Promise<string> => {
   const { user } = (await response.json()) as UserInfo;
   return user?.profile?.display_name || user?.profile?.real_name || user?.real_name || user?.name || userId;
 };
+
+// A link to one message, for the Linear issue it became.
+export const slackPermalink = async (channel: string, ts: string): Promise<string> => {
+  const query = new URLSearchParams({ channel, message_ts: ts });
+  const response = await fetch(`https://slack.com/api/chat.getPermalink?${query}`, {
+    headers: { Authorization: `Bearer ${requireEnv('SLACK_BOT_TOKEN')}` }
+  });
+  const { ok, permalink, error } = (await response.json()) as SlackResponse & { permalink?: string };
+  if (!ok || !permalink) {
+    throw new Error(`Slack chat.getPermalink failed: ${error ?? response.status}`);
+  }
+  return permalink;
+};

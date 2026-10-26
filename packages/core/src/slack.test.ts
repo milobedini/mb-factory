@@ -5,15 +5,20 @@ import { describe, expect, it } from 'vitest';
 import { parseFactoryConfig } from './config';
 import type { AskedQuestion } from './questions';
 import {
+  emptyMentionText,
   isAllowedSlackUser,
   linearSlackReplyText,
   parseSlackAction,
+  parseSlackMention,
   parseSlackThreadReply,
+  slackFiledText,
+  slackIssueFromRequest,
   slackPlainText,
   slackQuestionCard,
   slackSpecGateMessage,
   slackSpecGateSettled,
-  specUrl
+  specUrl,
+  wrongChannelText
 } from './slack';
 
 const config = parseFactoryConfig(
@@ -267,5 +272,72 @@ describe('parseSlackAction', () => {
     expect(parseSlackAction(payload('click_me_123'))).toBeUndefined();
     expect(parseSlackAction(payload(JSON.stringify({ q: 'not-a-uuid', a: 'x' })))).toBeUndefined();
     expect(parseSlackAction({ ...payload('{}'), type: 'view_submission' })).toBeUndefined();
+  });
+});
+
+describe('parseSlackMention', () => {
+  const event = {
+    type: 'app_mention',
+    user: 'U0CBS3FN806',
+    text: '<@U0APP> Let visitors rate a recipe\nOut of five stars',
+    channel: 'C0CBSE2Q6FQ',
+    ts: '1792950000.000100'
+  };
+  const delivery = (overrides: Record<string, unknown> = {}) => ({
+    type: 'event_callback',
+    event_id: 'Ev2',
+    event: { ...event, ...overrides }
+  });
+
+  it('reads a top-level mention as a request in plain text', () => {
+    expect(parseSlackMention(delivery())).toEqual({
+      channel: 'C0CBSE2Q6FQ',
+      ts: '1792950000.000100',
+      userId: 'U0CBS3FN806',
+      request: 'Let visitors rate a recipe\nOut of five stars'
+    });
+    expect(parseSlackMention(delivery({ thread_ts: event.ts }))?.ts).toBe(event.ts);
+  });
+
+  it('ignores mentions in a thread, from bots, and other events', () => {
+    expect(parseSlackMention(delivery({ thread_ts: '1792947014.572229' }))).toBeUndefined();
+    expect(parseSlackMention(delivery({ bot_id: 'B1' }))).toBeUndefined();
+    expect(parseSlackMention(delivery({ type: 'message' }))).toBeUndefined();
+  });
+});
+
+describe('slackIssueFromRequest', () => {
+  const from = { name: 'Milo', permalink: 'https://tastebook.slack.com/archives/C0CBSE2Q6FQ/p1792950000000100' };
+
+  it('titles the issue with the first line and keeps the whole request, linked to Slack', () => {
+    expect(slackIssueFromRequest('\n  Let visitors   rate a recipe \nOut of five stars', from)).toEqual({
+      title: 'Let visitors rate a recipe',
+      description: `Let visitors   rate a recipe \nOut of five stars\n\n---\n\nAsked by Milo [in Slack](${from.permalink}).`
+    });
+  });
+
+  it('clips a long title, and does without a link', () => {
+    const issue = slackIssueFromRequest('x'.repeat(100), { name: 'Milo', permalink: null });
+    expect(issue?.title).toHaveLength(80);
+    expect(issue?.title.endsWith('…')).toBe(true);
+    expect(issue?.description.endsWith('Asked by Milo in Slack.')).toBe(true);
+  });
+
+  it('has nothing to file for an empty request', () => {
+    expect(slackIssueFromRequest(' \n ', from)).toBeUndefined();
+  });
+});
+
+describe('intake replies', () => {
+  it('links the filed issue', () => {
+    expect(slackFiledText({ identifier: 'TAS-16', url: 'https://linear.app/tastebook/issue/TAS-16' })).toBe(
+      'Filed <https://linear.app/tastebook/issue/TAS-16|TAS-16> and started on it. I’ll keep you posted in this thread.'
+    );
+  });
+
+  it('names the app and the channels that take requests', () => {
+    expect(emptyMentionText(config)).toContain('@Tastebook');
+    expect(wrongChannelText(['#tastebook-factory'])).toBe('Mention me in #tastebook-factory to start work.');
+    expect(wrongChannelText([])).toBe('No project here takes requests from Slack.');
   });
 });

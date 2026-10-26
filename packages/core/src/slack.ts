@@ -293,3 +293,63 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
     ? { ...base, kind: 'question', questionId: value.q }
     : { ...base, kind: 'spec_gate', workItemId: value.w };
 };
+
+const mentionEventSchema = z.looseObject({
+  type: z.literal('event_callback'),
+  event: z.looseObject({
+    type: z.literal('app_mention'),
+    bot_id: z.string().nullish(),
+    user: z.string().min(1),
+    text: z.string(),
+    channel: z.string().min(1),
+    ts: z.string().min(1),
+    thread_ts: z.string().nullish()
+  })
+});
+
+export type SlackMention = { channel: string; ts: string; userId: string; request: string };
+
+// A person's top-level mention of the app, which asks for new work. A mention inside a thread is a reply to that
+// thread's work, and arrives as a `message` too; bots don't start work.
+export const parseSlackMention = (payload: unknown): SlackMention | undefined => {
+  const event = mentionEventSchema.safeParse(payload).data?.event;
+  if (!event || event.bot_id || (event.thread_ts && event.thread_ts !== event.ts)) {
+    return undefined;
+  }
+  return { channel: event.channel, ts: event.ts, userId: event.user, request: slackPlainText(event.text) };
+};
+
+const MAX_ISSUE_TITLE = 80;
+
+// The console can't run Claude to write a title, so the request's first line stands in; triage sharpens the issue.
+export const slackIssueFromRequest = (
+  request: string,
+  { name, permalink }: { name: string; permalink: string | null }
+): { title: string; description: string } | undefined => {
+  const firstLine = request
+    .split('\n')
+    .map(oneLine)
+    .find((line) => line.length > 0);
+  if (!firstLine) {
+    return undefined;
+  }
+  const source = permalink ? `[in Slack](${permalink})` : 'in Slack';
+  return {
+    title: clip(firstLine, MAX_ISSUE_TITLE),
+    description: `${request.trim()}\n\n---\n\nAsked by ${name} ${source}.`
+  };
+};
+
+export const slackFiledText = (issue: { identifier: string; url: string }): string =>
+  `Filed <${issue.url}|${escapeSlack(issue.identifier)}> and started on it. I’ll keep you posted in this thread.`;
+
+export const emptyMentionText = (config: FactoryConfig): string =>
+  `Mention me with what you’d like built, for example: @${config.alias} let visitors rate a recipe.`;
+
+export const notAllowedToStartText = (config: FactoryConfig): string =>
+  `Only the people listed for ${config.alias} can start work here. Ask one of them, or file an issue in Linear.`;
+
+export const wrongChannelText = (channels: string[]): string =>
+  channels.length > 0
+    ? `Mention me in ${channels.join(' or ')} to start work.`
+    : 'No project here takes requests from Slack.';

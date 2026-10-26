@@ -170,3 +170,50 @@ export const hasClosingActivity = async (
   );
   return agentSession.activities.nodes.length > 0;
 };
+
+export type CreatedIssue = { id: string; identifier: string; url: string; title: string };
+
+// Filed without a delegate: the work item has to exist before Linear tells anyone about the agent.
+export const createIssue = async (
+  organizationId: string,
+  { teamKey, title, description }: { teamKey: string; title: string; description: string }
+): Promise<CreatedIssue> => {
+  const { teams } = await linearGraphql<{ teams: { nodes: { id: string }[] } }>(
+    organizationId,
+    'query TeamByKey($key: String!) { teams(filter: { key: { eq: $key } }) { nodes { id } } }',
+    { key: teamKey }
+  );
+  const [team] = teams.nodes;
+  if (!team) {
+    throw new Error(`Linear has no team with the key ${teamKey}`);
+  }
+  const { issueCreate } = await linearGraphql<{ issueCreate: { success: boolean; issue: CreatedIssue | null } }>(
+    organizationId,
+    'mutation IssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url title } } }',
+    { input: { teamId: team.id, title, description } }
+  );
+  if (!issueCreate.issue) {
+    throw new Error('Linear created no issue');
+  }
+  return issueCreate.issue;
+};
+
+// A session the app opens itself, for work that didn't start with a delegation or a mention in Linear.
+export const createSessionOnIssue = async (organizationId: string, issueId: string): Promise<string> => {
+  const { agentSessionCreateOnIssue } = await linearGraphql<{
+    agentSessionCreateOnIssue: { agentSession: { id: string } };
+  }>(
+    organizationId,
+    'mutation SessionOnIssue($input: AgentSessionCreateOnIssue!) { agentSessionCreateOnIssue(input: $input) { agentSession { id } } }',
+    { input: { issueId } }
+  );
+  return agentSessionCreateOnIssue.agentSession.id;
+};
+
+export const delegateIssue = async (organizationId: string, issueId: string, delegateId: string): Promise<void> => {
+  await linearGraphql<{ issueUpdate: { success: boolean } }>(
+    organizationId,
+    'mutation IssueDelegate($id: String!, $delegateId: String!) { issueUpdate(id: $id, input: { delegateId: $delegateId }) { success } }',
+    { id: issueId, delegateId }
+  );
+};

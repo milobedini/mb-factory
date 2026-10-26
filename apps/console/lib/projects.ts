@@ -28,3 +28,7 @@ export const strictestStaleAfterMinutes = (): number =>
 export const consoleTimeZone = (): string => PROJECTS[0]?.timeZone ?? 'UTC';
 
 export const allProjects = (): FactoryConfig[] => PROJECTS;
+
+// A Slack mention names its project by the channel it's in.
+export const findProjectBySlackChannel = (channelId: string): FactoryConfig | undefined =>
+  PROJECTS.find(({ slack }) => slack?.channelId === channelId);

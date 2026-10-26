@@ -116,23 +116,29 @@ export {
 export { decryptSecret, deriveKey, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
-export type { CardQuestion, SlackAction, SlackBlock, SlackMessage, SlackThreadReply } from './slack';
+export type { CardQuestion, SlackAction, SlackBlock, SlackMention, SlackMessage, SlackThreadReply } from './slack';
 export {
+  emptyMentionText,
   escapeSlack,
   isAllowedSlackUser,
   linearSlackReplyText,
   notAllowedText,
+  notAllowedToStartText,
   parseSlackAction,
+  parseSlackMention,
   parseSlackThreadReply,
   QUESTION_GONE,
   SPEC_APPROVE,
   SPEC_CHANGE,
   SPEC_GATE_GONE,
+  slackFiledText,
+  slackIssueFromRequest,
   slackPlainText,
   slackQuestionCard,
   slackSpecGateMessage,
   slackSpecGateSettled,
-  specUrl
+  specUrl,
+  wrongChannelText
 } from './slack';
 export type { AgentRole, Stage, StageContext, StageEvent, Transition } from './stages';
 export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, STAGES, TERMINAL_STAGES, transition } from './stages';

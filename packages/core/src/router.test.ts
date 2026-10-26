@@ -75,7 +75,8 @@ describe('parseSessionEvent', () => {
         title: 'Show a "page not found" page for unknown routes',
         teamKey: 'TAS'
       },
-      requester: 'Milo Bedini'
+      requester: 'Milo Bedini',
+      creatorId: 'user-1'
     });
   });
 
