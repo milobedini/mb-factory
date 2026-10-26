@@ -35,7 +35,9 @@ export const bookNextWake = async (cause: string): Promise<Date | undefined> => 
     .select({ releaseAt: queue.releaseAt })
     .from(queue)
     .where(and(isNull(queue.releasedAt), gt(queue.releaseAt, now)));
-  const slots = allProjects().flatMap((project) => project.jobs.map((job) => nextSlot(job, now, project.timeZone)));
+  const slots = allProjects().flatMap((project) =>
+    [...project.jobs, ...(project.health ? [project.health] : [])].map((slot) => nextSlot(slot, now, project.timeZone))
+  );
   const next = nextWake([...held.map(({ releaseAt }) => releaseAt), ...slots], now);
   if (next) {
     await bookWake(next, cause);

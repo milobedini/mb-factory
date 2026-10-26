@@ -61,6 +61,18 @@ describe('jobs', () => {
     const repeated = `${tastebookConfig}  - name: security\n    agent: security\n    at: "18:00"\n    model: sonnet\n`;
     expect(() => parseFactoryConfig(repeated)).toThrow(/distinct/);
   });
+
+  it('keeps the name health for the health check', () => {
+    const health = `${tastebookConfig}  - name: health\n    agent: security\n    at: "18:00"\n    model: sonnet\n`;
+    expect(() => parseFactoryConfig(health)).toThrow(/reserved/);
+  });
+});
+
+describe('health', () => {
+  it('reads the daily health check, and has none when it is left out', () => {
+    expect(parseFactoryConfig(tastebookConfig).health).toEqual({ at: '07:00' });
+    expect(parseFactoryConfig(tastebookConfig.replace(/\nhealth:\n {2}at: "07:00"\n/, '\n')).health).toBeUndefined();
+  });
 });
 
 describe('reviewersFor', () => {

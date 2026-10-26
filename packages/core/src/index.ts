@@ -25,6 +25,17 @@ export {
   USAGE_STATUSES,
   USAGE_WINDOWS
 } from './governor';
+export type { FiredSlot, HealthInput, HealthReport, HeldRun, OpenRun, ProblemGroup, ProblemLevel } from './health';
+export {
+  formatMinutes,
+  HEALTH_JOB,
+  healthReport,
+  healthText,
+  NEW_PROBLEM_DAYS,
+  PROBLEM_LEVELS,
+  PROBLEM_RETENTION_DAYS,
+  problemHour
+} from './health';
 export type { ChecksState, InboxEntry, InboxKind, InboxQuestion, InboxRun } from './inbox';
 export { checksState, INBOX_KINDS, inboxEntry } from './inbox';
 export type {

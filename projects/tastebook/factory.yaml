@@ -64,6 +64,10 @@ usage:
     triage: haiku
     review: sonnet
 
+# The console's own daily check: warnings and errors, stuck runs, late jobs. Not a Claude run.
+health:
+  at: "07:00"
+
 jobs:
   - name: security
     agent: security

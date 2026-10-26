@@ -107,6 +107,12 @@ export const factoryConfigSchema = z.object({
     .refine((jobs) => new Set(jobs.map(({ name }) => name)).size === jobs.length, {
       message: 'job names must be distinct'
     })
+    // The health check's slots are recorded under this name.
+    .refine((jobs) => jobs.every(({ name }) => name !== 'health'), {
+      message: 'health is reserved for the health check'
+    }),
+  // The console's daily check on itself: warnings and errors, stuck runs, late jobs. No Claude run, so it isn't held.
+  health: z.object({ at: clockTime }).optional()
 });
 
 export type FactoryConfig = z.infer<typeof factoryConfigSchema>;

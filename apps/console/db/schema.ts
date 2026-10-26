@@ -3,6 +3,7 @@ import {
   ANSWER_SOURCES,
   HOLD_REASONS,
   PRIORITIES,
+  PROBLEM_LEVELS,
   RUN_OUTCOMES,
   RUN_STATUSES,
   RUN_TRIGGERS,
@@ -245,4 +246,24 @@ export const pauses = pgTable(
     resumedAt: timestamp({ withTimezone: true })
   },
   (table) => [uniqueIndex('pauses_one_open_idx').on(sql`(true)`).where(sql`${table.resumedAt} is null`)]
+);
+
+// The console's warnings and errors, kept for the daily health check because Vercel keeps logs for 30 minutes.
+// One row per message an hour, counted, so a flood of rejected requests can't grow the table.
+export const consoleProblems = pgTable(
+  'console_problems',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    hour: timestamp({ withTimezone: true }).notNull(),
+    level: text({ enum: PROBLEM_LEVELS }).notNull(),
+    message: text().notNull(),
+    count: integer().notNull().default(1),
+    // The latest line's fields.
+    fields: jsonb(),
+    lastAt: timestamp({ withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex('console_problems_hour_idx').on(table.hour, table.level, table.message),
+    index('console_problems_last_idx').on(table.lastAt)
+  ]
 );

@@ -6,6 +6,7 @@ import { getDb } from '@/db/client';
 import { jobFindings, jobSlots, queue, runs } from '@/db/schema';
 
 import { requireEnv } from './env';
+import { fireHealthCheck } from './health';
 import { findJob, jobTitleOf, postJobMessage, slotOf } from './job-runs';
 import { fileTriageIssue, issueStateType } from './linear-api';
 import { log } from './log';
@@ -72,16 +73,20 @@ const fireJob = async (project: FactoryConfig, job: Job, now: Date): Promise<voi
   await dispatchRun(project, run.id);
 };
 
-// Starts every job whose latest slot hasn't fired yet, so a slot missed while nothing woke the console runs late.
+// Starts every job whose latest slot hasn't fired yet, so a slot missed while nothing woke the console runs late; the
+// health check fires the same way.
 export const fireDueJobs = async (now: Date): Promise<void> => {
   await Promise.all(
-    allProjects().flatMap((project) =>
-      project.jobs.map((job) =>
+    allProjects().flatMap((project) => [
+      ...project.jobs.map((job) =>
         fireJob(project, job, now).catch((error: unknown) =>
           log('error', 'job slot failed', { project: project.name, job: job.name, error: errorMessage(error) })
         )
+      ),
+      fireHealthCheck(project, now).catch((error: unknown) =>
+        log('error', 'health check failed', { project: project.name, error: errorMessage(error) })
       )
-    )
+    ])
   );
 };
 

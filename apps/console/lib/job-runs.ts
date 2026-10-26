@@ -47,7 +47,7 @@ export const jobBriefFor = async (project: FactoryConfig, job: Job, run: Run): P
 };
 
 // A job has no thread: it says what it did in one top-level message in the project's channel.
-export const postJobMessage = async (project: FactoryConfig, job: Job, text: string): Promise<void> => {
+export const postJobMessage = async (project: FactoryConfig, job: Pick<Job, 'name'>, text: string): Promise<void> => {
   if (!project.slack) {
     return;
   }

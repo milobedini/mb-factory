@@ -78,6 +78,7 @@ import {
   startedThought,
   startsReviewLoop,
   stoppedText,
+  TERMINAL_STAGES,
   wrongChannelText
 } from '@mb-factory/core';
 import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -958,6 +959,15 @@ const stopForCause = async (project: FactoryConfig, workItem: WorkItem, cause: S
 const recordStage = async (workItem: WorkItem, stage: Stage, cause: string): Promise<void> => {
   await getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id));
   log('info', 'work item stage followed', { issue: workItem.issueIdentifier, from: workItem.stage, to: stage, cause });
+  // Only a merge or a close should end the merge gate; anything else (a person, or an integration's automation) is
+  // worth a look in the health check.
+  if (workItem.stage === 'awaiting_merge' && stage !== 'awaiting_merge' && !TERMINAL_STAGES.includes(stage)) {
+    log('warn', 'work item left awaiting merge without a merge', {
+      issue: workItem.issueIdentifier,
+      to: stage,
+      cause
+    });
+  }
 };
 
 export const handleAgentSessionEvent = async (payload: unknown): Promise<void> => {
