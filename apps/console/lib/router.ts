@@ -116,7 +116,11 @@ type QuestionRow = typeof questions.$inferSelect;
 const ACTIVE_STATUSES: RunStatus[] = ['dispatched', 'running'];
 const OPEN_STATUSES: RunStatus[] = ['queued', ...ACTIVE_STATUSES];
 
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+// Drizzle wraps a failed query in "Failed query: …" and keeps what went wrong in `cause`.
+const errorMessage = (error: unknown): string =>
+  error instanceof Error
+    ? `${error.message}${error.cause instanceof Error ? ` (cause: ${error.cause.message})` : ''}`
+    : String(error);
 
 // Side effects that report on work (Linear, Slack) must not stop the work itself.
 const attempt = async (label: string, fields: Record<string, unknown>, effect: () => Promise<unknown>) => {
