@@ -31,7 +31,7 @@ Exit criterion (from [Phases](#phases)): the dashboard shows a two-week baseline
 
 **Next action: build the factory session's changes, then the Platform issues** (order agreed with the user 2026-10-26):
 
-1. **Factory changes on `mb-factory`**, before any Platform issue is delegated; each committed to `main` when done (mark each here): (a) drop Notion (done); (b) review on Opus and `models.slicing` (done: `isSlicingTitle` in core, `modelFor` takes the work item's title); (c) standards in review; (d) guards; (e) the Ready list; (f) weekly slots and the two weekly passes. Details under the factory session below.
+1. **Factory changes on `mb-factory`**, before any Platform issue is delegated; each committed to `main` when done (mark each here): (a) drop Notion (done); (b) review on Opus and `models.slicing` (done: `isSlicingTitle` in core, `modelFor` takes the work item's title); (c) standards in review (done: `review-rubric` area, tier and `Ref:` form); (d) guards; (e) the Ready list; (f) weekly slots and the two weekly passes. Details under the factory session below.
 2. **Delegate TAS-23** (frontend by domain area).
 3. **TAS-24 by hand** in a local session with the user (the Vercel project and Neon through the Marketplace need the user's account); assigned to the user so the Ready list shows it as theirs.
 4. **TAS-25, TAS-26, TAS-27 and TAS-29**, delegated as each shows as ready (two at a time).
