@@ -512,6 +512,7 @@ Raised by the user 2026-10-26. `factory init` as planned only wires a project up
 
 - **How, for now:** by hand, a local Claude Code session per session (grilling is long and free-form, and runs on the subscription rather than as factory runs). Tastebook already has its core stack (Django, pnpm and Vite), so for it the engineering session partly records decisions already made.
 - **Later, in `factory init`:** the multiple-choice parts can go through the questions machinery (one at a time, options, Slack buttons); the console gets an onboarding checklist per project showing which sessions are done. Build only after the by-hand run shows what's worth asking.
+- **The team's Overview is the project's front page (raised by the user 2026-10-26).** Product documents are Linear team documents (Vision, PRD template) and project documents (each PRD). `factory init` should set up the team's Overview: a Product section (Vision, PRD template, the PRD in progress), a Factory section (the console, the Slack channel, the repo) and, after the engineering session, an Engineering section (links to `AGENTS.md` and `specs/`). The Linear connector can create documents but not pin them or make sections, so `init` needs the GraphQL API for it (or leaves it as a checklist step). Tastebook's was set up by hand.
 
 ### Configurable per project
 
