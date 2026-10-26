@@ -210,9 +210,23 @@ export const scheduledRuns = async (repository: string, since: Date): Promise<Sc
   }));
 };
 
-// A PR's head commit now.
-export const pullHead = async (repository: string, prNumber: number): Promise<string> =>
-  (await githubGet<{ head: { sha: string } }>(`/repos/${repository}/pulls/${prNumber}`, 'pull request')).head.sha;
+// A PR's head commit and base branch now.
+export const pullHead = async (repository: string, prNumber: number): Promise<{ head: string; base: string }> => {
+  const pull = await githubGet<{ head: { sha: string }; base: { ref: string } }>(
+    `/repos/${repository}/pulls/${prNumber}`,
+    'pull request'
+  );
+  return { head: pull.head.sha, base: pull.base.ref };
+};
+
+// Whether a branch already holds a commit: comparing the commit to the branch finds the branch ahead or the same.
+export const branchContains = async (repository: string, branch: string, sha: string): Promise<boolean> => {
+  const { status } = await githubGet<{ status: string }>(
+    `/repos/${repository}/compare/${sha}...${encodeURIComponent(branch)}`,
+    'compare'
+  );
+  return status === 'ahead' || status === 'identical';
+};
 
 export const commitParents = async (repository: string, sha: string): Promise<string[]> =>
   (await githubGet<{ parents: { sha: string }[] }>(`/repos/${repository}/commits/${sha}`, 'commit')).parents.map(

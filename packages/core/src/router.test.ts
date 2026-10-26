@@ -864,6 +864,12 @@ describe('onlyLockfilesChanged', () => {
     expect(
       onlyLockfilesChanged([doc('d1', '@@ -10,3 +10,4 @@\n a\n+b\n c')], [doc('d2', '@@ -10,3 +10,4 @@\n a\n+B\n c')])
     ).toBe(false);
+    expect(
+      onlyLockfilesChanged(
+        [doc('d1', '@@ -10,3 +10,4 @@ ## Domain areas\n a\n+b\n c')],
+        [doc('d2', '@@ -40,3 +40,4 @@ ## Standards\n a\n+b\n c')]
+      )
+    ).toBe(false);
   });
 
   it('fails when reviewed code changed, appeared or went', () => {

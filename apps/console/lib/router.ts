@@ -114,6 +114,7 @@ import { events, questions, queue, runs, stageChanges, workItems } from '@/db/sc
 
 import { requireEnv } from './env';
 import {
+  branchContains,
   cancelActionsRun,
   commentOnPullRequest,
   commitParents,
@@ -1656,8 +1657,9 @@ export const handleSlackAction = async (payload: unknown): Promise<void> => {
 const LOCKFILE_GATE_TEXT = 'Only lockfiles conflicted, so it’s back at the merge gate without another review.';
 
 // Whether a conflict fix changed only lockfiles, from GitHub's record rather than the run's report: the PR's last
-// review accepted it, the new head merges the base into exactly the commit that review saw (the branch's last push
-// before it, from the webhooks), and apart from lockfiles the PR's files are the ones reviewed, byte for byte.
+// review accepted it, the new head merges a commit already on the base branch into exactly the commit that review saw
+// (the branch's last push before it, from the webhooks), and apart from lockfiles the PR's changes are the reviewed
+// ones. A lockfile's contents aren't checked here: its manifest is, and CI installs from it.
 const lockfileOnlyMerge = async (
   run: { agent: AgentRole; trigger: RunTrigger; createdAt: Date },
   workItem: WorkItem
@@ -1701,9 +1703,11 @@ const lockfileOnlyMerge = async (
     return false;
   }
   try {
-    const head = await pullHead(repository, prNumber);
+    const pull = await pullHead(repository, prNumber);
+    const { head } = pull;
     const [firstParent, base, ...more] = await commitParents(repository, head);
-    if (firstParent !== reviewed || !base || more.length > 0) {
+    // The merged-in parent must be the PR's own base branch, or code in it would never be compared.
+    if (firstParent !== reviewed || !base || more.length > 0 || !(await branchContains(repository, pull.base, base))) {
       return false;
     }
     const [before, after] = await Promise.all([

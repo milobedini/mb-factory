@@ -516,12 +516,9 @@ const isLockfile = (path: string): boolean => LOCKFILES.includes(path.split('/')
 // later one.
 export type ChangedFile = { filename: string; status: string; sha: string | null; patch?: string | null };
 
-// A diff without its `@@` headers, whose line numbers shift when the base gains lines elsewhere in the file.
-const diffLines = (patch: string): string =>
-  patch
-    .split('\n')
-    .filter((line) => !line.startsWith('@@'))
-    .join('\n');
+// A diff without its hunks' line numbers, which shift when the base gains lines elsewhere in the file. Each hunk's
+// place stays: its order, its context lines, and the function or section name after the header.
+const diffLines = (patch: string): string => patch.replace(/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/gm, '@@');
 
 // The PR's changes against its new base, beside its changes as reviewed: the same apart from lockfiles means merging
 // the base changed nothing the PR does, as when the base moves without a conflict. Both lists come from GitHub, never
