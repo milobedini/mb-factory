@@ -26,8 +26,6 @@ export const jobSchema = z.object({
   model: z.string().min(1)
 });
 
-const notionId = z.string().regex(/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/);
-
 export const usagePolicySchema = z.object({
   fiveHour: z.object({
     throttleAt: fraction,
@@ -77,20 +75,6 @@ export const factoryConfigSchema = z.object({
       channelId: z.string().regex(/^[CG][A-Z0-9]+$/),
       // Slack members who may answer questions and gates, and steer the work, from a thread.
       allowedUserIds: z.array(z.string().regex(/^[UW][A-Z0-9]+$/)).default([])
-    })
-    .optional(),
-  notion: z
-    .object({
-      teamspace: z.string().min(1),
-      hubPage: notionId,
-      visionPage: notionId,
-      prdTemplatePage: notionId,
-      dataSources: z.object({
-        prds: notionId,
-        decisions: notionId,
-        weeklyReports: notionId,
-        runLog: notionId
-      })
     })
     .optional(),
   models: z.object({

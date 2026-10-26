@@ -28,17 +28,6 @@ slack:
   allowedUserIds:
     - U0CBS3FN806 # Milo
 
-notion:
-  teamspace: Tastebook
-  hubPage: 403c713a6d1281e9bccacd45a250bcf3
-  visionPage: 403c713a6d128187a7cae6fa8f9d82eb
-  prdTemplatePage: 403c713a6d1281708553ffede236576a
-  dataSources:
-    prds: 60ac378d-3d00-4df6-b1fc-1050a57d80e1
-    decisions: 071d56cb-8ef7-4516-a698-20ddc48e5670
-    weeklyReports: 07c14236-4455-432c-b1d7-5a3afc70f24a
-    runLog: 66b1c632-fe14-4c5c-8347-69c5dc2f4edd
-
 models:
   triage: sonnet
   spec: opus

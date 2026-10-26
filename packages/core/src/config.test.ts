@@ -15,12 +15,6 @@ describe('parseFactoryConfig', () => {
     expect(config.alias).toBe('Tastebook');
     expect(config.repositories).toEqual([{ owner: 'milobedini', name: 'tastebook', reviewers: ['milobedini'] }]);
     expect(config.usage.fiveHour).toEqual({ throttleAt: 0.6, pauseAt: 0.8 });
-    expect(config.notion?.dataSources.runLog).toBe('66b1c632-fe14-4c5c-8347-69c5dc2f4edd');
-  });
-
-  it('rejects a Notion ID that is not a UUID', () => {
-    const invalid = tastebookConfig.replace('hubPage: 403c713a6d1281e9bccacd45a250bcf3', 'hubPage: tastebook-hub');
-    expect(() => parseFactoryConfig(invalid)).toThrow(/notion\.hubPage|hubPage/);
   });
 
   it('reads the time zone and Slack channel ID, and defaults the time zone to UTC', () => {
