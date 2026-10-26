@@ -26,6 +26,12 @@ on:
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
+      # The project's own GitHub App, which can push workflow files (Anthropic's Claude app can't). Without both, the
+      # run uses the Claude app through the action's OIDC exchange.
+      FACTORY_APP_CLIENT_ID:
+        required: false
+      FACTORY_APP_PRIVATE_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -45,6 +51,7 @@ jobs:
       MODEL: ${{ inputs.model }}
       FACTORY_REF: ${{ inputs.factory_ref }}
       CONSOLE_URL: ${{ inputs.console_url }}
+      HAS_FACTORY_APP: ${{ secrets.FACTORY_APP_CLIENT_ID != '' && secrets.FACTORY_APP_PRIVATE_KEY != '' }}
     steps:
       - name: Check the inputs
         run: |
@@ -83,12 +90,29 @@ jobs:
             } >> "$GITHUB_ENV"
           fi
 
+      - name: Get the factory app's token
+        id: app-token
+        if: env.HAS_FACTORY_APP == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+          permission-workflows: write
+          permission-actions: read
+          permission-checks: read
+          permission-statuses: read
+
       - name: Run the stage
         id: claude
         timeout-minutes: 50
         uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Empty without the factory app, which leaves the action to its own OIDC exchange.
+          github_token: ${{ steps.app-token.outputs.token }}
           prompt: ${{ inputs.prompt }}
           claude_args: |
             --model ${{ inputs.model }}
