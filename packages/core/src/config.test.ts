@@ -49,9 +49,10 @@ describe('parseFactoryConfig', () => {
 });
 
 describe('jobs', () => {
-  it('reads the daily security check, and defaults to no jobs', () => {
+  it('reads the daily security and docs checks, and defaults to no jobs', () => {
     expect(parseFactoryConfig(tastebookConfig).jobs).toEqual([
-      { name: 'security', agent: 'security', at: '06:00', model: 'sonnet' }
+      { name: 'security', agent: 'security', at: '06:00', model: 'sonnet' },
+      { name: 'docs', agent: 'docs', at: '06:30', model: 'sonnet' }
     ]);
     expect(parseFactoryConfig(tastebookConfig.slice(0, tastebookConfig.indexOf('\njobs:'))).jobs).toEqual([]);
   });

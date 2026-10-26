@@ -6,6 +6,8 @@ import {
   findingIssue,
   isWorthFiling,
   jobCheckText,
+  jobLabels,
+  jobTitle,
   latestSlot,
   neutraliseMarkdown,
   nextSlot,
@@ -70,10 +72,33 @@ const codeFinding = {
   size: 'S'
 };
 
+const docsFinding = {
+  fingerprint: 'docs:README.md:backend-test-command',
+  kind: 'docs',
+  title: 'README still says to run the backend tests with manage.py test',
+  severity: 'moderate',
+  evidence: 'TAS-30 moved the backend tests to pytest; README.md line 31 still says `uv run manage.py test`.',
+  fix: 'Change the command in README.md to `uv run pytest` from `backend/`.',
+  path: 'README.md',
+  line: 31,
+  size: 'XS'
+};
+
 describe('readJobReport', () => {
+  it("keeps only the kinds the job reports: another job's findings are dropped", () => {
+    const docs = readJobReport({ findings: [docsFinding, codeFinding] }, 'docs');
+    expect(docs.findings.map(({ kind }) => kind)).toEqual(['docs']);
+    expect(docs.dropped).toBe(1);
+    const security = readJobReport({ findings: [docsFinding, codeFinding] }, 'security');
+    expect(security.findings.map(({ kind }) => kind)).toEqual(['code']);
+  });
+
   it('reads the head, the commits and each well-formed finding', () => {
     const head = 'a'.repeat(40);
-    const report = readJobReport({ stage: 'security', head, commits: 3, findings: [advisory, codeFinding] });
+    const report = readJobReport(
+      { stage: 'security', head, commits: 3, findings: [advisory, codeFinding] },
+      'security'
+    );
     expect(report).toMatchObject({ head, commits: 3, gaps: [], dropped: 0 });
     expect(report.findings.map(({ fingerprint }) => fingerprint)).toEqual([
       advisory.fingerprint,
@@ -82,32 +107,35 @@ describe('readJobReport', () => {
   });
 
   it('drops malformed, repeated and below-the-bar findings, and counts them', () => {
-    const report = readJobReport({
-      findings: [
-        advisory,
-        advisory,
-        { ...advisory, fingerprint: 'nonsense' },
-        { ...advisory, fingerprint: 'code:x:y' },
-        { ...advisory, fingerprint: 'advisory:GHSA-2:vite', severity: 'moderate', scope: 'dev' },
-        'not an object'
-      ]
-    });
+    const report = readJobReport(
+      {
+        findings: [
+          advisory,
+          advisory,
+          { ...advisory, fingerprint: 'nonsense' },
+          { ...advisory, fingerprint: 'code:x:y' },
+          { ...advisory, fingerprint: 'advisory:GHSA-2:vite', severity: 'moderate', scope: 'dev' },
+          'not an object'
+        ]
+      },
+      'security'
+    );
     expect(report.findings).toHaveLength(1);
     expect(report.dropped).toBe(5);
   });
 
   it('ignores a head that is not a full SHA, and a path that climbs out', () => {
-    const report = readJobReport({ head: 'main', findings: [{ ...codeFinding, path: '../etc/passwd' }] });
+    const report = readJobReport({ head: 'main', findings: [{ ...codeFinding, path: '../etc/passwd' }] }, 'security');
     expect(report.head).toBeNull();
     expect(report.findings[0]?.path).toBeNull();
   });
 
   it('reads a report with nothing in it', () => {
-    expect(readJobReport(null)).toEqual({ head: null, commits: null, gaps: [], findings: [], dropped: 0 });
+    expect(readJobReport(null, 'security')).toEqual({ head: null, commits: null, gaps: [], findings: [], dropped: 0 });
   });
 
   it('reads what the job could not check, one line each', () => {
-    expect(readJobReport({ gaps: ['pip-audit could not\nreach PyPI', '', 7] }).gaps).toEqual([
+    expect(readJobReport({ gaps: ['pip-audit could not\nreach PyPI', '', 7] }, 'security').gaps).toEqual([
       'pip-audit could not reach PyPI'
     ]);
   });
@@ -162,7 +190,7 @@ describe('findingIssue', () => {
     runUrl: 'https://github.com/milobedini/tastebook/actions/runs/1',
     day: 'Tue 27 Oct'
   };
-  const [finding] = readJobReport({ findings: [codeFinding] }).findings;
+  const [finding] = readJobReport({ findings: [codeFinding] }, 'security').findings;
 
   it('shapes the issue for triage: title, priority and estimate from the finding', () => {
     if (!finding) {
@@ -189,8 +217,23 @@ describe('findingIssue', () => {
     );
   });
 
+  it('names a docs finding as docs drift', () => {
+    const [docs] = readJobReport({ findings: [docsFinding] }, 'docs').findings;
+    if (!docs) {
+      throw new Error('expected a finding');
+    }
+    const issue = findingIssue(docs, { ...context, jobTitle: jobTitle('docs') });
+    expect(issue.title).toBe('Docs: README still says to run the backend tests with manage.py test');
+    expect(issue.priority).toBe(3);
+    expect(issue.description).toContain('**Kind:** docs drift');
+    expect(issue.description).toContain('Found by the daily docs check on Tue 27 Oct');
+  });
+
   it('clips a long title and leaves the estimate unset without a size', () => {
-    const [long] = readJobReport({ findings: [{ ...advisory, title: 'x'.repeat(150), size: undefined }] }).findings;
+    const [long] = readJobReport(
+      { findings: [{ ...advisory, title: 'x'.repeat(150), size: undefined }] },
+      'security'
+    ).findings;
     if (!long) {
       throw new Error('expected a finding');
     }
@@ -295,5 +338,12 @@ describe('jobCheckText', () => {
 describe('slotDay', () => {
   it('names the day in the project time zone', () => {
     expect(slotDay(new Date('2026-10-27T06:00:00Z'), london)).toBe('Tue 27 Oct');
+  });
+});
+
+describe('jobLabels', () => {
+  it('labels each job’s issues with what found them', () => {
+    expect(jobLabels('security')).toEqual(['security', 'factory']);
+    expect(jobLabels('docs')).toEqual(['docs', 'factory']);
   });
 });

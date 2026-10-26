@@ -68,15 +68,18 @@ export type {
   Finding,
   FindingContext,
   FindingIssue,
+  FindingKind,
   FindingSeverity,
   JobReport
 } from './jobs';
 export {
   decideFiling,
+  FINDING_KINDS,
   FINDING_SEVERITIES,
   findingIssue,
   isWorthFiling,
   jobCheckText,
+  jobLabels,
   jobTitle,
   latestSlot,
   neutraliseMarkdown,
@@ -210,8 +213,8 @@ export {
   specUrl,
   wrongChannelText
 } from './slack';
-export type { AgentRole, Stage, StageContext, StageEvent, Transition } from './stages';
-export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, STAGES, TERMINAL_STAGES, transition } from './stages';
+export type { AgentRole, JobAgent, Stage, StageContext, StageEvent, Transition } from './stages';
+export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, JOB_AGENTS, STAGES, TERMINAL_STAGES, transition } from './stages';
 export type { UsageSummary, WindowSummary } from './usage';
 export { formatDuration, needsProbe, readingsFromStatusLine, statusLineUsageSchema, summariseUsage } from './usage';
 export type { GitHubEvent, IssueUpdate, IssueUpdateActions, LinearState, StopCause } from './work-item-events';

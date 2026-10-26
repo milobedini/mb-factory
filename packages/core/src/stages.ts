@@ -11,10 +11,14 @@ export const STAGES = [
 
 export type Stage = (typeof STAGES)[number];
 
-// `security` runs as a scheduled job, not on a work item.
-export const AGENT_ROLES = ['triage', 'spec', 'implement', 'verify', 'review', 'security'] as const;
+// `security` and `docs` run as scheduled jobs, not on a work item.
+export const AGENT_ROLES = ['triage', 'spec', 'implement', 'verify', 'review', 'security', 'docs'] as const;
 
 export type AgentRole = (typeof AGENT_ROLES)[number];
+
+export const JOB_AGENTS = ['security', 'docs'] as const satisfies AgentRole[];
+
+export type JobAgent = (typeof JOB_AGENTS)[number];
 
 export type StageEvent =
   | { type: 'triaged'; needsSpec: boolean }

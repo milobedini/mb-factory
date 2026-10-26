@@ -73,3 +73,7 @@ jobs:
     agent: security
     at: "06:00"
     model: sonnet
+  - name: docs
+    agent: docs
+    at: "06:30"
+    model: sonnet

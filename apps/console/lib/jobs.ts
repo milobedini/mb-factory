@@ -1,5 +1,13 @@
 import type { CheckIssue, CheckResult, FactoryConfig, Finding, Job } from '@mb-factory/core';
-import { decideFiling, findingIssue, jobCheckText, latestSlot, readJobReport, slotDay } from '@mb-factory/core';
+import {
+  decideFiling,
+  findingIssue,
+  jobCheckText,
+  jobLabels,
+  latestSlot,
+  readJobReport,
+  slotDay
+} from '@mb-factory/core';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
@@ -17,9 +25,6 @@ import { findAnyRun } from './runs';
 type Run = typeof runs.$inferSelect;
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-// Labels on every issue a job files; created on the team if they don't exist yet.
-const FINDING_LABELS = ['security', 'factory'];
 
 // A run still held when the next slot fires is out of date: the new one covers the same commits and more.
 const replaceHeldRuns = async (project: FactoryConfig, job: Job, day: string, now: Date): Promise<void> => {
@@ -143,7 +148,8 @@ const fileFinding = async (
     const created = await fileTriageIssue(organizationId, {
       teamKey: project.linear.teamKey,
       ...issue,
-      labels: FINDING_LABELS
+      // Created on the team if they don't exist yet.
+      labels: jobLabels(job.agent)
     });
     await getDb().insert(jobFindings).values({
       project: project.name,
@@ -183,7 +189,7 @@ const checkResult = async (project: FactoryConfig, job: Job, run: Run, day: stri
   if (run.outcome !== 'done') {
     return { kind: 'failed', summary: run.summary ?? 'The run ended without a summary.' };
   }
-  const report = readJobReport(run.report);
+  const report = readJobReport(run.report, job.agent);
   if (report.dropped > 0) {
     log('warn', 'job findings dropped', { runId: run.id, dropped: report.dropped });
   }

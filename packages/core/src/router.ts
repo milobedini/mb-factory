@@ -7,7 +7,7 @@ import type { Question } from './questions';
 import { readQuestions } from './questions';
 import type { RunOutcome, RunStatus, RunTrigger } from './runs';
 import type { AgentRole, Stage } from './stages';
-import { AGENT_FOR_STAGE, STAGES, TERMINAL_STAGES, transition } from './stages';
+import { AGENT_FOR_STAGE, JOB_AGENTS, STAGES, TERMINAL_STAGES, transition } from './stages';
 
 // Linear's AgentSessionEvent webhook: only the fields the router reads.
 const sessionEventSchema = z.looseObject({
@@ -220,7 +220,8 @@ export const governDispatch = ({ workItemBusy, paused, allowUsage, ...request }:
 
 export type ModelledAgent = keyof FactoryConfig['models'];
 
-const isModelled = (agent: AgentRole): agent is ModelledAgent => agent !== 'verify' && agent !== 'security';
+const isModelled = (agent: AgentRole): agent is ModelledAgent =>
+  agent !== 'verify' && !(JOB_AGENTS as readonly AgentRole[]).includes(agent);
 
 export const modelFor = (config: FactoryConfig, agent: AgentRole, downshift: boolean): string => {
   if (!isModelled(agent)) {

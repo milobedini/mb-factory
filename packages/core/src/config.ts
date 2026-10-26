@@ -1,6 +1,8 @@
 import { parse } from 'yaml';
 import { z } from 'zod';
 
+import { JOB_AGENTS } from './stages';
+
 const fraction = z.number().min(0).max(1);
 const isTimeZone = (zone: string): boolean => {
   try {
@@ -19,7 +21,7 @@ const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'not 
 export const jobSchema = z.object({
   // Names the job in slots, findings and messages, so it must not change once the job has run.
   name: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/),
-  agent: z.enum(['security']),
+  agent: z.enum(JOB_AGENTS),
   at: clockTime,
   model: z.string().min(1)
 });

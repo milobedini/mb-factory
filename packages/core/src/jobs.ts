@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { Job } from './config';
+import type { JobAgent } from './stages';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -70,17 +71,24 @@ export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL'] as const;
 
+export const FINDING_KINDS = ['advisory', 'code', 'docs'] as const;
+
+export type FindingKind = (typeof FINDING_KINDS)[number];
+
+// The kinds each job may report; anything else in its report is dropped.
+const JOB_KINDS: Record<JobAgent, FindingKind[]> = { security: ['advisory', 'code'], docs: ['docs'] };
+
 const MAX_FINDINGS = 20;
 
 const findingSchema = z
   .looseObject({
-    // Stable across runs, so a finding already filed is recognised: `advisory:<id>:<package>` or
-    // `code:<category>:<path>`.
+    // Stable across runs, so a finding already filed is recognised: `advisory:<package>@<version>`,
+    // `code:<category>:<path>` or `docs:<path>:<topic>`.
     fingerprint: z
       .string()
       .trim()
-      .regex(/^(advisory|code):[A-Za-z0-9._@/:+-]{1,200}$/),
-    kind: z.enum(['advisory', 'code']),
+      .regex(/^(advisory|code|docs):[A-Za-z0-9._@/:+-]{1,200}$/),
+    kind: z.enum(FINDING_KINDS),
     title: z.string().trim().min(1).max(200),
     severity: z.enum(FINDING_SEVERITIES),
     // Advisories only: whether the package ships with the app or is only used to build and test it.
@@ -106,9 +114,9 @@ export type Finding = z.infer<typeof findingSchema>;
 const SEVERITY_RANK: Record<FindingSeverity, number> = { critical: 3, high: 2, moderate: 1, low: 0 };
 
 // The agreed bar, applied again here whatever the agent judged: advisories moderate and up in what ships, high and up
-// in what only builds and tests it; a concrete code issue at any severity.
+// in what only builds and tests it; a concrete code issue or docs drift at any severity.
 export const isWorthFiling = ({ kind, severity, scope }: Finding): boolean => {
-  if (kind === 'code') {
+  if (kind !== 'advisory') {
     return true;
   }
   return SEVERITY_RANK[severity] >= SEVERITY_RANK[scope === 'dev' ? 'high' : 'moderate'];
@@ -138,14 +146,15 @@ export type JobReport = {
   dropped: number;
 };
 
-// A job's report, each finding read on its own; ones that are malformed, below the bar or repeated are dropped.
-export const readJobReport = (report: unknown): JobReport => {
+// A job's report, each finding read on its own; ones that are malformed, of another job's kind, below the bar or
+// repeated are dropped.
+export const readJobReport = (report: unknown, agent: JobAgent): JobReport => {
   const parsed = jobReportSchema.safeParse(report).data;
   const raw = parsed?.findings ?? [];
   const findings = raw
     .flatMap((finding) => {
       const read = findingSchema.safeParse(finding);
-      return read.success && isWorthFiling(read.data) ? [read.data] : [];
+      return read.success && JOB_KINDS[agent].includes(read.data.kind) && isWorthFiling(read.data) ? [read.data] : [];
     })
     .filter((finding, index, all) => all.findIndex(({ fingerprint }) => fingerprint === finding.fingerprint) === index)
     .slice(0, MAX_FINDINGS);
@@ -197,6 +206,9 @@ const SEVERITY_LABEL: Record<FindingSeverity, string> = {
 
 const MAX_TITLE = 80;
 
+const KIND_LABEL: Record<FindingKind, string> = { advisory: 'dependency advisory', code: 'code', docs: 'docs drift' };
+const TITLE_PREFIX: Record<FindingKind, string> = { advisory: 'Security', code: 'Security', docs: 'Docs' };
+
 // The agent read public repo content to write a finding, so its text is untrusted: an image would load as soon as
 // someone opened the issue, and a link could hide where it goes. Escaping the brackets and angle brackets means no
 // link, image, reference definition or HTML can render, whatever form it takes; a bare address stays visible as it is.
@@ -228,11 +240,10 @@ const location = ({ path, line }: Finding, { repository, head }: FindingContext)
 // One finding as a Linear issue: what triage would want to read before accepting it.
 export const findingIssue = (finding: Finding, context: FindingContext): FindingIssue => {
   const where = location(finding, context);
-  const kind =
-    finding.kind === 'advisory' ? `dependency advisory${finding.scope ? ` (${finding.scope})` : ''}` : 'code';
+  const kind = KIND_LABEL[finding.kind] + (finding.kind === 'advisory' && finding.scope ? ` (${finding.scope})` : '');
   const found = `Found by the ${context.jobTitle.toLowerCase()} on ${context.day}${context.runUrl ? ` ([run log](${context.runUrl}))` : ''}.`;
   return {
-    title: clip(`Security: ${finding.title.replace(/\s+/g, ' ')}`, MAX_TITLE),
+    title: clip(`${TITLE_PREFIX[finding.kind]}: ${finding.title.replace(/\s+/g, ' ')}`, MAX_TITLE),
     description: [
       `**Severity:** ${SEVERITY_LABEL[finding.severity]} · **Kind:** ${kind}${where ? ` · **Where:** ${where}` : ''}`,
       '',
@@ -256,9 +267,14 @@ export const findingIssue = (finding: Finding, context: FindingContext): Finding
   };
 };
 
-const JOB_TITLES: Record<Job['agent'], string> = { security: 'Daily security check' };
+const JOB_TITLES: Record<JobAgent, string> = { security: 'Daily security check', docs: 'Daily docs check' };
 
-export const jobTitle = (agent: Job['agent']): string => JOB_TITLES[agent];
+export const jobTitle = (agent: JobAgent): string => JOB_TITLES[agent];
+
+// Labels on every issue the job files, so Triage shows where it came from.
+const JOB_LABELS: Record<JobAgent, string[]> = { security: ['security', 'factory'], docs: ['docs', 'factory'] };
+
+export const jobLabels = (agent: JobAgent): string[] => JOB_LABELS[agent];
 
 const escapeSlack = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 

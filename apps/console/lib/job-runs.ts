@@ -28,7 +28,7 @@ const lastHead = async (project: FactoryConfig, job: Job): Promise<string | unde
     )
     .orderBy(desc(runs.createdAt))
     .limit(1);
-  return (latest && readJobReport(latest.report).head) ?? undefined;
+  return (latest && readJobReport(latest.report, job.agent).head) ?? undefined;
 };
 
 // The slot a job's run fills; a run the console made outside a slot stands for the moment it was made.

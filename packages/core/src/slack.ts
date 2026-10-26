@@ -48,7 +48,8 @@ const STAGE_NAMES: Record<AgentRole, string> = {
   implement: 'Build',
   review: 'Review',
   verify: 'Verify',
-  security: 'Security check'
+  security: 'Security check',
+  docs: 'Docs check'
 };
 
 const MAX_TYPED_ANSWER_SHOWN = 200;
