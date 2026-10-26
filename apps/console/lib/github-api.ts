@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { ChecksState, DispatchPayload } from '@mb-factory/core';
+import type { ChecksState, DispatchPayload, ScheduledRun } from '@mb-factory/core';
 import { checksState, currentMergeable, DISPATCH_EVENT } from '@mb-factory/core';
 
 import { requireEnv } from './env';
@@ -137,6 +137,26 @@ export const branchChecks = async (repository: string, branch: string): Promise<
     (run, index) => workflowRuns.findIndex(({ workflow_id }) => workflow_id === run.workflow_id) === index
   );
   return checksState(latest);
+};
+
+type ScheduledRuns = {
+  workflow_runs: { name: string | null; conclusion: string | null; created_at: string; html_url: string }[];
+};
+
+// A repo's scheduled Actions runs created since a moment, for the health check; a day's worth fits one page.
+export const scheduledRuns = async (repository: string, since: Date): Promise<ScheduledRun[]> => {
+  const query = new URLSearchParams({ event: 'schedule', created: `>=${since.toISOString()}`, per_page: '100' });
+  const { workflow_runs: workflowRuns } = await githubGet<ScheduledRuns>(
+    `/repos/${repository}/actions/runs?${query}`,
+    'scheduled runs'
+  );
+  return workflowRuns.map((run) => ({
+    repository,
+    workflow: run.name ?? 'unnamed workflow',
+    conclusion: run.conclusion,
+    createdAt: new Date(run.created_at),
+    url: run.html_url
+  }));
 };
 
 export type PullRequestInfo = {

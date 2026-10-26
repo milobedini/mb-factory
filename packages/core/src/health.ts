@@ -48,6 +48,18 @@ export type HeldRun = { label: string; agent: string; releaseAt: Date };
 
 export type FiredSlot = { job: string; slotAt: Date; firedAt: Date };
 
+// A scheduled GitHub Actions run in one of the project's repos, such as a nightly backup.
+export type ScheduledRun = {
+  repository: string;
+  workflow: string;
+  conclusion: string | null;
+  createdAt: Date;
+  url: string;
+};
+
+// What counts as a failed run; a cancelled one was stopped on purpose.
+const FAILED_CONCLUSIONS = ['failure', 'timed_out', 'startup_failure'];
+
 export type HealthInput = {
   now: Date;
   since: Date;
@@ -60,6 +72,8 @@ export type HealthInput = {
   // Every daily slot, the health check's own included.
   jobs: Pick<Job, 'name' | 'at' | 'day'>[];
   slots: FiredSlot[];
+  // Scheduled runs created since `since`.
+  scheduledRuns: ScheduledRun[];
 };
 
 export type HealthReport = {
@@ -68,6 +82,7 @@ export type HealthReport = {
   runs: string[];
   held: string[];
   slots: string[];
+  workflows: string[];
 };
 
 const clip = (text: string, limit: number): string => (text.length > limit ? `${text.slice(0, limit - 1)}…` : text);
@@ -158,13 +173,33 @@ const slotLines = (input: HealthInput): string[] =>
     })
   );
 
-// Everything worth a look since the last check, from the console's own records.
+// Each scheduled workflow that failed, once however many times, with the latest run's log. Workflow names come from
+// the repo, so they're escaped.
+const workflowLines = ({ scheduledRuns, timeZone }: HealthInput): string[] => {
+  const failed = scheduledRuns
+    .filter(({ conclusion }) => conclusion !== null && FAILED_CONCLUSIONS.includes(conclusion))
+    .toSorted((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const latest = failed.filter(
+    (run, index) =>
+      failed.findIndex(({ repository, workflow }) => repository === run.repository && workflow === run.workflow) ===
+      index
+  );
+  return latest.map(({ repository, workflow, createdAt, url }) => {
+    const count = failed.filter((run) => run.repository === repository && run.workflow === workflow).length;
+    const times = count === 1 ? 'at' : `${count}×, last at`;
+    const name = escapeSlack(`${repository.split('/').at(-1)}: ${workflow}`);
+    return `${name} failed ${times} ${clockTime(createdAt, timeZone)} <${url}|run log>`;
+  });
+};
+
+// Everything worth a look since the last check, from the console's own records and the project's scheduled runs.
 export const healthReport = (input: HealthInput): HealthReport => ({
   errors: problemLines(input, 'error'),
   warnings: problemLines(input, 'warn'),
   runs: input.openRuns.flatMap((run) => stuckRun(run, input.now) ?? []),
   held: input.heldRuns.flatMap((run) => lateHold(run, input.now, input.timeZone) ?? []),
-  slots: slotLines(input)
+  slots: slotLines(input),
+  workflows: workflowLines(input)
 });
 
 const plural = (count: number, one: string, many = `${one}s`): string => `${count} ${count === 1 ? one : many}`;
@@ -187,7 +222,7 @@ export const healthText = (
   const total = Object.values(report).reduce((sum, lines) => sum + lines.length, 0);
   const sinceText = `${slotDay(since, timeZone)} ${clockTime(since, timeZone)}`;
   if (total === 0) {
-    return `${title} all clear. No warnings, errors, stuck runs or late jobs since ${sinceText}.`;
+    return `${title} all clear. No warnings, errors, stuck runs, late jobs or failed workflows since ${sinceText}.`;
   }
   return [
     `${title} ${plural(total, 'thing')} to look at since ${sinceText}.`,
@@ -196,6 +231,7 @@ export const healthText = (
     ...section('Runs', report.runs),
     ...section('Held work', report.held),
     ...section('Scheduled jobs', report.slots),
+    ...section('Scheduled workflows', report.workflows),
     `<${consoleUrl}/runs|Runs> · <${consoleUrl}/usage|Usage>`
   ].join('\n');
 };

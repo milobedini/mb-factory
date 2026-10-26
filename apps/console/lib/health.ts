@@ -15,6 +15,7 @@ import { getDb } from '@/db/client';
 import { consoleProblems, jobSlots, queue, runs, workItems } from '@/db/schema';
 
 import { requireEnv } from './env';
+import { scheduledRuns } from './github-api';
 import { postJobMessage } from './job-runs';
 import { log } from './log';
 import { loadReadyList, postReadyMessage } from './ready';
@@ -101,6 +102,19 @@ const loadSlots = async (project: FactoryConfig, since: Date): Promise<HealthInp
     .where(and(eq(jobSlots.project, project.name), gt(jobSlots.slotAt, new Date(since.getTime() - DAY_MS))));
 };
 
+// Scheduled runs in the project's repos; a repo GitHub won't list is a warning, which tomorrow's check shows.
+const loadScheduledRuns = async (project: FactoryConfig, since: Date): Promise<HealthInput['scheduledRuns']> => {
+  const perRepo = await Promise.all(
+    project.repositories.map(({ owner, name }) =>
+      scheduledRuns(`${owner}/${name}`, since).catch((error: unknown) => {
+        log('warn', 'scheduled runs failed', { repository: `${owner}/${name}`, error: errorMessage(error) });
+        return [];
+      })
+    )
+  );
+  return perRepo.flat();
+};
+
 // The previous check's moment, so each one covers what came after it; the first looks back a day.
 const previousCheck = async (project: FactoryConfig, slotId: string, now: Date): Promise<Date> => {
   const [previous] = await getDb()
@@ -135,10 +149,11 @@ export const fireHealthCheck = async (project: FactoryConfig, now: Date): Promis
     return;
   }
   const since = await previousCheck(project, fired.id, now);
-  const [problems, runState, slots] = await Promise.all([
+  const [problems, runState, slots, scheduled] = await Promise.all([
     loadProblems(since),
     loadRuns(project, now),
-    loadSlots(project, since)
+    loadSlots(project, since),
+    loadScheduledRuns(project, since)
   ]);
   const report = healthReport({
     now,
@@ -147,7 +162,8 @@ export const fireHealthCheck = async (project: FactoryConfig, now: Date): Promis
     ...problems,
     ...runState,
     jobs: [...project.jobs, slot],
-    slots
+    slots,
+    scheduledRuns: scheduled
   });
   const consoleUrl = requireEnv('CONSOLE_URL');
   await postJobMessage(project, slot, healthText(report, { now, since, timeZone: project.timeZone, consoleUrl }));

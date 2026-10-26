@@ -17,6 +17,7 @@ const input = (overrides: Partial<HealthInput> = {}): HealthInput => ({
   heldRuns: [],
   jobs: [],
   slots: [],
+  scheduledRuns: [],
   ...overrides
 });
 
@@ -149,13 +150,55 @@ describe('healthReport', () => {
   });
 });
 
+describe('healthReport scheduled workflows', () => {
+  const run = (workflow: string, conclusion: string | null, at: string, id: number) => ({
+    repository: 'milobedini/tastebook',
+    workflow,
+    conclusion,
+    createdAt: new Date(at),
+    url: `https://github.com/milobedini/tastebook/actions/runs/${id}`
+  });
+
+  it('lists each failed workflow once, with the latest run', () => {
+    const report = healthReport(
+      input({
+        scheduledRuns: [
+          run('Backup', 'failure', '2026-10-26T14:17:00Z', 1),
+          run('Backup', 'timed_out', '2026-10-27T02:17:00Z', 2),
+          run('Prune', 'startup_failure', '2026-10-27T03:00:00Z', 3)
+        ]
+      })
+    );
+    expect(report.workflows).toEqual([
+      'tastebook: Prune failed at 03:00 <https://github.com/milobedini/tastebook/actions/runs/3|run log>',
+      'tastebook: Backup failed 2×, last at 02:17 <https://github.com/milobedini/tastebook/actions/runs/2|run log>'
+    ]);
+  });
+
+  it('leaves out runs that passed, were cancelled or are still going, and escapes names', () => {
+    const report = healthReport(
+      input({
+        scheduledRuns: [
+          run('Backup', 'success', '2026-10-27T02:17:00Z', 1),
+          run('Backup', 'cancelled', '2026-10-27T02:18:00Z', 2),
+          run('Backup', null, '2026-10-27T02:19:00Z', 3),
+          run('<Nightly>', 'failure', '2026-10-27T02:20:00Z', 4)
+        ]
+      })
+    );
+    expect(report.workflows).toEqual([
+      'tastebook: &lt;Nightly&gt; failed at 02:20 <https://github.com/milobedini/tastebook/actions/runs/4|run log>'
+    ]);
+  });
+});
+
 describe('healthText', () => {
   const context = { now, since, timeZone: london, consoleUrl: 'https://console.test' };
-  const empty = { errors: [], warnings: [], runs: [], held: [], slots: [] };
+  const empty = { errors: [], warnings: [], runs: [], held: [], slots: [], workflows: [] };
 
   it('says all is clear when nothing came up', () => {
     expect(healthText(empty, context)).toBe(
-      '*Factory health, Tue 27 Oct:* all clear. No warnings, errors, stuck runs or late jobs since Mon 26 Oct 07:00.'
+      '*Factory health, Tue 27 Oct:* all clear. No warnings, errors, stuck runs, late jobs or failed workflows since Mon 26 Oct 07:00.'
     );
   });
 

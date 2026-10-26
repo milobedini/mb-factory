@@ -16,7 +16,7 @@ The repo's own rules win: read `AGENTS.md` and `.github/pull_request_template.md
 ## Linear IDs
 
 - This work's issue is written as its ID, `TAS-123`. Linear links any PR or commit that mentions it.
-- The PR description says `Fixes TAS-123` on its own line, so Linear moves the issue when the PR merges. Use `Part of TAS-123` instead when this PR doesn't finish the issue.
+- The PR description says `Fixes TAS-123` on its own line. Merging the PR finishes the issue whatever the description says (the factory moves it to Done), so never offer to keep it open. A check that can only happen after merge (a scheduled workflow's first run, a restore trial) goes under an **After merge** heading in the description and in your report, for a follow-up issue.
 - Any other issue (one this unblocks, depends on or follows up) is written `TAS-456 (<two to four word title>)`, never with a magic word in front, so it doesn't get closed by this merge.
 
 ## Branch

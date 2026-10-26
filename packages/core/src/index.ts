@@ -49,7 +49,16 @@ export {
 } from './governor';
 export type { Guard, GuardContext } from './guards';
 export { GUARD_LABELS, guardFingerprint, guardIssue, readGuards } from './guards';
-export type { FiredSlot, HealthInput, HealthReport, HeldRun, OpenRun, ProblemGroup, ProblemLevel } from './health';
+export type {
+  FiredSlot,
+  HealthInput,
+  HealthReport,
+  HeldRun,
+  OpenRun,
+  ProblemGroup,
+  ProblemLevel,
+  ScheduledRun
+} from './health';
 export {
   formatMinutes,
   HEALTH_JOB,
