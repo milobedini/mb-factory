@@ -106,6 +106,7 @@ import {
   updateSlackMessage
 } from './slack-api';
 import { latestReadings } from './usage';
+import { bookWake } from './wake';
 
 type WorkItem = typeof workItems.$inferSelect;
 type Run = typeof runs.$inferSelect;
@@ -191,6 +192,10 @@ const holdRun = async (
     .onConflictDoNothing()
     .returning({ id: queue.id });
   log('info', 'run held', { runId: run.id, issue: workItem.issueIdentifier, reason: decision.reason });
+  if (decision.releaseAt) {
+    // Wakes the console when the hold should lift, whether or not anything else happens by then.
+    await bookWake(decision.releaseAt, decision.reason);
+  }
   if (held.length === 0) {
     // Already waiting: keep the reason current, and don't repeat the message.
     await db

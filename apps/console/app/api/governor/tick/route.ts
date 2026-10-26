@@ -6,8 +6,9 @@ import { currentPause } from '@/lib/pause';
 import { strictestStaleAfterMinutes } from '@/lib/projects';
 import { releaseQueue } from '@/lib/router';
 import { countWaiting, latestReadings } from '@/lib/usage';
+import { bookNextWake } from '@/lib/wake';
 
-// Called every 15 minutes by the governor workflow. Answers `probe: true` instead of releasing when held work
+// Called by the governor workflow: on its schedule, which GitHub mostly drops, or after a probe. Answers `probe: true` instead of releasing when held work
 // would be released on stale readings; the workflow then probes, posts the readings and calls again with `probed`.
 export const POST = async (request: Request) => {
   const rejection = await rejectUnlessGovernor(request, 'governor tick');
@@ -25,6 +26,8 @@ export const POST = async (request: Request) => {
     return Response.json({ probe: true, waiting });
   }
   await releaseQueue();
+  // In case a delayed wake-up was lost, this tick books the next one again.
+  await bookNextWake('governor job');
   const stillWaiting = await countWaiting();
   log('info', 'governor tick released the queue', { waiting, stillWaiting, probed, paused });
   return Response.json({ probe: false, waiting: stillWaiting, paused });

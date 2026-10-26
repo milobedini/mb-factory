@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "app/api/scheduler/wake/route.ts": {
+      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "scheduler-wake", "retryAfterSeconds": 60 }]
+    }
+  },
+  "crons": [{ "path": "/api/scheduler/cron", "schedule": "17 6 * * *" }]
+}
