@@ -75,6 +75,7 @@ import {
   resumeRequestFor,
   retryText,
   reviewersFor,
+  reviewThreadsToResolve,
   runRequestFor,
   SPEC_GATE_GONE,
   STOPPED_RESPONSE,
@@ -114,7 +115,9 @@ import {
   commentOnPullRequest,
   pullMergeState,
   pullRequestInfo,
+  pullReviewThreads,
   requestReviewers,
+  resolveReviewThread,
   sendStageDispatch
 } from './github-api';
 import { fileGuards } from './guards';
@@ -350,11 +353,29 @@ const checkConflict = async (project: FactoryConfig, workItem: WorkItem): Promis
   return 'left';
 };
 
-// At the merge gate a PR that no longer merges goes back before anyone is asked to review it.
+// The review's threads, settled by the time nothing is left to decide, would otherwise hold the merge where the repo
+// requires resolved conversations.
+const resolveReviewThreads = (workItem: WorkItem) => {
+  const { prNumber } = workItem;
+  return prNumber
+    ? attempt('resolve review threads', { issue: workItem.issueIdentifier, pr: prNumber }, async () => {
+        const ids = reviewThreadsToResolve(await pullReviewThreads(workItem.repository, prNumber));
+        await Promise.all(ids.map(resolveReviewThread));
+        log('info', 'review threads resolved', { issue: workItem.issueIdentifier, pr: prNumber, count: ids.length });
+      })
+    : undefined;
+};
+
+// At the merge gate a PR that no longer merges goes back before anyone is asked to review it. With no question open,
+// the review's threads are resolved; a question's thread waits for its answer.
 const enterMergeGate = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
-  if ((await checkConflict(project, workItem)) !== 'fixing') {
-    await requestMergeReview(project, workItem);
+  if ((await checkConflict(project, workItem)) === 'fixing') {
+    return;
   }
+  if (!(await openRound(workItem))) {
+    await resolveReviewThreads(workItem);
+  }
+  await requestMergeReview(project, workItem);
 };
 
 // Records the stage and moves the Linear issue to its status; a failed move is logged, not fatal. The merge gate's
@@ -711,7 +732,8 @@ const keepReviewedPr = async (
       ? attempt('pr comment', { issue: workItem.issueIdentifier }, () =>
           commentOnPullRequest(workItem.repository, prNumber, text)
         )
-      : undefined
+      : undefined,
+    resolveReviewThreads(workItem)
   ]);
 };
 

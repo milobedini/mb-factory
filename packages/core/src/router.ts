@@ -379,6 +379,16 @@ export const decideConflict = (
   };
 };
 
+export type ReviewThread = { id: string; isResolved: boolean; author: string | null };
+
+// The GitHub login the review stage posts its findings as (the Claude app).
+export const FACTORY_REVIEWER_LOGIN = 'claude';
+
+// The review's own threads still open, once nothing is left to decide: each is fixed, decided or a Nit by then. A
+// person's threads are theirs to resolve.
+export const reviewThreadsToResolve = (threads: ReviewThread[]): string[] =>
+  threads.filter(({ isResolved, author }) => !isResolved && author === FACTORY_REVIEWER_LOGIN).map(({ id }) => id);
+
 // GitHub works `mergeable` out lazily, so right after either branch moves it can still give the answer for the old
 // heads. A `true` holds only when its test merge commit joins the base's head and the PR's head; otherwise it's not
 // known yet. A `false` has no test merge to check, so it stands.

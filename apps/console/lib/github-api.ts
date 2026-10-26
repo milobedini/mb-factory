@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { ChecksState, DispatchPayload, ScheduledRun } from '@mb-factory/core';
+import type { ChecksState, DispatchPayload, ReviewThread, ScheduledRun } from '@mb-factory/core';
 import { checksState, currentMergeable, DISPATCH_EVENT } from '@mb-factory/core';
 
 import { requireEnv } from './env';
@@ -57,6 +57,57 @@ export const commentOnPullRequest = async (repository: string, prNumber: number,
   if (!response.ok) {
     throw await failure('PR comment', response);
   }
+};
+
+const githubGraphql = async <T>(query: string, variables: Record<string, unknown>, action: string): Promise<T> => {
+  const response = await githubRequest('/graphql', { query, variables });
+  if (!response.ok) {
+    throw await failure(action, response);
+  }
+  const { data, errors } = (await response.json()) as { data?: T; errors?: { message: string }[] };
+  if (errors?.length || !data) {
+    throw new Error(`GitHub ${action} failed: ${errors?.map(({ message }) => message).join('; ') ?? 'no data'}`);
+  }
+  return data;
+};
+
+type ThreadsData = {
+  repository: {
+    pullRequest: {
+      reviewThreads: {
+        nodes: { id: string; isResolved: boolean; comments: { nodes: { author: { login: string } | null }[] } }[];
+      };
+    } | null;
+  } | null;
+};
+
+// A PR's review threads with who started each; a factory PR stays well under a hundred.
+export const pullReviewThreads = async (repository: string, prNumber: number): Promise<ReviewThread[]> => {
+  const [owner, name] = repository.split('/');
+  const data = await githubGraphql<ThreadsData>(
+    `query($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100) { nodes { id isResolved comments(first: 1) { nodes { author { login } } } } }
+        }
+      }
+    }`,
+    { owner, name, number: prNumber },
+    'review threads'
+  );
+  return (data.repository?.pullRequest?.reviewThreads.nodes ?? []).map((thread) => ({
+    id: thread.id,
+    isResolved: thread.isResolved,
+    author: thread.comments.nodes[0]?.author?.login ?? null
+  }));
+};
+
+export const resolveReviewThread = async (threadId: string): Promise<void> => {
+  await githubGraphql(
+    'mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { id } } }',
+    { id: threadId },
+    'resolve review thread'
+  );
 };
 
 // The Usage page's Refresh: one governor run that probes whatever the readings say.

@@ -26,6 +26,7 @@ import {
   queuedThought,
   readSpecReply,
   retryText,
+  reviewThreadsToResolve,
   runRequestFor,
   shouldMoveIssue,
   shouldResume,
@@ -831,6 +832,19 @@ describe('Slack text', () => {
     ).toBe(
       'The implement run hit the usage limit; it resumes once the window resets. <https://github.com/milobedini/tastebook/actions/runs/1|run log>'
     );
+  });
+});
+
+describe('reviewThreadsToResolve', () => {
+  it("picks the review's own open threads and leaves people's", () => {
+    expect(
+      reviewThreadsToResolve([
+        { id: 'a', isResolved: false, author: 'claude' },
+        { id: 'b', isResolved: true, author: 'claude' },
+        { id: 'c', isResolved: false, author: 'milobedini' },
+        { id: 'd', isResolved: false, author: null }
+      ])
+    ).toEqual(['a']);
   });
 });
 
