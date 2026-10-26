@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatRunTime, isOpenRun, runTiming, runTotals } from './runs';
+import { dispatchLapsedBefore, dispatchLapsesAt, formatRunTime, isOpenRun, runTiming, runTotals } from './runs';
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 9, 25, 12, minutes));
+
+describe('dispatch lapse', () => {
+  it('comes fifteen minutes after the dispatch', () => {
+    expect(dispatchLapsesAt(at(10))).toEqual(at(25));
+    expect(dispatchLapsedBefore(at(30))).toEqual(at(15));
+  });
+});
 
 describe('isOpenRun', () => {
   it.each([

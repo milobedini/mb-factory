@@ -43,7 +43,7 @@ jobs:
             exit 0
           fi
           audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
-          oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          oidc=$(curl -sS --fail-with-body --retry 3 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
           echo "::add-mask::$oidc"
           response=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
             --data '{"probed":false}' "$CONSOLE_URL/api/governor/tick")
@@ -64,7 +64,7 @@ jobs:
             probe.jsonl > probe-report.json
 
           audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
-          oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          oidc=$(curl -sS --fail-with-body --retry 3 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
           echo "::add-mask::$oidc"
           curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
             --data @probe-report.json "$CONSOLE_URL/api/governor/readings"
@@ -74,7 +74,7 @@ jobs:
         if: always() && steps.tick.outputs.probe == 'true'
         run: |
           audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
-          oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          oidc=$(curl -sS --fail-with-body --retry 3 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
           echo "::add-mask::$oidc"
           curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
             --data '{"probed":true}' "$CONSOLE_URL/api/governor/tick"

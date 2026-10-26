@@ -201,6 +201,9 @@ export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } fr
 export { readingsFromEvents, runReportSchema, stageReportSchema, summariseRun } from './run-report';
 export type { RunOutcome, RunStatus, RunTotals, RunTrigger, WorkOrigin } from './runs';
 export {
+  DISPATCH_LAPSE_MINUTES,
+  dispatchLapsedBefore,
+  dispatchLapsesAt,
   formatRunTime,
   isOpenRun,
   OPEN_RUN_STATUSES,

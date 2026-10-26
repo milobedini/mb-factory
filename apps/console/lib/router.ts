@@ -39,6 +39,7 @@ import {
   delegateFailedText,
   dependencyIssue,
   dependencyTakenText,
+  dispatchLapsesAt,
   emptyMentionText,
   governDispatch,
   isAllowedSlackUser,
@@ -587,6 +588,10 @@ export const dispatchRun = async (project: FactoryConfig, runId: string, retried
   const started = workItem
     ? await startRun(project, { run, workItem }, decision.downshift, now)
     : await startJobRun(project, run, now);
+  if (started === 'started') {
+    // Wakes the console in case the run's workflow never reaches it, so the run isn't left dispatched.
+    await bookWake(dispatchLapsesAt(now), 'run dispatched');
+  }
   if (started !== 'not_claimed') {
     return;
   }

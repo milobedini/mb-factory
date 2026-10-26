@@ -1,6 +1,7 @@
 import type { Job } from './config';
 import { nextSlot, slotDay } from './jobs';
 import type { RunStatus } from './runs';
+import { DISPATCH_LAPSE_MINUTES } from './runs';
 
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
@@ -12,9 +13,8 @@ export const HEALTH_JOB = 'health';
 export const PROBLEM_RETENTION_DAYS = 30;
 export const NEW_PROBLEM_DAYS = 14;
 
-// A run dispatched this long ago that hasn't called `/start` never reached Actions; one running past the stage
-// workflow's 60-minute timeout lost its report. A queued run with no hold was dropped on its way to the governor.
-const DISPATCHED_MINUTES = 15;
+// A dispatched run that never called `/start` should have been ended by the governor tick; one running past the
+// stage workflow's 60-minute timeout lost its report. A queued run with no hold was dropped on its way to the governor.
 const RUNNING_MINUTES = 70;
 const QUEUED_MINUTES = 15;
 // Held work and job slots get this long past their moment before they count as late.
@@ -132,7 +132,11 @@ const problemLines = (input: HealthInput, level: ProblemLevel): string[] => {
 
 const stuckRun = (run: OpenRun, now: Date): string | undefined => {
   const name = `${run.label} ${run.agent} run`;
-  if (run.status === 'dispatched' && run.dispatchedAt && minutesBetween(run.dispatchedAt, now) >= DISPATCHED_MINUTES) {
+  if (
+    run.status === 'dispatched' &&
+    run.dispatchedAt &&
+    minutesBetween(run.dispatchedAt, now) >= DISPATCH_LAPSE_MINUTES
+  ) {
     return `${name} was dispatched ${formatMinutes(minutesBetween(run.dispatchedAt, now))} ago and never started`;
   }
   if (run.status === 'running' && run.startedAt && minutesBetween(run.startedAt, now) >= RUNNING_MINUTES) {

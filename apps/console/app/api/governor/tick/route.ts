@@ -1,7 +1,7 @@
 import { needsProbe } from '@mb-factory/core';
 
 import { rejectUnlessGovernor } from '@/lib/github-oidc';
-import { fireDueJobs } from '@/lib/jobs';
+import { endLapsedDispatches, fireDueJobs } from '@/lib/jobs';
 import { log } from '@/lib/log';
 import { currentPause } from '@/lib/pause';
 import { strictestStaleAfterMinutes } from '@/lib/projects';
@@ -28,6 +28,7 @@ export const POST = async (request: Request) => {
   }
   // Another backstop for a job slot nothing else woke the console for.
   await fireDueJobs(now);
+  await endLapsedDispatches(now);
   await releaseQueue();
   // In case a delayed wake-up was lost, this tick books the next one again.
   await bookNextWake('governor job');

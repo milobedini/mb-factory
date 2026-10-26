@@ -32,6 +32,18 @@ export const OPEN_RUN_STATUSES: RunStatus[] = ['queued', 'dispatched', 'running'
 
 export const isOpenRun = (status: RunStatus): boolean => OPEN_RUN_STATUSES.includes(status);
 
+// A run dispatched this long ago that hasn't called `/start` never reached its agent: the workflow failed first
+// (GitHub's token service, the runner) or never ran. The next wake-up ends it as a run that never started.
+export const DISPATCH_LAPSE_MINUTES = 15;
+
+const DISPATCH_LAPSE_MS = DISPATCH_LAPSE_MINUTES * 60 * 1000;
+
+// When a run dispatched at `dispatchedAt` counts as lost.
+export const dispatchLapsesAt = (dispatchedAt: Date): Date => new Date(dispatchedAt.getTime() + DISPATCH_LAPSE_MS);
+
+// Runs dispatched before this have lapsed by `now`.
+export const dispatchLapsedBefore = (now: Date): Date => new Date(now.getTime() - DISPATCH_LAPSE_MS);
+
 type TimedRun = {
   createdAt: Date;
   dispatchedAt: Date | null;

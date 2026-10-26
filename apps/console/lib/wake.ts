@@ -1,9 +1,18 @@
-import { deriveKey, isSignedWake, nextSlot, nextWake, signWake, WAKE_TOPIC, wakeBooking } from '@mb-factory/core';
+import {
+  deriveKey,
+  dispatchLapsesAt,
+  isSignedWake,
+  nextSlot,
+  nextWake,
+  signWake,
+  WAKE_TOPIC,
+  wakeBooking
+} from '@mb-factory/core';
 import { send } from '@vercel/queue';
-import { and, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
-import { queue } from '@/db/schema';
+import { queue, runs } from '@/db/schema';
 
 import { requireEnv } from './env';
 import { log } from './log';
@@ -28,17 +37,28 @@ export const bookWake = async (at: Date, cause: string): Promise<void> => {
   }
 };
 
-// The next moment anything is due: the earliest release time of held work, or the next slot of a scheduled job.
+// The next moment anything is due: the earliest release time of held work, the moment a dispatched run that hasn't
+// started counts as lost, or the next slot of a scheduled job.
 export const bookNextWake = async (cause: string): Promise<Date | undefined> => {
   const now = new Date();
-  const held = await getDb()
-    .select({ releaseAt: queue.releaseAt })
-    .from(queue)
-    .where(and(isNull(queue.releasedAt), gt(queue.releaseAt, now)));
+  const [held, dispatched] = await Promise.all([
+    getDb()
+      .select({ releaseAt: queue.releaseAt })
+      .from(queue)
+      .where(and(isNull(queue.releasedAt), gt(queue.releaseAt, now))),
+    getDb().select({ dispatchedAt: runs.dispatchedAt }).from(runs).where(eq(runs.status, 'dispatched'))
+  ]);
   const slots = allProjects().flatMap((project) =>
     [...project.jobs, ...(project.health ? [project.health] : [])].map((slot) => nextSlot(slot, now, project.timeZone))
   );
-  const next = nextWake([...held.map(({ releaseAt }) => releaseAt), ...slots], now);
+  const next = nextWake(
+    [
+      ...held.map(({ releaseAt }) => releaseAt),
+      ...dispatched.map(({ dispatchedAt }) => dispatchedAt && dispatchLapsesAt(dispatchedAt)),
+      ...slots
+    ],
+    now
+  );
   if (next) {
     await bookWake(next, cause);
   }
