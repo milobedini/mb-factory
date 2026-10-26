@@ -382,7 +382,9 @@ const findingSchema = z.looseObject({
   line: z.int().nullish(),
   needsHuman: z.boolean().nullish(),
   summary: z.string().min(1),
-  fix: z.string().nullish()
+  fix: z.string().nullish(),
+  // The cheapest guard against the finding's whole class of problem.
+  guard: z.string().nullish()
 });
 
 type Finding = z.infer<typeof findingSchema>;
@@ -417,10 +419,15 @@ const clip = (text: string): string => {
 
 // Unambiguous findings never reach GitHub, so the revision's brief carries them.
 export const findingsPrompt = (round: number, findings: Finding[]): string => {
-  const listed = findings.slice(0, MAX_FINDINGS_IN_BRIEF).map(({ tier, path, line, summary, fix }, index) => {
+  const listed = findings.slice(0, MAX_FINDINGS_IN_BRIEF).map(({ tier, path, line, summary, fix, guard }, index) => {
     const where = path ? ` ${path}${line ? `:${line}` : ''}` : '';
-    const heading = `${index + 1}. [${tier ?? 'finding'}]${where}: ${clip(summary)}`;
-    return fix ? `${heading}\n   Fix: ${clip(fix)}` : heading;
+    return [
+      `${index + 1}. [${tier ?? 'finding'}]${where}: ${clip(summary)}`,
+      fix ? `   Fix: ${clip(fix)}` : undefined,
+      guard ? `   Guard: ${clip(guard)}` : undefined
+    ]
+      .filter((part) => part !== undefined)
+      .join('\n');
   });
   const more = findings.length - listed.length;
   return [

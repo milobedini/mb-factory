@@ -543,6 +543,22 @@ describe('findingsPrompt', () => {
     expect(prompt).not.toContain('Finding 26.');
     expect(prompt.endsWith("…and 2 more; the next review round checks what's left.")).toBe(true);
   });
+
+  it('carries the guard a finding names', () => {
+    const prompt = findingsPrompt(1, [
+      {
+        tier: 'should_fix',
+        path: 'backend/recipes/views.py',
+        line: 42,
+        summary: 'Unscoped query.',
+        fix: 'Filter.',
+        guard: 'A test over every view.'
+      }
+    ]);
+    expect(prompt).toContain(
+      '1. [should_fix] backend/recipes/views.py:42: Unscoped query.\n   Fix: Filter.\n   Guard: A test over every view.'
+    );
+  });
 });
 
 describe('review rounds', () => {

@@ -88,6 +88,7 @@ import { events, questions, queue, runs, stageChanges, workItems } from '@/db/sc
 
 import { requireEnv } from './env';
 import { cancelActionsRun, pullMergeState, pullRequestInfo, requestReviewers, sendStageDispatch } from './github-api';
+import { fileGuards } from './guards';
 import { findJob, jobBriefFor, jobTitleOf, postJobMessage } from './job-runs';
 import type { AgentActivityContent } from './linear-api';
 import {
@@ -1325,6 +1326,7 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   if (resuming) {
     await dispatchRun(project, await createRun(project, workItem, resumeRequestFor(run.agent), run.id));
   }
+  await fileGuards(project, found);
   await releaseQueue();
 };
 

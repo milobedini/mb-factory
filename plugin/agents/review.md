@@ -33,7 +33,7 @@ Triggered when the implement stage delivers a PR (`trigger: delivered`), again a
      One-line summary of the change against the spec and standards.
 
      **Fixing in the next round**
-     - **Should fix** [`backend/recipes/views.py:42`](https://github.com/<owner>/<repo>/blob/<head sha>/backend/recipes/views.py#L42): one-sentence summary. Fix: the fix in a line.
+     - **Should fix** [`backend/recipes/views.py:42`](https://github.com/<owner>/<repo>/blob/<head sha>/backend/recipes/views.py#L42): one-sentence summary. Fix: the fix in a line. Guard: the guard in a line.
 
      **Needs your decision** (inline below)
      - **Blocking** [`path:line`](…): summary.
@@ -57,8 +57,12 @@ Each finding:
 
 ```json
 { "tier": "should_fix", "path": "backend/recipes/views.py", "line": 42, "needsHuman": false,
-  "summary": "One sentence.", "fix": "The fix, or the suggestion block.", "ref": "ground rules › possible Feature envy" }
+  "summary": "One sentence.", "fix": "The fix, or the suggestion block.",
+  "guard": "Unscoped queries: a test over every view that fails on a query not filtered by household.",
+  "ref": "ground rules › possible Feature envy" }
 ```
+
+`guard` is the rubric's guard for the finding's class; leave it out when there's none.
 
 ## Exit
 

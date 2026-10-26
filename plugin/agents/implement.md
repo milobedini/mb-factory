@@ -21,7 +21,7 @@ Triggered when an issue sized for direct implementation is delegated, when a spe
 2. **Drift check.** Before writing code: every `path:line` the spec cites still holds what it describes, and nothing merged to `main` since the spec was written changes its assumptions (`git log origin/main --since=<spec date> -- <paths>`). Drift that changes a behaviour or a decision is a question; anything smaller, adapt and log it.
 3. **Branch.** Work on the spec's branch when there is one, merging `origin/main` into it when it's behind. Otherwise make a new branch per `git-text`.
 4. **Build** the steps in order, running each step's `Done when:` check before the next. With no spec, make the smallest correct change at the root cause.
-   - **Bug path:** write the failing test first, run it on the unchanged code, and record its name and failing assertion. It must fail for the bug's reason. Then fix; test and fix share a commit.
+   - **Bug path:** write the failing test first, run it on the unchanged code, and record its name and failing assertion. It must fail for the bug's reason. Then fix; test and fix share a commit. Then guard the class (below).
    - **Deviations:** mechanical ones (a moved import, a renamed symbol, a file a step obviously needs, a sketch adapted to real types) you make and list. A design deviation (it would change a behaviour, a public signature, copy, or the file list) is a question in the stage report's `questions` with your suggestion; report `needs_input`. An acceptance criterion that can't be met as specced is `blocked`.
    - **Three attempts:** after three failed attempts at the same check, stop: post an `error` with what you tried and report `failed`.
    - **Commits** as each logical unit is done, per `git-text`, after the checks that unit touches pass. Never commit scratch scripts, logs or evidence files.
@@ -42,6 +42,7 @@ A revision changes the delivered work on the same branch and PR. The brief's `pr
   2. Not changed: why, in a line.
   ```
 
+- **Guard the class.** For a finding with a `Guard:`, or a bug you fixed, add the cheapest guard against its whole class (a type or lint rule, then an automated check, then a rule in `AGENTS.md` or a lesson) in this PR when it fits: it uses the repo's own tooling, stays small, and doesn't change behaviour outside the issue. A guard that doesn't fit goes in the stage report's `guards` instead, and the console files it in Triage for a person to decide. Never both. Say which you did in the round's comment or the PR description.
 - For a review comment a human left on the PR, reply in its thread in one line, and resolve it only when you made the change it asked for.
 - For a CI failure: read the failing job's log, fix the cause, not the symptom. Post one PR comment: the failing job, the cause, and the commit that fixes it.
 - For a conflict: merge `origin/<base>` into the branch (never rebase or force-push) and resolve each conflict so both sides' behaviour holds. When they can't both hold, that's a design deviation: a question in `questions` with your suggestion, `needs_input`, nothing pushed. Run the full checks, not only the touched ones: the other side's change may have broken yours. Post one PR comment: the files that conflicted and how each was resolved, in a line each.

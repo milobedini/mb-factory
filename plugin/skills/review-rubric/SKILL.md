@@ -53,6 +53,10 @@ Try to disprove each one against the code at the head before keeping it:
 
 Classify each finding as **unambiguous** (the fix needs no human judgement) or **needs a human** (a product or technical decision only a person can make).
 
+## Guard the class
+
+For each Blocking or Should fix finding, name the cheapest guard that would stop its whole class of problem, not only this instance, in this order: a type or lint rule; an automated check (a test, axe, a CI step); a rule in `AGENTS.md` or a lesson. Say the class in a few words, the guard, and where it goes. When a guard the repo already has should have caught it, the guard is fixing that one. Leave it out when the finding is a one-off with no class worth guarding; never invent one.
+
 ## Writing a finding
 
 Each finding is written so it can go in a GitHub inline comment as it stands; the `review` agent decides which go inline and which in the review body:
@@ -60,6 +64,7 @@ Each finding is written so it can go in a GitHub inline comment as it stands; th
 - Anchor it to a code line inside the diff whenever the finding allows.
 - Open with the problem; the fix comes second, and it's the laziest fix that works: an existing repo helper, then a language built-in, then an installed dependency, then new code.
 - A fix in one place of about 10 lines or fewer gets a `suggestion` block holding the exact replacement for the anchored lines. A bigger fix gets a short sketch in a normal fenced block.
+- For a Blocking or Should fix finding, a nested `- Guard:` line before the Ref: the class and the guard, in a line.
 - End with a nested `- Ref:` line saying what it rests on: `AGENTS.md › <rule>`, `ground rules › possible <smell>`, `ground rules › Tests (tautology: <shape>)`, `Spec › <criterion>`, `Standards › <standard> <clause>` (for example `Standards › WCAG 2.2 AA 1.4.11` or `Standards › ASVS 5.0 L1 V8.2.2`), `Traced: A → B:42 → <failure>`, or `Docs › <url>`. Cite a clause number only when you're sure of it; otherwise name the standard and say the requirement in words. Write the comment so it stands without the Ref.
 
 Tone: collegial and neutral, British English, no praise. Ask a question when the author may know something you don't, and end on the ask; state it plainly when the evidence is conclusive. No exclamation marks, no "you forgot", "obviously" or "simply", no hedging stacks ("I think maybe"), no filler ("note that", "feel free"), no dashes inside comment prose. Keep a comment under about 900 characters, 400 for a Nit.

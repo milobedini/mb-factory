@@ -98,6 +98,10 @@ export const factoryConfigSchema = z.object({
     // The health check's slots are recorded under this name.
     .refine((jobs) => jobs.every(({ name }) => name !== 'health'), {
       message: 'health is reserved for the health check'
+    })
+    // Guards the implement stage reports are filed as findings under this name.
+    .refine((jobs) => jobs.every(({ name }) => name !== 'guard'), {
+      message: 'guard is reserved for guards'
     }),
   // The console's daily check on itself: warnings and errors, stuck runs, late jobs. No Claude run, so it isn't held.
   health: z.object({ at: clockTime }).optional()

@@ -47,6 +47,8 @@ export {
   USAGE_STATUSES,
   USAGE_WINDOWS
 } from './governor';
+export type { Guard, GuardContext } from './guards';
+export { GUARD_LABELS, guardFingerprint, guardIssue, readGuards } from './guards';
 export type { FiredSlot, HealthInput, HealthReport, HeldRun, OpenRun, ProblemGroup, ProblemLevel } from './health';
 export {
   formatMinutes,
