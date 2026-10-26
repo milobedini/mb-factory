@@ -218,16 +218,26 @@ export const governDispatch = ({ workItemBusy, paused, allowUsage, ...request }:
   return { decision, staleWindows };
 };
 
-export type ModelledAgent = keyof FactoryConfig['models'];
+export type ModelledAgent = Exclude<keyof FactoryConfig['models'], 'slicing'>;
 
 const isModelled = (agent: AgentRole): agent is ModelledAgent =>
   agent !== 'verify' && !(JOB_AGENTS as readonly AgentRole[]).includes(agent);
 
-export const modelFor = (config: FactoryConfig, agent: AgentRole, downshift: boolean): string => {
+// Triage slices a project instead when its issue is titled `Slice <project>` (plugin/agents/triage.md).
+export const isSlicingTitle = (title: string | null | undefined): boolean => /^slice\s+\S/i.test(title?.trim() ?? '');
+
+// Slicing falls back to the triage model when a project sets none for it.
+export const modelFor = (
+  config: FactoryConfig,
+  agent: AgentRole,
+  downshift: boolean,
+  title?: string | null
+): string => {
   if (!isModelled(agent)) {
     throw new Error(`factory.yaml has no model for the ${agent} stage`);
   }
-  return (downshift ? config.usage.downshift[agent] : undefined) ?? config.models[agent];
+  const key = agent === 'triage' && isSlicingTitle(title) ? 'slicing' : agent;
+  return (downshift ? config.usage.downshift[key] : undefined) ?? config.models[key] ?? config.models[agent];
 };
 
 type StatusKey = keyof FactoryConfig['linear']['statuses'];

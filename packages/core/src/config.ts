@@ -37,7 +37,7 @@ export const usagePolicySchema = z.object({
     pauseAt: fraction
   }),
   staleAfterMinutes: z.int().min(1),
-  downshift: z.partialRecord(z.enum(['triage', 'spec', 'implement', 'review']), z.string().min(1))
+  downshift: z.partialRecord(z.enum(['triage', 'slicing', 'spec', 'implement', 'review']), z.string().min(1))
 });
 
 export const factoryConfigSchema = z.object({
@@ -81,7 +81,9 @@ export const factoryConfigSchema = z.object({
     triage: z.string().min(1),
     spec: z.string().min(1),
     implement: z.string().min(1),
-    review: z.string().min(1)
+    review: z.string().min(1),
+    // Triage when it slices a project into issues; the triage model when unset.
+    slicing: z.string().min(1).optional()
   }),
   review: z.object({ maxRounds: z.int().min(0).max(5) }),
   concurrency: z.object({ maxRuns: z.int().min(1) }),

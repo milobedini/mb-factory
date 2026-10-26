@@ -395,7 +395,7 @@ const startRun = async (
     log('warn', 'run not dispatched: work item has no agent session', { runId: run.id });
     return 'skipped';
   }
-  const model = modelFor(project, run.agent, downshift);
+  const model = modelFor(project, run.agent, downshift, workItem.title);
   // Claim first: the stage workflow's start call only accepts a dispatched run.
   if (!(await claimRun(project, run, model, now))) {
     return 'not_claimed';
@@ -705,7 +705,7 @@ const createRun = async (
       workItemId: workItem.id,
       parentRunId,
       agent: request.agent,
-      model: modelFor(project, request.agent, false),
+      model: modelFor(project, request.agent, false, workItem.title),
       trigger: request.trigger,
       priority: request.priority,
       prompt: request.prompt,

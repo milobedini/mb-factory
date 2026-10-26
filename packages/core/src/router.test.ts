@@ -302,6 +302,18 @@ describe('modelFor', () => {
   it('keeps the stage model when throttled and no downshift is set for it', () => {
     expect(modelFor(config, 'implement', true)).toBe('opus');
   });
+
+  it('uses the slicing model for a triage run on a Slice issue, without the triage downshift', () => {
+    expect(modelFor(config, 'triage', false, 'Slice Real recipes')).toBe('opus');
+    expect(modelFor(config, 'triage', true, 'Slice Real recipes')).toBe('opus');
+    expect(modelFor(config, 'triage', false, 'Slicer for onions')).toBe('sonnet');
+    expect(modelFor(config, 'spec', false, 'Slice Real recipes')).toBe('opus');
+  });
+
+  it('falls back to the triage model for slicing when none is set', () => {
+    const { slicing: _, ...models } = config.models;
+    expect(modelFor({ ...config, models }, 'triage', false, 'Slice Real recipes')).toBe('sonnet');
+  });
 });
 
 describe('Linear statuses', () => {

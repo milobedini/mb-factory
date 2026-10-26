@@ -30,9 +30,10 @@ slack:
 
 models:
   triage: sonnet
+  slicing: opus
   spec: opus
   implement: opus
-  review: sonnet
+  review: opus
 
 review:
   maxRounds: 2
