@@ -62,7 +62,7 @@ Your last act is to write JSON to `FACTORY_REPORT_PATH`. The router reads only t
 }
 ```
 
-- `outcome`: `done`, `needs_input` (you posted an elicitation and the stage can't continue without the answer), `blocked` (something outside the factory must change first; say what), `failed` (the stage couldn't finish; say why), `declined` (the work shouldn't be done, with the reason), or `stopped`.
+- `outcome`: `done`, `needs_input` (you posted an elicitation and the stage can't continue without the answer), `blocked` (something outside the factory must change first: say what, where, and that a reply in the thread starts you again; never a question), `failed` (the stage couldn't finish; say why), `declined` (the work shouldn't be done, with the reason), or `stopped`.
 - `next`: the stage you recommend after this one, or `human`. The router may disagree.
 - `findings`: review runs only (see the `review` agent).
 - `guards`: implement runs only. Each guard against a class of problem that didn't fit in the PR, as `{ "title": "Lint rule against unscoped recipe queries", "problem": "the class, with the instance that showed it", "guard": "what to build and where" }`. The console files each in the team's Triage inbox; at most five a run.

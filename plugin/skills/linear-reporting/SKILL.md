@@ -54,6 +54,7 @@ Don't post questions yourself. Put them in the stage report's `questions` and re
 ```
 
 - Ask only what the issue, the code and earlier stage briefs can't answer. One round; a second only for questions the answers created.
+- A question is for a decision. When a person has to change something before you can go on (a setting, a permission, a secret, an account), don't ask it, since answering in Slack changes nothing: report `blocked` and say in `summary` exactly what to change, where, and that a reply in the thread starts you again. A decision that hangs on the same change goes in the summary too, with your suggestion, so the reply can carry it.
 - `prompt` is the question itself, one sentence. `why` is the context and the trade-off, in one or two sentences, shown smaller under it (at most 600 characters).
 - `options` are two to four distinct labels, each a few words of at most 30 characters, because Slack buttons cut anything longer (80 is the hard limit). Put the detail in `why`, not in the labels. `suggested` is the label you'd pick.
 - `topic` names the decision in a few words (at most 60 characters): each question lists the ones still to come as topic and suggestion, so the human can take the rest of your suggestions knowingly.

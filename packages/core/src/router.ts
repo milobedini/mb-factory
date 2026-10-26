@@ -625,6 +625,9 @@ const OUTCOME_COPY: Record<RunOutcome, string> = {
 
 // A run that asked questions points at them instead of repeating its summary, which only says it has questions; a spec
 // waiting for approval points at the approval message.
+// A blocked run waits on a person changing something; their reply is what starts it again.
+const BLOCKED_NEXT = 'Reply here once that’s done and I’ll carry on.';
+
 export const slackFinishedText = (
   run: FinishedRun & { prUrl: string | null; actionsRunUrl: string | null },
   { questions = 0, specReview = false }: { questions?: number; specReview?: boolean } = {}
@@ -646,6 +649,7 @@ export const slackFinishedText = (
   return [
     `The ${run.agent} run ${verdict}.`,
     run.summary && questions === 0 ? escapeSlack(run.summary) : undefined,
+    run.status === 'finished' && run.outcome === 'blocked' ? BLOCKED_NEXT : undefined,
     links.length > 0 ? links.join(' · ') : undefined
   ]
     .filter((part) => part !== undefined)

@@ -742,6 +742,21 @@ describe('Slack text', () => {
     );
   });
 
+  it('says a reply starts a blocked run again', () => {
+    expect(
+      slackFinishedText({
+        agent: 'implement',
+        status: 'finished',
+        outcome: 'blocked',
+        summary: 'The app needs the Workflows permission.',
+        prUrl: null,
+        actionsRunUrl: null
+      })
+    ).toBe(
+      'The implement run is blocked. The app needs the Workflows permission. Reply here once that’s done and I’ll carry on.'
+    );
+  });
+
   it('says a limit-hit run will resume', () => {
     expect(
       slackFinishedText({
