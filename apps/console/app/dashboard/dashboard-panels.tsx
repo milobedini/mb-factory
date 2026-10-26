@@ -21,7 +21,8 @@ const dollars = (usd: number | null): string => (usd === null ? '–' : `$${usd.
 
 const compact = new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 });
 
-const tokens = (count: number | null): string => (count === null ? '–' : compact.format(count));
+// British English's compact form writes millions as "m", which reads like minutes beside the run times.
+const tokens = (count: number | null): string => (count === null ? '–' : compact.format(count).toUpperCase());
 
 const time = (ms: number | null): string => (ms === null ? '–' : formatRunTime(ms));
 
