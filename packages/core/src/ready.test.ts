@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CandidateIssue } from './ready';
-import { readyLine, readyList } from './ready';
+import { readyList, unblockedBy } from './ready';
 
 const platform = { name: 'Platform', sortOrder: -5811, statusType: 'backlog' };
 const recipes = { name: 'Real recipes', sortOrder: -5353, statusType: 'started' };
 
 const issue = (identifier: string, overrides: Partial<CandidateIssue> = {}): CandidateIssue => ({
+  id: `id-${identifier}`,
   identifier,
   title: `Issue ${identifier}`,
   url: `https://linear.app/tastebook/issue/${identifier}`,
@@ -75,15 +76,26 @@ describe('readyList', () => {
   });
 });
 
-describe('readyLine', () => {
-  it('says nothing when nothing is ready', () => {
-    expect(readyLine({ ready: [], yours: [] }, 'https://console.example')).toBeUndefined();
-  });
-
-  it('links the first five with their sizes and counts the rest', () => {
-    const list = readyList(Array.from({ length: 7 }, (_, index) => issue(`TAS-${index + 1}`, { estimate: 1 })));
-    expect(readyLine(list, 'https://console.example')).toBe(
-      '*Ready to delegate:* <https://linear.app/tastebook/issue/TAS-1|TAS-1> (XS), <https://linear.app/tastebook/issue/TAS-2|TAS-2> (XS), <https://linear.app/tastebook/issue/TAS-3|TAS-3> (XS), <https://linear.app/tastebook/issue/TAS-4|TAS-4> (XS), <https://linear.app/tastebook/issue/TAS-5|TAS-5> (XS), and 2 more. <https://console.example/inbox|Inbox>'
-    );
+describe('unblockedBy', () => {
+  it('names the ready issues a finished issue was blocking, not those still waiting on another', () => {
+    const list = readyList([
+      issue('TAS-25', { blockers: [{ identifier: 'TAS-24', finished: true }] }),
+      issue('TAS-26', {
+        blockers: [
+          { identifier: 'TAS-24', finished: true },
+          { identifier: 'TAS-28', finished: true }
+        ]
+      }),
+      issue('TAS-29', {
+        blockers: [
+          { identifier: 'TAS-24', finished: true },
+          { identifier: 'TAS-23', finished: false }
+        ]
+      }),
+      issue('TAS-30'),
+      issue('TAS-31', { blockers: [{ identifier: 'TAS-24', finished: true }], assignee: 'Milo Bedini' })
+    ]);
+    expect(identifiers(unblockedBy(list, 'TAS-24'))).toEqual(['TAS-25', 'TAS-26']);
+    expect(unblockedBy(list, 'TAS-99')).toEqual([]);
   });
 });

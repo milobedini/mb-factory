@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { FactoryConfig } from './config';
 import type { AskedQuestion, PositionedQuestion } from './questions';
 import { FOR_ALL, FOR_THE_REST, laterThan, RECOMMENDED, topicOf } from './questions';
+import type { ReadyIssue } from './ready';
 import type { AgentRole } from './stages';
 
 // Block Kit is plain JSON; the console only passes these through to Slack.
@@ -26,10 +27,20 @@ const section = (text: string): SlackBlock => ({ type: 'section', text: { type: 
 
 const context = (text: string): SlackBlock => ({ type: 'context', elements: [{ type: 'mrkdwn', text }] });
 
-// What a button sends back: the question or work item it belongs to, and the reply it stands for.
+// A ready message lists at most this many issues; the Inbox has the rest.
+export const MAX_READY_ROWS = 10;
+
+// What a button sends back: the question or work item it belongs to and the reply it stands for, or the ready issues
+// it delegates.
 const buttonValueSchema = z.union([
   z.object({ q: z.uuid(), a: z.string().min(1) }),
-  z.object({ w: z.uuid(), a: z.string().min(1) })
+  z.object({ w: z.uuid(), a: z.string().min(1) }),
+  z.object({
+    d: z
+      .array(z.string().regex(/^[A-Z][A-Z0-9]*-\d+$/))
+      .min(1)
+      .max(MAX_READY_ROWS)
+  })
 ]);
 
 type ButtonValue = z.infer<typeof buttonValueSchema>;
@@ -256,17 +267,30 @@ const actionPayloadSchema = z.looseObject({
   type: z.literal('block_actions'),
   user: z.looseObject({ id: z.string().min(1) }),
   channel: z.looseObject({ id: z.string().min(1) }).nullish(),
+  message: z
+    .looseObject({
+      ts: z.string().min(1),
+      text: z.string().nullish(),
+      blocks: z.array(z.record(z.string(), z.unknown())).nullish()
+    })
+    .nullish(),
   response_url: z.url({ protocol: /^https$/ }),
   actions: z.array(z.looseObject({ value: z.string().nullish(), action_ts: z.string().min(1) })).min(1)
 });
+
+// The message a tapped button sits in, as Slack sends it back, so it can be redrawn without being rebuilt.
+export type TappedMessage = { ts: string; text: string; blocks: SlackBlock[] };
 
 export type SlackAction = {
   userId: string;
   channelId: string | null;
   responseUrl: string;
   actionTs: string;
-  body: string;
-} & ({ kind: 'question'; questionId: string } | { kind: 'spec_gate'; workItemId: string });
+} & (
+  | { kind: 'question'; questionId: string; body: string }
+  | { kind: 'spec_gate'; workItemId: string; body: string }
+  | { kind: 'delegate'; identifiers: string[]; message: TappedMessage | null }
+);
 
 const parseValue = (value: string | null | undefined): ButtonValue | undefined => {
   try {
@@ -288,12 +312,20 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
     userId: parsed.user.id,
     channelId: parsed.channel?.id ?? null,
     responseUrl: parsed.response_url,
-    actionTs: action.action_ts,
-    body: value.a
+    actionTs: action.action_ts
   };
+  if ('d' in value) {
+    const { message } = parsed;
+    return {
+      ...base,
+      kind: 'delegate',
+      identifiers: value.d,
+      message: message ? { ts: message.ts, text: message.text ?? '', blocks: message.blocks ?? [] } : null
+    };
+  }
   return 'q' in value
-    ? { ...base, kind: 'question', questionId: value.q }
-    : { ...base, kind: 'spec_gate', workItemId: value.w };
+    ? { ...base, kind: 'question', questionId: value.q, body: value.a }
+    : { ...base, kind: 'spec_gate', workItemId: value.w, body: value.a };
 };
 
 const mentionEventSchema = z.looseObject({
@@ -359,3 +391,101 @@ export const wrongChannelText = (channels: string[]): string =>
 // Slack's permalink shape for a message: the `ts` without its dot, after a `p`. A thread's link is its first message's.
 export const slackMessageUrl = (workspaceUrl: string, channel: string, ts: string): string =>
   `${workspaceUrl.replace(/\/$/, '')}/archives/${channel}/p${ts.replace('.', '')}`;
+
+const READY_ROW = 'ready:';
+const READY_ALL = 'ready_all';
+
+const readyRowText = ({ url, identifier, title, project, size }: ReadyIssue): string =>
+  `<${url}|${escapeSlack(identifier)}> ${escapeSlack(title)} · ${escapeSlack(project)} · ${size}`;
+
+const delegateAllBlock = (identifiers: string[]): SlackBlock => ({
+  type: 'actions',
+  block_id: READY_ALL,
+  elements: [button('delegate_all', `Delegate all ${identifiers.length}`, { d: identifiers }, true)]
+});
+
+export const READY_HEADING = '*Ready to delegate*';
+
+// The heading when an issue finishing has made others ready.
+export const unblockedHeading = (identifier: string, canceled: boolean, count: number): string =>
+  `*${escapeSlack(identifier)} ${canceled ? 'was canceled' : 'is done'}*, so ${count === 1 ? 'this is' : 'these are'} ready to delegate:`;
+
+// Ready issues, each with a button that delegates it as delegating in Linear would, and one for all of them.
+export const slackReadyMessage = (
+  heading: string,
+  issues: ReadyIssue[],
+  { alias, consoleUrl }: { alias: string; consoleUrl: string }
+): SlackMessage => {
+  const shown = issues.slice(0, MAX_READY_ROWS);
+  const more = issues.length - shown.length;
+  const inbox = `<${consoleUrl}/inbox|Inbox>`;
+  return {
+    text: `Ready to delegate: ${shown.map(({ identifier }) => identifier).join(', ')}`,
+    blocks: [
+      section(heading),
+      ...shown.map((issue) => ({
+        type: 'section',
+        block_id: `${READY_ROW}${issue.identifier}`,
+        text: { type: 'mrkdwn', text: readyRowText(issue) },
+        accessory: button('delegate', 'Delegate', { d: [issue.identifier] })
+      })),
+      ...(shown.length > 1 ? [delegateAllBlock(shown.map(({ identifier }) => identifier))] : []),
+      context(
+        `Delegating assigns the issue to you and starts it, like delegating to @${escapeSlack(alias)} in Linear. ${
+          more > 0 ? `${more} more on the ${inbox}.` : inbox
+        }`
+      )
+    ]
+  };
+};
+
+export type ReadyOutcome = { identifier: string } & (
+  | { kind: 'delegated'; by: string; at: Date }
+  | { kind: 'not_ready' }
+);
+
+const clockTime = (at: Date, timeZone: string): string =>
+  new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
+
+const settledRowText = (text: string, outcome: ReadyOutcome, timeZone: string): string =>
+  outcome.kind === 'delegated'
+    ? `✓ ${text} · delegated by ${escapeSlack(outcome.by)}, ${clockTime(outcome.at, timeZone)}`
+    : `~${text}~ · no longer ready`;
+
+const openRow = (block: SlackBlock): string | undefined =>
+  typeof block.block_id === 'string' && block.block_id.startsWith(READY_ROW) && block.accessory !== undefined
+    ? block.block_id.slice(READY_ROW.length)
+    : undefined;
+
+// A ready message redrawn from the blocks Slack sent back: settled rows lose their button and say what happened, and
+// "Delegate all" covers what's still open, or goes when one row or none is left.
+export const settleReadyMessage = (blocks: SlackBlock[], outcomes: ReadyOutcome[], timeZone: string): SlackBlock[] => {
+  const rows = blocks.map((block) => {
+    const identifier = openRow(block);
+    const outcome = outcomes.find((candidate) => candidate.identifier === identifier);
+    if (!identifier || !outcome) {
+      return block;
+    }
+    const { accessory: _settled, ...row } = block;
+    const text = (block.text as { text?: unknown } | undefined)?.text;
+    return {
+      ...row,
+      text: { type: 'mrkdwn', text: settledRowText(typeof text === 'string' ? text : identifier, outcome, timeZone) }
+    };
+  });
+  const open = rows.flatMap((block) => openRow(block) ?? []);
+  return rows.flatMap((block) =>
+    block.block_id !== READY_ALL ? [block] : open.length > 1 ? [delegateAllBlock(open)] : []
+  );
+};
+
+const listed = (identifiers: string[]): string =>
+  identifiers.length > 1 ? `${identifiers.slice(0, -1).join(', ')} and ${identifiers.at(-1)}` : (identifiers[0] ?? '');
+
+export const notReadyText = (identifiers: string[]): string =>
+  `${listed(identifiers)} ${identifiers.length === 1 ? 'isn’t' : 'aren’t'} ready any more: delegated, assigned, closed or blocked since this message. The Inbox has the current list.`;
+
+export const delegateFailedText = (identifiers: string[], alias: string): string =>
+  `I couldn’t start ${listed(identifiers)}, so ${identifiers.length === 1 ? 'it’s' : 'they’re'} still listed. Try again, or delegate to @${alias} in Linear. The details are in the console log.`;
+
+export const READY_UNREADABLE = 'I couldn’t read Linear, so nothing was delegated. Try again in a minute.';

@@ -225,11 +225,17 @@ export const createSessionOnIssue = async (organizationId: string, issueId: stri
   return agentSessionCreateOnIssue.agentSession.id;
 };
 
-export const delegateIssue = async (organizationId: string, issueId: string, delegateId: string): Promise<void> => {
+// With an assignee, the issue becomes theirs too, as delegating it in Linear makes it.
+export const delegateIssue = async (
+  organizationId: string,
+  issueId: string,
+  delegateId: string,
+  assigneeId: string | null = null
+): Promise<void> => {
   await linearGraphql<{ issueUpdate: { success: boolean } }>(
     organizationId,
-    'mutation IssueDelegate($id: String!, $delegateId: String!) { issueUpdate(id: $id, input: { delegateId: $delegateId }) { success } }',
-    { id: issueId, delegateId }
+    'mutation IssueDelegate($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }',
+    { id: issueId, input: { delegateId, ...(assigneeId ? { assigneeId } : {}) } }
   );
 };
 

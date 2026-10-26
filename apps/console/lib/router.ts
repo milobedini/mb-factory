@@ -7,9 +7,12 @@ import type {
   GitHubEvent,
   GovernedDecision,
   Question,
+  ReadyIssue,
+  ReadyOutcome,
   RunRequest,
   RunStatus,
   SessionEvent,
+  SlackAction,
   SlackMessage,
   Stage,
   StopCause
@@ -31,6 +34,7 @@ import {
   decideCiFailure,
   decideConflict,
   decideIssueUpdate,
+  delegateFailedText,
   dependencyIssue,
   dependencyTakenText,
   emptyMentionText,
@@ -44,6 +48,7 @@ import {
   nextStepAfterRun,
   notAllowedText,
   notAllowedToStartText,
+  notReadyText,
   orderQueue,
   parseGitHubEvent,
   parseIssueUpdate,
@@ -55,12 +60,14 @@ import {
   QUESTION_GONE,
   questionElicitation,
   queuedThought,
+  READY_UNREADABLE,
   readBump,
   resumeRequestFor,
   reviewersFor,
   runRequestFor,
   SPEC_GATE_GONE,
   STOPPED_RESPONSE,
+  settleReadyMessage,
   shouldMoveIssue,
   shouldResume,
   slackFiledText,
@@ -79,6 +86,8 @@ import {
   startsReviewLoop,
   stoppedText,
   TERMINAL_STAGES,
+  unblockedBy,
+  unblockedHeading,
   wrongChannelText
 } from '@mb-factory/core';
 import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -104,6 +113,7 @@ import {
 import { log } from './log';
 import { currentPause } from './pause';
 import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
+import { loadReadyList, postReadyMessage } from './ready';
 import type { RunWithWorkItem } from './runs';
 import { findAnyRun, findRun } from './runs';
 import {
@@ -123,6 +133,8 @@ type Run = typeof runs.$inferSelect;
 type QuestionRow = typeof questions.$inferSelect;
 
 const ACTIVE_STATUSES: RunStatus[] = ['dispatched', 'running'];
+// Linear's state types for an issue that no longer blocks anything.
+const FINISHED_STATE_TYPES = ['completed', 'canceled'];
 const OPEN_STATUSES: RunStatus[] = ['queued', ...ACTIVE_STATUSES];
 
 // Drizzle wraps a failed query in "Failed query: …" and keeps what went wrong in `cause`.
@@ -1106,6 +1118,20 @@ export const handleSlackMessage = async (payload: unknown): Promise<void> => {
 
 // A top-level mention is a request: it's filed in Linear and worked on in the mention's thread. The work item exists,
 // with that thread, before the session opens, so every message about the work lands there.
+// The Linear member a Slack user is, matched by email, to own what they start from Slack.
+const linearUserFor = async (organizationId: string, userId: string, email: string | null): Promise<string | null> => {
+  const assigneeId = email
+    ? await findUserIdByEmail(organizationId, email).catch((error: unknown) => {
+        log('warn', 'linear user lookup failed', { user: userId, error: errorMessage(error) });
+        return null;
+      })
+    : null;
+  if (!assigneeId) {
+    log('info', 'slack requester has no linear user', { user: userId, hasEmail: email !== null });
+  }
+  return assigneeId;
+};
+
 export const handleSlackMention = async (payload: unknown): Promise<void> => {
   const mention = parseSlackMention(payload);
   if (!mention) {
@@ -1142,15 +1168,7 @@ export const handleSlackMention = async (payload: unknown): Promise<void> => {
 
   const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
   // Whoever asked owns the issue, as a person delegating in Linear would; the app is its delegate.
-  const assigneeId = email
-    ? await findUserIdByEmail(organizationId, email).catch((error: unknown) => {
-        log('warn', 'linear user lookup failed', { user: userId, error: errorMessage(error) });
-        return null;
-      })
-    : null;
-  if (!assigneeId) {
-    log('info', 'slack requester has no linear user', { user: userId, hasEmail: email !== null });
-  }
+  const assigneeId = await linearUserFor(organizationId, userId, email);
   const issue = await createIssue(organizationId, { teamKey: project.linear.teamKey, ...filing, assigneeId }).catch(
     (error: unknown) => {
       log('error', 'linear issue for a slack request failed', { project: project.name, error: errorMessage(error) });
@@ -1203,6 +1221,186 @@ export const handleSlackMention = async (payload: unknown): Promise<void> => {
   );
 };
 
+type Tapper = { name: string; assigneeId: string | null };
+
+// Claims a ready issue's work item for one tap, so a second tap (a row's button after "Delegate all", or a double tap)
+// can't open a second session while the first is starting: the tap's token goes in only if no one else's has since.
+// Linear's own `created` event for the session, and `startWork`, both take the work item from the token as usual.
+const claimReadyIssue = async (
+  project: FactoryConfig,
+  issue: ReadyIssue,
+  tapper: Tapper,
+  token: string
+): Promise<boolean> => {
+  const [existing] = await getDb()
+    .select({ id: workItems.id, agentSessionId: workItems.agentSessionId })
+    .from(workItems)
+    .where(eq(workItems.linearIssueId, issue.id))
+    .limit(1);
+  if (existing) {
+    const [open] = await getDb()
+      .select({ id: runs.id })
+      .from(runs)
+      .where(and(eq(runs.workItemId, existing.id), inArray(runs.status, OPEN_STATUSES)))
+      .limit(1);
+    if (open) {
+      return false;
+    }
+  }
+  const [claimed] = await getDb()
+    .insert(workItems)
+    .values({
+      project: project.name,
+      repository: repositoryOf(project),
+      linearOrganizationId: requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID'),
+      linearIssueId: issue.id,
+      issueIdentifier: issue.identifier,
+      issueUrl: issue.url,
+      title: issue.title,
+      origin: 'linear',
+      requester: tapper.name,
+      agentSessionId: token,
+      stage: 'researching'
+    })
+    .onConflictDoUpdate({
+      target: workItems.linearIssueId,
+      set: { agentSessionId: token, updatedAt: new Date() },
+      setWhere: sql`${workItems.agentSessionId} is not distinct from ${existing?.agentSessionId ?? null}`
+    })
+    .returning({ id: workItems.id });
+  return claimed !== undefined;
+};
+
+// Starts a ready issue the way a Slack request starts: the session opens, the work starts, then the issue is delegated
+// and assigned to whoever tapped, so Linear shows it as theirs.
+const delegateReadyIssue = async (
+  project: FactoryConfig,
+  issue: ReadyIssue,
+  tapper: Tapper,
+  token: string
+): Promise<'delegated' | 'not_ready' | 'failed'> => {
+  const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
+  try {
+    if (!(await claimReadyIssue(project, issue, tapper, token))) {
+      return 'not_ready';
+    }
+    const sessionId = await createSessionOnIssue(organizationId, issue.id);
+    await startWork(project, {
+      kind: 'created',
+      organizationId,
+      sessionId,
+      issue: {
+        id: issue.id,
+        identifier: issue.identifier,
+        url: issue.url,
+        title: issue.title,
+        teamKey: project.linear.teamKey
+      },
+      requester: tapper.name
+    });
+  } catch (error) {
+    log('error', 'starting a ready issue failed', { issue: issue.identifier, error: errorMessage(error) });
+    // A claim that never became a session would sit on the Inbox as work that never starts.
+    await attempt('ready claim release', { issue: issue.identifier }, () =>
+      getDb()
+        .delete(workItems)
+        .where(
+          and(
+            eq(workItems.linearIssueId, issue.id),
+            eq(workItems.agentSessionId, token),
+            sql`not exists (select 1 from ${runs} where ${runs.workItemId} = ${workItems.id})`
+          )
+        )
+    );
+    return 'failed';
+  }
+  await attempt('linear delegate', { issue: issue.identifier }, async () =>
+    delegateIssue(organizationId, issue.id, await findAppUserId(organizationId), tapper.assigneeId)
+  );
+  return 'delegated';
+};
+
+// A tap on a ready message's Delegate or "Delegate all". Each issue is checked against Linear again, since the message
+// may be hours old; the message is then redrawn with what happened, and the tapper told about anything left.
+const handleDelegateTap = async (
+  action: Extract<SlackAction, { kind: 'delegate' }>,
+  tellTapper: (text: string) => Promise<void>
+): Promise<void> => {
+  const project = action.channelId ? findProjectBySlackChannel(action.channelId) : undefined;
+  if (!project || !action.channelId) {
+    return;
+  }
+  if (!isAllowedSlackUser(project, action.userId)) {
+    log('info', 'slack delegate tap from someone not allowed', { project: project.name, user: action.userId });
+    await tellTapper(notAllowedToStartText(project));
+    return;
+  }
+  const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
+  const [list, { name, email }] = await Promise.all([
+    loadReadyList(project).catch((error: unknown) => {
+      log('warn', 'ready list failed', { project: project.name, error: errorMessage(error) });
+      return undefined;
+    }),
+    slackUser(action.userId).catch(() => ({ name: action.userId, email: null }))
+  ]);
+  if (!list) {
+    await tellTapper(READY_UNREADABLE);
+    return;
+  }
+  log('info', 'slack delegate tap', { user: action.userId, issues: action.identifiers });
+  const tapper = { name, assigneeId: await linearUserFor(organizationId, action.userId, email) };
+  const results = await Promise.all(
+    action.identifiers.map(async (identifier) => {
+      const issue = list.ready.find((candidate) => candidate.identifier === identifier);
+      const result = issue
+        ? await delegateReadyIssue(project, issue, tapper, `slack:${action.actionTs}`)
+        : ('not_ready' as const);
+      return { identifier, result };
+    })
+  );
+  const now = new Date();
+  const outcomes = results.flatMap(({ identifier, result }): ReadyOutcome[] =>
+    result === 'delegated'
+      ? [{ identifier, kind: 'delegated', by: name, at: now }]
+      : result === 'not_ready'
+        ? [{ identifier, kind: 'not_ready' }]
+        : []
+  );
+  const withResult = (wanted: string) =>
+    results.filter(({ result }) => result === wanted).map(({ identifier }) => identifier);
+  const [notReady, failed] = [withResult('not_ready'), withResult('failed')];
+  const { message, channelId } = action;
+  await Promise.all([
+    message && outcomes.length > 0
+      ? attempt('slack edit', { issues: action.identifiers }, () =>
+          updateSlackMessage({
+            channel: channelId,
+            ts: message.ts,
+            text: message.text,
+            blocks: settleReadyMessage(message.blocks, outcomes, project.timeZone)
+          })
+        )
+      : undefined,
+    notReady.length > 0 ? tellTapper(notReadyText(notReady)) : undefined,
+    failed.length > 0 ? tellTapper(delegateFailedText(failed, project.alias)) : undefined
+  ]);
+};
+
+// An issue finishing (done or canceled) can unblock others: they're posted with a Delegate button each, so the news
+// arrives when it happens rather than with the next morning's list.
+const announceUnblocked = async (teamKey: string, identifier: string, canceled: boolean): Promise<void> => {
+  const project = findProjectByTeamKey(teamKey);
+  if (!project?.slack) {
+    return;
+  }
+  const unblocked = unblockedBy(await loadReadyList(project), identifier);
+  if (unblocked.length === 0) {
+    return;
+  }
+  await postReadyMessage(project, unblockedHeading(identifier, canceled, unblocked.length), unblocked);
+  log('info', 'ready issues announced', { after: identifier, issues: unblocked.map((issue) => issue.identifier) });
+};
+
 const findQuestionWithWorkItem = async (questionId: string) => {
   const [found] = await getDb()
     .select({ question: questions, workItem: workItems })
@@ -1219,8 +1417,8 @@ const findWorkItemById = async (id: string): Promise<WorkItem | undefined> => {
   return workItem;
 };
 
-// A tap on a question's or the spec gate's button. Only the current question and a spec still in review take an
-// answer; the messages themselves are redrawn by the answer, wherever it came from.
+// A tap on a question's or the spec gate's button, or a ready message's. Only the current question and a spec still in
+// review take an answer; the messages themselves are redrawn by the answer, wherever it came from.
 export const handleSlackAction = async (payload: unknown): Promise<void> => {
   const action = parseSlackAction(payload);
   if (!action) {
@@ -1228,6 +1426,10 @@ export const handleSlackAction = async (payload: unknown): Promise<void> => {
   }
   const tellTapper = (text: string) =>
     attempt('slack action response', { user: action.userId }, () => respondToSlackAction(action.responseUrl, text));
+  if (action.kind === 'delegate') {
+    await handleDelegateTap(action, tellTapper);
+    return;
+  }
   const tapped = action.kind === 'question' ? await findQuestionWithWorkItem(action.questionId) : undefined;
   const workItem = action.kind === 'question' ? tapped?.workItem : await findWorkItemById(action.workItemId);
   const project = workItem && findProject(workItem.project);
@@ -1330,11 +1532,18 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   await releaseQueue();
 };
 
-// A human's status change or undelegation in Linear. Issues the factory never worked on have no work item.
+// A human's status change or undelegation in Linear, and what an issue finishing unblocks. Issues the factory never
+// worked on have no work item.
 export const handleIssueUpdate = async (payload: unknown): Promise<void> => {
   const update = parseIssueUpdate(payload);
   if (!update || update.organizationId !== requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID')) {
     return;
+  }
+  const { state, teamKey } = update;
+  if (state && teamKey && FINISHED_STATE_TYPES.includes(state.type)) {
+    await attempt('ready announcement', { issue: update.identifier }, () =>
+      announceUnblocked(teamKey, update.identifier, state.type === 'canceled')
+    );
   }
   const [workItem] = await getDb()
     .select()

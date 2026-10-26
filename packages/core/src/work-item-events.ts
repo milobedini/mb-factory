@@ -165,7 +165,8 @@ const issueUpdateSchema = z.looseObject({
     identifier: z.string().min(1),
     delegateId: z.string().nullish(),
     estimate: z.number().nullish(),
-    state: z.looseObject({ name: z.string().min(1), type: z.string().min(1) })
+    state: z.looseObject({ name: z.string().min(1), type: z.string().min(1) }),
+    team: z.looseObject({ key: z.string().min(1) }).nullish()
   }),
   updatedFrom: z.looseObject({ delegateId: z.string().nullish() }).nullish()
 });
@@ -176,6 +177,7 @@ export type IssueUpdate = {
   organizationId: string;
   issueId: string;
   identifier: string;
+  teamKey: string | null;
   actorId: string | null;
   // The issue's current estimate, whether or not this update changed it.
   estimate: number | null;
@@ -196,6 +198,7 @@ export const parseIssueUpdate = (payload: unknown): IssueUpdate | undefined => {
     organizationId,
     issueId: data.id,
     identifier: data.identifier,
+    teamKey: data.team?.key ?? null,
     actorId: actor?.id ?? null,
     estimate: data.estimate ?? null,
     ...(changed('stateId') ? { state: { name: data.state.name, type: data.state.type } } : {}),

@@ -2,6 +2,8 @@ import { sizeLabel } from './dashboard';
 
 // An issue in one of the team's projects that nobody has started, as Linear reports it.
 export type CandidateIssue = {
+  // Linear's ID, to delegate the issue by.
+  id: string;
   identifier: string;
   title: string;
   url: string;
@@ -16,12 +18,15 @@ export type CandidateIssue = {
 };
 
 export type ReadyIssue = {
+  id: string;
   identifier: string;
   title: string;
   url: string;
   project: string;
   size: string;
   assignee: string | null;
+  // Every issue that blocks this one, finished or not.
+  blockedBy: string[];
   // Blockers not yet finished; only an issue that's someone's can have any.
   waitingOn: string[];
 };
@@ -42,12 +47,14 @@ const byOrder = (a: CandidateIssue, b: CandidateIssue): number =>
   issueNumber(a.identifier) - issueNumber(b.identifier);
 
 const toReady = (issue: CandidateIssue): ReadyIssue => ({
+  id: issue.id,
   identifier: issue.identifier,
   title: issue.title,
   url: issue.url,
   project: issue.project.name,
   size: sizeLabel(issue.estimate),
   assignee: issue.assignee,
+  blockedBy: issue.blockers.map(({ identifier }) => identifier),
   waitingOn: issue.blockers.filter(({ finished }) => !finished).map(({ identifier }) => identifier)
 });
 
@@ -64,14 +71,6 @@ export const readyList = (issues: CandidateIssue[]): ReadyList => {
   };
 };
 
-const MAX_IN_LINE = 5;
-
-// The health message's closing line, or nothing when there's nothing to delegate.
-export const readyLine = ({ ready }: ReadyList, consoleUrl: string): string | undefined => {
-  if (ready.length === 0) {
-    return undefined;
-  }
-  const listed = ready.slice(0, MAX_IN_LINE).map(({ identifier, url, size }) => `<${url}|${identifier}> (${size})`);
-  const more = ready.length > MAX_IN_LINE ? `, and ${ready.length - MAX_IN_LINE} more` : '';
-  return `*Ready to delegate:* ${listed.join(', ')}${more}. <${consoleUrl}/inbox|Inbox>`;
-};
+// What an issue finishing has just made ready: the ready issues it was blocking.
+export const unblockedBy = ({ ready }: ReadyList, identifier: string): ReadyIssue[] =>
+  ready.filter(({ blockedBy }) => blockedBy.includes(identifier));

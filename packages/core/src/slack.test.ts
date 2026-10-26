@@ -4,21 +4,29 @@ import { describe, expect, it } from 'vitest';
 
 import { parseFactoryConfig } from './config';
 import type { AskedQuestion } from './questions';
+import type { ReadyIssue } from './ready';
+import type { SlackBlock } from './slack';
 import {
+  delegateFailedText,
   emptyMentionText,
   isAllowedSlackUser,
   linearSlackReplyText,
+  notReadyText,
   parseSlackAction,
   parseSlackMention,
   parseSlackThreadReply,
+  READY_HEADING,
+  settleReadyMessage,
   slackFiledText,
   slackIssueFromRequest,
   slackMessageUrl,
   slackPlainText,
   slackQuestionCard,
+  slackReadyMessage,
   slackSpecGateMessage,
   slackSpecGateSettled,
   specUrl,
+  unblockedHeading,
   wrongChannelText
 } from './slack';
 
@@ -269,7 +277,26 @@ describe('parseSlackAction', () => {
     });
   });
 
+  it('reads a delegate button with the message it sits in', () => {
+    const blocks = [{ type: 'section', block_id: 'ready:TAS-25' }];
+    expect(
+      parseSlackAction({
+        ...payload(JSON.stringify({ d: ['TAS-25', 'TAS-26'] })),
+        message: { ts: '1792947100.000300', text: 'Ready to delegate: TAS-25, TAS-26', blocks }
+      })
+    ).toMatchObject({
+      kind: 'delegate',
+      identifiers: ['TAS-25', 'TAS-26'],
+      message: { ts: '1792947100.000300', text: 'Ready to delegate: TAS-25, TAS-26', blocks }
+    });
+    expect(parseSlackAction(payload(JSON.stringify({ d: ['TAS-25'] })))).toMatchObject({
+      message: { ts: '1792947100.000300', text: '', blocks: [] }
+    });
+  });
+
   it('ignores buttons it didn’t make', () => {
+    expect(parseSlackAction(payload(JSON.stringify({ d: ['not an issue'] })))).toBeUndefined();
+    expect(parseSlackAction(payload(JSON.stringify({ d: [] })))).toBeUndefined();
     expect(parseSlackAction(payload('click_me_123'))).toBeUndefined();
     expect(parseSlackAction(payload(JSON.stringify({ q: 'not-a-uuid', a: 'x' })))).toBeUndefined();
     expect(parseSlackAction({ ...payload('{}'), type: 'view_submission' })).toBeUndefined();
@@ -347,6 +374,120 @@ describe('slackMessageUrl', () => {
   it('builds the permalink from the workspace address, channel and ts', () => {
     expect(slackMessageUrl('https://tastebook.slack.com/', 'C0CBSE2Q6FQ', '1793000285.963819')).toBe(
       'https://tastebook.slack.com/archives/C0CBSE2Q6FQ/p1793000285963819'
+    );
+  });
+});
+
+describe('ready messages', () => {
+  const ready = (identifier: string, title: string): ReadyIssue => ({
+    id: `id-${identifier}`,
+    identifier,
+    title,
+    url: `https://linear.app/tastebook/issue/${identifier}`,
+    project: 'Platform',
+    size: 'unsized',
+    assignee: null,
+    blockedBy: [],
+    waitingOn: []
+  });
+  const options = { alias: 'Tastebook', consoleUrl: 'https://console.example' };
+  const issues = [ready('TAS-25', 'Report errors to Sentry'), ready('TAS-26', 'Check <every> preview')];
+  const at = new Date('2026-10-26T16:42:10Z');
+
+  const buttonsOf = (blocks: SlackBlock[]) =>
+    blocks.flatMap((block) => [
+      ...(block.accessory ? [block.accessory] : []),
+      ...((block.elements as SlackBlock[] | undefined) ?? []).filter(({ type }) => type === 'button')
+    ]) as { action_id: string; text: { text: string }; value: string }[];
+
+  it('lists each issue with a Delegate button, and one for all of them', () => {
+    const message = slackReadyMessage(READY_HEADING, issues, options);
+    expect(message.text).toBe('Ready to delegate: TAS-25, TAS-26');
+    expect(message.blocks[2]).toMatchObject({
+      block_id: 'ready:TAS-26',
+      text: {
+        text: '<https://linear.app/tastebook/issue/TAS-26|TAS-26> Check &lt;every&gt; preview · Platform · unsized'
+      }
+    });
+    expect(buttonsOf(message.blocks).map(({ action_id, text, value }) => [action_id, text.text, value])).toEqual([
+      ['delegate', 'Delegate', '{"d":["TAS-25"]}'],
+      ['delegate', 'Delegate', '{"d":["TAS-26"]}'],
+      ['delegate_all', 'Delegate all 2', '{"d":["TAS-25","TAS-26"]}']
+    ]);
+    expect(message.blocks.at(-1)).toMatchObject({
+      elements: [
+        {
+          text: 'Delegating assigns the issue to you and starts it, like delegating to @Tastebook in Linear. <https://console.example/inbox|Inbox>'
+        }
+      ]
+    });
+  });
+
+  it('has no Delegate all for one issue, and sends the rest past ten to the Inbox', () => {
+    expect(buttonsOf(slackReadyMessage(READY_HEADING, issues.slice(0, 1), options).blocks)).toHaveLength(1);
+    const many = Array.from({ length: 12 }, (_, index) => ready(`TAS-${index + 30}`, 'An issue'));
+    const message = slackReadyMessage(READY_HEADING, many, options);
+    expect(buttonsOf(message.blocks)).toHaveLength(11);
+    expect(JSON.stringify(message.blocks.at(-1))).toContain('2 more on the <https://console.example/inbox|Inbox>.');
+  });
+
+  it('heads a message about what an issue finishing made ready', () => {
+    expect(unblockedHeading('TAS-24', false, 3)).toBe('*TAS-24 is done*, so these are ready to delegate:');
+    expect(unblockedHeading('TAS-24', true, 1)).toBe('*TAS-24 was canceled*, so this is ready to delegate:');
+  });
+
+  it('settles tapped rows, and keeps Delegate all for what is still open', () => {
+    const three = [...issues, ready('TAS-27', 'Back up the database')];
+    const { blocks } = slackReadyMessage(READY_HEADING, three, options);
+    const settled = settleReadyMessage(
+      blocks,
+      [
+        { identifier: 'TAS-25', kind: 'delegated', by: 'Milo', at },
+        { identifier: 'TAS-26', kind: 'not_ready' }
+      ],
+      'Europe/London'
+    );
+    expect(settled[1]).toEqual({
+      type: 'section',
+      block_id: 'ready:TAS-25',
+      text: {
+        type: 'mrkdwn',
+        text: '✓ <https://linear.app/tastebook/issue/TAS-25|TAS-25> Report errors to Sentry · Platform · unsized · delegated by Milo, 16:42'
+      }
+    });
+    expect(settled[2]).toMatchObject({ text: { text: expect.stringMatching(/^~.*~ · no longer ready$/) } });
+    expect(buttonsOf(settled).map(({ action_id }) => action_id)).toEqual(['delegate']);
+    expect(settled).toHaveLength(blocks.length - 1);
+  });
+
+  it('keeps Delegate all, narrowed, while two or more are open', () => {
+    const three = [...issues, ready('TAS-27', 'Back up the database')];
+    const settled = settleReadyMessage(
+      slackReadyMessage(READY_HEADING, three, options).blocks,
+      [{ identifier: 'TAS-26', kind: 'delegated', by: 'Milo', at }],
+      'Europe/London'
+    );
+    expect(buttonsOf(settled).at(-1)).toMatchObject({
+      text: { text: 'Delegate all 2' },
+      value: '{"d":["TAS-25","TAS-27"]}'
+    });
+  });
+
+  it('leaves a settled row as it is when it is tapped again', () => {
+    const once = settleReadyMessage(
+      slackReadyMessage(READY_HEADING, issues, options).blocks,
+      [{ identifier: 'TAS-25', kind: 'delegated', by: 'Milo', at }],
+      'Europe/London'
+    );
+    expect(settleReadyMessage(once, [{ identifier: 'TAS-25', kind: 'not_ready' }], 'Europe/London')).toEqual(once);
+  });
+
+  it('says which issues weren’t ready or couldn’t start', () => {
+    expect(notReadyText(['TAS-26'])).toBe(
+      'TAS-26 isn’t ready any more: delegated, assigned, closed or blocked since this message. The Inbox has the current list.'
+    );
+    expect(delegateFailedText(['TAS-25', 'TAS-26', 'TAS-27'], 'Tastebook')).toBe(
+      'I couldn’t start TAS-25, TAS-26 and TAS-27, so they’re still listed. Try again, or delegate to @Tastebook in Linear. The details are in the console log.'
     );
   });
 });

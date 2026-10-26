@@ -1,9 +1,10 @@
-import type { CandidateIssue, FactoryConfig, ReadyList } from '@mb-factory/core';
-import { readyList } from '@mb-factory/core';
+import type { CandidateIssue, FactoryConfig, ReadyIssue, ReadyList } from '@mb-factory/core';
+import { readyList, slackReadyMessage } from '@mb-factory/core';
 
 import { requireEnv } from './env';
 import { linearGraphql } from './linear-api';
 import { log } from './log';
+import { postSlackMessage } from './slack-api';
 
 type Relation = {
   type: string;
@@ -12,6 +13,7 @@ type Relation = {
 };
 
 type CandidateNode = {
+  id: string;
   identifier: string;
   title: string;
   url: string;
@@ -29,7 +31,7 @@ type CandidateNode = {
 const CANDIDATES_QUERY = `query ReadyCandidates($key: String!) {
   issues(first: 100, filter: { team: { key: { eq: $key } }, project: { null: false }, state: { type: { in: ["backlog", "unstarted"] } } }) {
     nodes {
-      identifier title url priority estimate
+      id identifier title url priority estimate
       assignee { name }
       delegate { id }
       project { name sortOrder status { type } }
@@ -54,6 +56,7 @@ const toCandidate = (node: CandidateNode): CandidateIssue[] =>
   node.project
     ? [
         {
+          id: node.id,
           identifier: node.identifier,
           title: node.title,
           url: node.url,
@@ -91,4 +94,17 @@ export const recentReadyList = async (project: FactoryConfig, now: Date): Promis
   const list = await loadReadyList(project);
   cached.set(project.name, { at: now.getTime(), list });
   return list;
+};
+
+// A top-level message in the project's channel listing ready issues with a Delegate button each.
+export const postReadyMessage = async (
+  project: FactoryConfig,
+  heading: string,
+  issues: ReadyIssue[]
+): Promise<void> => {
+  if (!project.slack || issues.length === 0) {
+    return;
+  }
+  const message = slackReadyMessage(heading, issues, { alias: project.alias, consoleUrl: requireEnv('CONSOLE_URL') });
+  await postSlackMessage({ channel: project.slack.channelId, ...message });
 };

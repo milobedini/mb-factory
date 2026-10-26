@@ -201,6 +201,7 @@ const issueUpdate = (overrides: {
     identifier: 'TAS-9',
     delegateId: APP_USER,
     state: { id: 'state-1', name: 'Awaiting Merge', type: 'started' },
+    team: { id: 'team-1', key: 'TAS', name: 'Tastebook' },
     ...overrides.data
   },
   updatedFrom: { updatedAt: '2026-10-25T08:55:48.485Z', ...overrides.updatedFrom }
@@ -212,6 +213,7 @@ describe('parseIssueUpdate', () => {
       organizationId: 'org-1',
       issueId: 'issue-1',
       identifier: 'TAS-9',
+      teamKey: 'TAS',
       actorId: HUMAN,
       estimate: null,
       state: { name: 'Awaiting Merge', type: 'started' }

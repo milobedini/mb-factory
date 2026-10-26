@@ -115,7 +115,7 @@ export {
   readQuestions
 } from './questions';
 export type { CandidateIssue, ReadyIssue, ReadyList } from './ready';
-export { readyLine, readyList } from './ready';
+export { readyList, unblockedBy } from './ready';
 export type {
   CiFailureAction,
   ClosingActivity,
@@ -192,29 +192,46 @@ export { isSignedWake, nextWake, signWake, WAKE_TOPIC, wakeBooking } from './sch
 export { decryptSecret, deriveKey, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
-export type { CardQuestion, SlackAction, SlackBlock, SlackMention, SlackMessage, SlackThreadReply } from './slack';
+export type {
+  CardQuestion,
+  ReadyOutcome,
+  SlackAction,
+  SlackBlock,
+  SlackMention,
+  SlackMessage,
+  SlackThreadReply,
+  TappedMessage
+} from './slack';
 export {
+  delegateFailedText,
   emptyMentionText,
   escapeSlack,
   isAllowedSlackUser,
   linearSlackReplyText,
+  MAX_READY_ROWS,
   notAllowedText,
   notAllowedToStartText,
+  notReadyText,
   parseSlackAction,
   parseSlackMention,
   parseSlackThreadReply,
   QUESTION_GONE,
+  READY_HEADING,
+  READY_UNREADABLE,
   SPEC_APPROVE,
   SPEC_CHANGE,
   SPEC_GATE_GONE,
+  settleReadyMessage,
   slackFiledText,
   slackIssueFromRequest,
   slackMessageUrl,
   slackPlainText,
   slackQuestionCard,
+  slackReadyMessage,
   slackSpecGateMessage,
   slackSpecGateSettled,
   specUrl,
+  unblockedHeading,
   wrongChannelText
 } from './slack';
 export type { AgentRole, JobAgent, Stage, StageContext, StageEvent, Transition } from './stages';
