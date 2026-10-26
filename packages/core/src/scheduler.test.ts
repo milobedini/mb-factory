@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { nextWake, wakeBooking } from './scheduler';
+import { isSignedWake, nextWake, signWake, wakeBooking } from './scheduler';
 
 const now = new Date('2026-10-26T12:00:00Z');
 const later = (minutes: number): Date => new Date(now.getTime() + minutes * 60_000);
@@ -33,5 +33,20 @@ describe('wakeBooking', () => {
 
   it('wakes straight away for a moment that has passed', () => {
     expect(wakeBooking(later(-5), now).delaySeconds).toBe(30);
+  });
+});
+
+describe('signWake', () => {
+  const key = new Uint8Array(32).fill(7);
+
+  it('accepts its own signature and nothing else', () => {
+    const message = signWake(later(30), key);
+    expect(message.at).toBe('2026-10-26T12:30:00.000Z');
+    expect(isSignedWake(message, key)).toBe(true);
+    expect(isSignedWake({ ...message, at: later(31).toISOString() }, key)).toBe(false);
+    expect(isSignedWake(message, new Uint8Array(32).fill(8))).toBe(false);
+    expect(isSignedWake({ at: message.at, signature: 'abc' }, key)).toBe(false);
+    expect(isSignedWake({ cause: 'hold' }, key)).toBe(false);
+    expect(isSignedWake(null, key)).toBe(false);
   });
 });

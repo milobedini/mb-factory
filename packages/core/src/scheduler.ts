@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 // The console wakes itself at the next moment anything is due, with a delayed message on this topic. `vercel.json`
 // in the console names it too.
 export const WAKE_TOPIC = 'scheduler-wake';
@@ -29,4 +31,29 @@ export const wakeBooking = (at: Date, now: Date): WakeBooking => {
     retentionSeconds: Math.min(delaySeconds + LINGER_SECONDS, MAX_DELAY_SECONDS),
     idempotencyKey: `wake:${at.toISOString()}`
   };
+};
+
+export type WakeMessage = { at: string; signature: string };
+
+const signatureOf = (at: string, key: Uint8Array): string =>
+  createHmac('sha256', key).update(`wake:${at}`).digest('hex');
+
+// A wake-up's message is signed, because a push delivery runs the handler on the request body before the queue
+// service is asked about it: an unsigned or forged one is ignored.
+export const signWake = (at: Date, key: Uint8Array): WakeMessage => {
+  const iso = at.toISOString();
+  return { at: iso, signature: signatureOf(iso, key) };
+};
+
+export const isSignedWake = (message: unknown, key: Uint8Array): message is WakeMessage => {
+  if (typeof message !== 'object' || message === null) {
+    return false;
+  }
+  const { at, signature } = message as Partial<Record<keyof WakeMessage, unknown>>;
+  if (typeof at !== 'string' || typeof signature !== 'string') {
+    return false;
+  }
+  const expected = Buffer.from(signatureOf(at, key), 'hex');
+  const given = Buffer.from(signature, 'hex');
+  return given.length === expected.length && timingSafeEqual(given, expected);
 };
