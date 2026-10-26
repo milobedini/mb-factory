@@ -150,6 +150,7 @@ export {
   conflictHandOverText,
   consecutiveCiFixes,
   consoleRerunRequest,
+  currentMergeable,
   decideCiFailure,
   decideConflict,
   findingsPrompt,

@@ -315,6 +315,9 @@ const checkConflict = async (project: FactoryConfig, workItem: WorkItem): Promis
     log('warn', 'merge state check failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
     return undefined;
   });
+  if (state?.mergeable === null) {
+    log('warn', 'merge state unknown', { issue: workItem.issueIdentifier, pr: prNumber });
+  }
   if (state?.mergeable !== false) {
     return 'clean';
   }

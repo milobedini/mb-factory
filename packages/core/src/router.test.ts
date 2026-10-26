@@ -11,6 +11,7 @@ import {
   conflictFixesSince,
   conflictHandOverText,
   consecutiveCiFixes,
+  currentMergeable,
   decideCiFailure,
   decideConflict,
   findingsPrompt,
@@ -830,6 +831,25 @@ describe('Slack text', () => {
     ).toBe(
       'The implement run hit the usage limit; it resumes once the window resets. <https://github.com/milobedini/tastebook/actions/runs/1|run log>'
     );
+  });
+});
+
+describe('currentMergeable', () => {
+  const heads = { baseHead: 'main2', prHead: 'pr1' };
+
+  it('trusts a true whose test merge joins both heads', () => {
+    expect(currentMergeable({ mergeable: true, testMergeParents: ['main2', 'pr1'], ...heads })).toBe(true);
+  });
+
+  it('treats a true from before either branch moved as not known yet', () => {
+    expect(currentMergeable({ mergeable: true, testMergeParents: ['main1', 'pr1'], ...heads })).toBeNull();
+    expect(currentMergeable({ mergeable: true, testMergeParents: ['main2', 'pr0'], ...heads })).toBeNull();
+    expect(currentMergeable({ mergeable: true, testMergeParents: undefined, ...heads })).toBeNull();
+  });
+
+  it('passes false and null through', () => {
+    expect(currentMergeable({ mergeable: false, testMergeParents: undefined, ...heads })).toBe(false);
+    expect(currentMergeable({ mergeable: null, testMergeParents: undefined, ...heads })).toBeNull();
   });
 });
 

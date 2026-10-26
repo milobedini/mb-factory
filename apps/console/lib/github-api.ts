@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { ChecksState, DispatchPayload } from '@mb-factory/core';
-import { checksState, DISPATCH_EVENT } from '@mb-factory/core';
+import { checksState, currentMergeable, DISPATCH_EVENT } from '@mb-factory/core';
 
 import { requireEnv } from './env';
 
@@ -89,15 +89,35 @@ const MERGEABLE_POLL_MS = 2000;
 
 export type MergeState = { mergeable: boolean | null; base: string };
 
-// Whether a PR merges into its base branch; `mergeable` is null while GitHub works it out. Asking starts that, so a
-// `null` is asked again a few times, a couple of seconds apart.
-export const pullMergeState = async (repository: string, prNumber: number, attempts = 5): Promise<MergeState> => {
-  const { mergeable, base } = await githubGet<{ mergeable: boolean | null; base: { ref: string } }>(
-    `/repos/${repository}/pulls/${prNumber}`,
-    'pull request'
-  );
+type Pull = {
+  mergeable: boolean | null;
+  merge_commit_sha: string | null;
+  base: { ref: string };
+  head: { sha: string };
+};
+
+// Whether a PR merges into its base branch; `mergeable` is null while GitHub works it out, and can be an answer for
+// the old heads just after a push (`currentMergeable`). Asking starts the work, so an unknown is asked again a few
+// times, a couple of seconds apart.
+export const pullMergeState = async (repository: string, prNumber: number, attempts = 10): Promise<MergeState> => {
+  const pull = await githubGet<Pull>(`/repos/${repository}/pulls/${prNumber}`, 'pull request');
+  const [branch, testMerge] = await Promise.all([
+    githubGet<{ commit: { sha: string } }>(
+      `/repos/${repository}/branches/${encodeURIComponent(pull.base.ref)}`,
+      'base branch'
+    ),
+    pull.mergeable && pull.merge_commit_sha
+      ? githubGet<{ parents: { sha: string }[] }>(`/repos/${repository}/commits/${pull.merge_commit_sha}`, 'test merge')
+      : undefined
+  ]);
+  const mergeable = currentMergeable({
+    mergeable: pull.mergeable,
+    testMergeParents: testMerge?.parents.map(({ sha }) => sha),
+    baseHead: branch.commit.sha,
+    prHead: pull.head.sha
+  });
   if (mergeable !== null || attempts <= 1) {
-    return { mergeable, base: base.ref };
+    return { mergeable, base: pull.base.ref };
   }
   await sleep(MERGEABLE_POLL_MS);
   return pullMergeState(repository, prNumber, attempts - 1);

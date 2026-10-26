@@ -379,6 +379,26 @@ export const decideConflict = (
   };
 };
 
+// GitHub works `mergeable` out lazily, so right after either branch moves it can still give the answer for the old
+// heads. A `true` holds only when its test merge commit joins the base's head and the PR's head; otherwise it's not
+// known yet. A `false` has no test merge to check, so it stands.
+export const currentMergeable = ({
+  mergeable,
+  testMergeParents,
+  baseHead,
+  prHead
+}: {
+  mergeable: boolean | null;
+  testMergeParents: string[] | undefined;
+  baseHead: string;
+  prHead: string;
+}): boolean | null => {
+  if (mergeable !== true) {
+    return mergeable;
+  }
+  return testMergeParents?.[0] === baseHead && testMergeParents[1] === prHead ? true : null;
+};
+
 export const conflictHandOverText = (branch: string, prUrl: string | null): string =>
   `The PR still conflicts with ${branch} after I tried to resolve it, so I’ve stopped there; it needs a look${prUrl ? `: ${prUrl}` : '.'}`;
 
