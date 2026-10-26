@@ -42,12 +42,14 @@ import {
   isAllowedSlackUser,
   isMajorBump,
   isOpenRun,
+  isReadyRequest,
   linearSlackReplyText,
   linearStatusFor,
   modelFor,
   nextStepAfterRun,
   notAllowedText,
   notAllowedToStartText,
+  nothingReadyText,
   notReadyText,
   orderQueue,
   parseGitHubEvent,
@@ -60,6 +62,7 @@ import {
   QUESTION_GONE,
   questionElicitation,
   queuedThought,
+  READY_HEADING,
   READY_UNREADABLE,
   readBump,
   resumeRequestFor,
@@ -1132,6 +1135,29 @@ const linearUserFor = async (organizationId: string, userId: string, email: stri
   return assigneeId;
 };
 
+// `@app ready`: the Ready list, in the mention's thread, with the same buttons as the posted ones.
+const answerReadyRequest = async (
+  project: FactoryConfig,
+  channel: string,
+  ts: string,
+  sayInThread: (text: string) => Promise<void>
+): Promise<void> => {
+  const list = await loadReadyList(project).catch((error: unknown) => {
+    log('warn', 'ready list failed', { project: project.name, error: errorMessage(error) });
+    return undefined;
+  });
+  log('info', 'slack ready request', { project: project.name, ready: list?.ready.length });
+  if (!list) {
+    await sayInThread('I couldn’t read Linear just now. Try again in a minute.');
+    return;
+  }
+  if (list.ready.length === 0) {
+    await sayInThread(nothingReadyText(requireEnv('CONSOLE_URL')));
+    return;
+  }
+  await attempt('slack ready message', { channel }, () => postReadyMessage(project, READY_HEADING, list.ready, ts));
+};
+
 export const handleSlackMention = async (payload: unknown): Promise<void> => {
   const mention = parseSlackMention(payload);
   if (!mention) {
@@ -1151,6 +1177,10 @@ export const handleSlackMention = async (payload: unknown): Promise<void> => {
   if (!isAllowedSlackUser(project, userId)) {
     log('info', 'slack request from someone not allowed', { project: project.name, user: userId });
     await tellThem(notAllowedToStartText(project));
+    return;
+  }
+  if (isReadyRequest(mention.request)) {
+    await answerReadyRequest(project, channel, ts, sayInThread);
     return;
   }
   const [{ name, email }, permalink] = await Promise.all([

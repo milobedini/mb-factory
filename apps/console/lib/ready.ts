@@ -96,15 +96,17 @@ export const recentReadyList = async (project: FactoryConfig, now: Date): Promis
   return list;
 };
 
-// A top-level message in the project's channel listing ready issues with a Delegate button each.
+// A message in the project's channel listing ready issues with a Delegate button each: top-level, or in the thread of
+// the mention that asked for it.
 export const postReadyMessage = async (
   project: FactoryConfig,
   heading: string,
-  issues: ReadyIssue[]
+  issues: ReadyIssue[],
+  threadTs?: string
 ): Promise<void> => {
   if (!project.slack || issues.length === 0) {
     return;
   }
   const message = slackReadyMessage(heading, issues, { alias: project.alias, consoleUrl: requireEnv('CONSOLE_URL') });
-  await postSlackMessage({ channel: project.slack.channelId, ...message });
+  await postSlackMessage({ channel: project.slack.channelId, threadTs, ...message });
 };

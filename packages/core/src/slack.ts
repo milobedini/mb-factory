@@ -378,7 +378,13 @@ export const slackFiledText = (issue: { identifier: string; url: string }): stri
   `Filed <${issue.url}|${escapeSlack(issue.identifier)}> and started on it. I’ll keep you posted in this thread.`;
 
 export const emptyMentionText = (config: FactoryConfig): string =>
-  `Mention me with what you’d like built, for example: @${config.alias} let visitors rate a recipe.`;
+  `Mention me with what you’d like built, for example: @${config.alias} let visitors rate a recipe. Or @${config.alias} ready to see what’s ready to delegate.`;
+
+// A mention asking what's ready rather than for new work: the one word, as typed, with any closing punctuation.
+export const isReadyRequest = (request: string): boolean => /^ready[?!.]*$/i.test(request.trim());
+
+export const nothingReadyText = (consoleUrl: string): string =>
+  `Nothing is ready to delegate. The <${consoleUrl}/inbox|Inbox> shows what’s waiting on what.`;
 
 export const notAllowedToStartText = (config: FactoryConfig): string =>
   `Only the people listed for ${config.alias} can start work here. Ask one of them, or file an issue in Linear.`;

@@ -10,7 +10,9 @@ import {
   delegateFailedText,
   emptyMentionText,
   isAllowedSlackUser,
+  isReadyRequest,
   linearSlackReplyText,
+  nothingReadyText,
   notReadyText,
   parseSlackAction,
   parseSlackMention,
@@ -480,6 +482,17 @@ describe('ready messages', () => {
       'Europe/London'
     );
     expect(settleReadyMessage(once, [{ identifier: 'TAS-25', kind: 'not_ready' }], 'Europe/London')).toEqual(once);
+  });
+
+  it('tells “ready” apart from a request for new work', () => {
+    expect(['ready', 'Ready?', ' READY! '].map(isReadyRequest)).toEqual([true, true, true]);
+    expect(['ready the recipe page for launch', 'already done', ''].map(isReadyRequest)).toEqual([false, false, false]);
+  });
+
+  it('says when nothing is ready', () => {
+    expect(nothingReadyText('https://console.example')).toBe(
+      'Nothing is ready to delegate. The <https://console.example/inbox|Inbox> shows what’s waiting on what.'
+    );
   });
 
   it('says which issues weren’t ready or couldn’t start', () => {
