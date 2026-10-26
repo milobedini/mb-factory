@@ -44,6 +44,7 @@ import {
   questionElicitation,
   queuedThought,
   resumeRequestFor,
+  reviewersFor,
   runRequestFor,
   SPEC_GATE_GONE,
   STOPPED_RESPONSE,
@@ -69,7 +70,7 @@ import { getDb } from '@/db/client';
 import { questions, queue, runs, workItems } from '@/db/schema';
 
 import { requireEnv } from './env';
-import { cancelActionsRun, sendStageDispatch } from './github-api';
+import { cancelActionsRun, requestReviewers, sendStageDispatch } from './github-api';
 import type { AgentActivityContent } from './linear-api';
 import { createAgentActivity, findAppUserId, hasClosingActivity, moveIssueToStatus } from './linear-api';
 import { log } from './log';
@@ -182,9 +183,22 @@ const holdRun = async (
   await Promise.all([postActivity(workItem, { type: 'thought', body: text }), replyInThread(project, workItem, text)]);
 };
 
+// The merge gate is the one that waits on GitHub, so its reviewers are asked there.
+const requestMergeReview = (project: FactoryConfig, workItem: WorkItem) => {
+  const reviewers = reviewersFor(project, workItem.repository);
+  const { prNumber } = workItem;
+  return prNumber && reviewers.length > 0
+    ? attempt('github review request', { issue: workItem.issueIdentifier, pr: prNumber }, async () => {
+        await requestReviewers(workItem.repository, prNumber, reviewers);
+        log('info', 'github review requested', { issue: workItem.issueIdentifier, pr: prNumber, reviewers });
+      })
+    : undefined;
+};
+
 // Records the stage and moves the Linear issue to its status; a failed move is logged, not fatal.
 const moveWorkItem = async (project: FactoryConfig, workItem: WorkItem, stage: Stage): Promise<void> => {
   await Promise.all([
+    stage === 'awaiting_merge' ? requestMergeReview(project, workItem) : undefined,
     getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id)),
     attempt('linear status', { issue: workItem.issueIdentifier }, async () => {
       const move = await moveIssueToStatus(

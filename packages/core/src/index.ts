@@ -1,7 +1,7 @@
 export type { Brief, DispatchPayload } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
 export type { FactoryConfig, UsagePolicy } from './config';
-export { factoryConfigSchema, parseFactoryConfig, usagePolicySchema } from './config';
+export { factoryConfigSchema, parseFactoryConfig, reviewersFor, usagePolicySchema } from './config';
 export type {
   Decision,
   DispatchRequest,

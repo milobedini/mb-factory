@@ -11,6 +11,8 @@ const isTimeZone = (zone: string): boolean => {
   }
 };
 
+const githubLogin = z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/);
+
 const notionId = z.string().regex(/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/);
 
 export const usagePolicySchema = z.object({
@@ -33,7 +35,16 @@ export const factoryConfigSchema = z.object({
   alias: z.string().min(1),
   // Times in messages to humans, such as when held work will be released.
   timeZone: z.string().refine(isTimeZone, { message: 'not an IANA time zone' }).default('UTC'),
-  repositories: z.array(z.object({ owner: z.string().min(1), name: z.string().min(1) })).min(1),
+  repositories: z
+    .array(
+      z.object({
+        owner: z.string().min(1),
+        name: z.string().min(1),
+        // GitHub logins asked to review a pull request when it reaches Awaiting Merge.
+        reviewers: z.array(githubLogin).default([])
+      })
+    )
+    .min(1),
   linear: z.object({
     teamKey: z.string().min(1),
     statuses: z.object({
@@ -84,3 +95,8 @@ export type FactoryConfig = z.infer<typeof factoryConfigSchema>;
 export type UsagePolicy = z.infer<typeof usagePolicySchema>;
 
 export const parseFactoryConfig = (source: string): FactoryConfig => factoryConfigSchema.parse(parse(source));
+
+// GitHub matches `owner/name` without regard to case.
+export const reviewersFor = ({ repositories }: FactoryConfig, repository: string): string[] =>
+  repositories.find(({ owner, name }) => `${owner}/${name}`.toLowerCase() === repository.toLowerCase())?.reviewers ??
+  [];

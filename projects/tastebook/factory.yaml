@@ -5,6 +5,8 @@ alias: Tastebook
 repositories:
   - owner: milobedini
     name: tastebook
+    reviewers:
+      - milobedini
 
 linear:
   teamKey: TAS

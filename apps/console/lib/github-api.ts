@@ -42,6 +42,14 @@ export const cancelActionsRun = async (repository: string, actionsRunId: string)
   }
 };
 
+// Asking someone already requested changes nothing, so a PR that comes back to the gate asks again harmlessly.
+export const requestReviewers = async (repository: string, prNumber: number, reviewers: string[]): Promise<void> => {
+  const response = await githubRequest(`/repos/${repository}/pulls/${prNumber}/requested_reviewers`, { reviewers });
+  if (!response.ok) {
+    throw await failure('review request', response);
+  }
+};
+
 // The Usage page's Refresh: one governor run that probes whatever the readings say.
 export const startGovernorProbe = async (): Promise<void> => {
   const response = await githubRequest(
