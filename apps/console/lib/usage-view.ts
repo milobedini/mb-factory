@@ -1,6 +1,7 @@
 import type { UsageSummary } from '@mb-factory/core';
 import { orderQueue, summariseUsage } from '@mb-factory/core';
 import { desc, eq, inArray, isNull } from 'drizzle-orm';
+import { connection } from 'next/server';
 
 import { getDb } from '@/db/client';
 import { queue, runs, usageReadings, workItems } from '@/db/schema';
@@ -41,8 +42,9 @@ export type UsageView = {
 // The Usage page's data. Checks the session first, so nothing here reaches a signed-out request.
 export const loadUsageView = async (): Promise<UsageView> => {
   const user = await requireConsoleUser();
-  // Before the reads, so the page shows what this released. Not in `after()`: a page's fetches are refused once it
-  // has rendered, and the database driver fetches.
+  // Before the reads, so the page shows what this released, and only on a real request: in a prerender (including
+  // the one a prefetch runs, which has the cookies) the database driver's fetches are cut off.
+  await connection();
   await releaseQueueOnActivity('usage page');
   const db = getDb();
   const [readings, pause, activeRuns, held, recent] = await Promise.all([

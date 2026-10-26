@@ -1,6 +1,7 @@
 import type { RunTotals } from '@mb-factory/core';
 import { canRerun, jobTitle, runTotals } from '@mb-factory/core';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { connection } from 'next/server';
 
 import { getDb } from '@/db/client';
 import { runs, workItems } from '@/db/schema';
@@ -48,8 +49,9 @@ const loadJobRuns = (): Promise<JobRuns[]> =>
 // The Runs page's data: the most recently active work items, each with its runs oldest first. Checks the session first.
 export const loadRunsView = async (): Promise<RunsView> => {
   const user = await requireConsoleUser();
-  // Before the reads, so the page shows what this released. Not in `after()`: a page's fetches are refused once it
-  // has rendered, and the database driver fetches.
+  // Before the reads, so the page shows what this released, and only on a real request: in a prerender (including
+  // the one a prefetch runs, which has the cookies) the database driver's fetches are cut off.
+  await connection();
   await releaseQueueOnActivity('runs page');
   const db = getDb();
   const [items, jobs] = await Promise.all([

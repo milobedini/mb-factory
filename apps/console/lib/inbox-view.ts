@@ -1,6 +1,7 @@
 import type { ChecksState, InboxEntry } from '@mb-factory/core';
 import { inboxEntry, OPEN_RUN_STATUSES, slackMessageUrl, specUrl, TERMINAL_STAGES } from '@mb-factory/core';
 import { asc, inArray, notInArray } from 'drizzle-orm';
+import { connection } from 'next/server';
 
 import { getDb } from '@/db/client';
 import { questions, runs, workItems } from '@/db/schema';
@@ -71,8 +72,9 @@ const checksFor = async (workItem: WorkItem): Promise<ChecksState | null> => {
 // The Inbox's data: every unsettled work item that's waiting on a person, oldest first. Checks the session first.
 export const loadInboxView = async (): Promise<InboxView> => {
   const user = await requireConsoleUser();
-  // Before the reads, so the page shows what this released. Not in `after()`: a page's fetches are refused once it
-  // has rendered, and the database driver fetches.
+  // Before the reads, so the page shows what this released, and only on a real request: in a prerender (including
+  // the one a prefetch runs, which has the cookies) the database driver's fetches are cut off.
+  await connection();
   await releaseQueueOnActivity('inbox page');
   const db = getDb();
   const [items, working, workspaceUrl] = await Promise.all([
