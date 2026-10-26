@@ -1,8 +1,8 @@
-import type { ChecksState, InboxEntry } from '@mb-factory/core';
+import type { ChecksState, InboxEntry, ReadyIssue } from '@mb-factory/core';
 import { formatDuration, formatReleaseAt } from '@mb-factory/core';
 
 import { AutoRefresh } from '@/app/auto-refresh';
-import type { InboxItem } from '@/lib/inbox-view';
+import type { InboxItem, ProjectReady } from '@/lib/inbox-view';
 import { loadInboxView } from '@/lib/inbox-view';
 import { consoleTimeZone } from '@/lib/projects';
 
@@ -77,6 +77,68 @@ const InboxRow = ({ item, now }: { item: InboxItem; now: Date }) => {
   );
 };
 
+const ReadyRow = ({ issue }: { issue: ReadyIssue }) => (
+  <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2">
+    <a href={issue.url} className="underline-offset-2 hover:underline">
+      <span className="font-medium">{issue.identifier}</span> {issue.title}
+    </a>
+    <span className="text-foreground/70 text-sm">
+      {issue.project} · {issue.size}
+      {issue.waitingOn.length > 0 ? ` · waiting on ${issue.waitingOn.join(', ')}` : ''}
+    </span>
+  </li>
+);
+
+const ReadyGroup = ({
+  title,
+  note,
+  empty,
+  issues
+}: {
+  title: string;
+  note: string;
+  empty: string;
+  issues: ReadyIssue[];
+}) => (
+  <section className="flex flex-col gap-1">
+    <h2 className="text-lg font-semibold">{title}</h2>
+    <p className="text-foreground/70 text-sm">{note}</p>
+    {issues.length === 0 ? (
+      <p className="text-foreground/70 py-2 text-sm">{empty}</p>
+    ) : (
+      <ol className="divide-foreground/15 flex flex-col divide-y">
+        {issues.map((issue) => (
+          <ReadyRow key={issue.identifier} issue={issue} />
+        ))}
+      </ol>
+    )}
+  </section>
+);
+
+// What to delegate next, from Linear: the factory never delegates by itself.
+const ReadySections = ({ ready }: { ready: ProjectReady[] }) => {
+  const unread = ready.filter(({ list }) => list === null).map(({ project }) => project);
+  const readyNow = ready.flatMap(({ list }) => list?.ready ?? []);
+  const yours = ready.flatMap(({ list }) => list?.yours ?? []);
+  return (
+    <div className="border-foreground/15 flex flex-col gap-6 border-t pt-6">
+      {unread.length > 0 && <p className="text-warn text-sm">Couldn’t read Linear for {unread.join(', ')}.</p>}
+      <ReadyGroup
+        title="Ready to delegate"
+        note="Unstarted issues in open projects, unassigned, with nothing left blocking them; in your project order, then by priority."
+        empty="Nothing is ready to delegate."
+        issues={readyNow}
+      />
+      <ReadyGroup
+        title="Yours"
+        note="Assigned to a person, so they’re never offered to the factory."
+        empty="Nothing is assigned to anyone."
+        issues={yours}
+      />
+    </div>
+  );
+};
+
 export const InboxList = async () => {
   const view = await loadInboxView();
   return (
@@ -93,6 +155,7 @@ export const InboxList = async () => {
           ))}
         </ol>
       )}
+      <ReadySections ready={view.ready} />
       <footer className="border-foreground/15 text-foreground/70 flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-sm">
         <span>Signed in as {view.user.login}</span>
         <form action="/api/auth/logout" method="post">

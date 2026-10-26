@@ -6,7 +6,8 @@ import {
   latestSlot,
   NEW_PROBLEM_DAYS,
   OPEN_RUN_STATUSES,
-  PROBLEM_RETENTION_DAYS
+  PROBLEM_RETENTION_DAYS,
+  readyLine
 } from '@mb-factory/core';
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 
@@ -16,6 +17,9 @@ import { consoleProblems, jobSlots, queue, runs, workItems } from '@/db/schema';
 import { requireEnv } from './env';
 import { postJobMessage } from './job-runs';
 import { log } from './log';
+import { loadReadyList } from './ready';
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -145,11 +149,16 @@ export const fireHealthCheck = async (project: FactoryConfig, now: Date): Promis
     jobs: [...project.jobs, slot],
     slots
   });
-  await postJobMessage(
-    project,
-    slot,
-    healthText(report, { now, since, timeZone: project.timeZone, consoleUrl: requireEnv('CONSOLE_URL') })
-  );
+  const consoleUrl = requireEnv('CONSOLE_URL');
+  // Only a hint for the day: a Linear outage mustn't hold up the health message.
+  const ready = await loadReadyList(project)
+    .then((list) => readyLine(list, consoleUrl))
+    .catch((error: unknown) => {
+      log('warn', 'ready list failed', { project: project.name, error: errorMessage(error) });
+      return undefined;
+    });
+  const text = healthText(report, { now, since, timeZone: project.timeZone, consoleUrl });
+  await postJobMessage(project, slot, ready ? `${text}\n${ready}` : text);
   await pruneProblems(now);
   log('info', 'health check posted', {
     project: project.name,

@@ -1,4 +1,4 @@
-import type { ChecksState, InboxEntry } from '@mb-factory/core';
+import type { ChecksState, InboxEntry, ReadyList } from '@mb-factory/core';
 import { inboxEntry, OPEN_RUN_STATUSES, slackMessageUrl, specUrl, TERMINAL_STAGES } from '@mb-factory/core';
 import { asc, inArray, notInArray } from 'drizzle-orm';
 import { connection } from 'next/server';
@@ -8,6 +8,8 @@ import { questions, runs, workItems } from '@/db/schema';
 
 import { branchChecks, pullMergeState } from './github-api';
 import { log } from './log';
+import { allProjects } from './projects';
+import { recentReadyList } from './ready';
 import { releaseQueueOnActivity } from './router';
 import type { ConsoleUser } from './session';
 import { requireConsoleUser } from './session';
@@ -28,7 +30,10 @@ export type InboxItem = {
   summary: string | null;
 };
 
-export type InboxView = { user: ConsoleUser; now: Date; items: InboxItem[]; working: boolean };
+// What each project could start next; `list` is null when Linear couldn't be read.
+export type ProjectReady = { project: string; list: ReadyList | null };
+
+export type InboxView = { user: ConsoleUser; now: Date; items: InboxItem[]; working: boolean; ready: ProjectReady[] };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -77,13 +82,23 @@ export const loadInboxView = async (): Promise<InboxView> => {
   await connection();
   await releaseQueueOnActivity('inbox page');
   const db = getDb();
-  const [items, working, workspaceUrl] = await Promise.all([
+  const now = new Date();
+  const [items, working, workspaceUrl, ready] = await Promise.all([
     db.select().from(workItems).where(notInArray(workItems.stage, TERMINAL_STAGES)),
     db.select({ id: runs.id }).from(runs).where(inArray(runs.status, OPEN_RUN_STATUSES)).limit(1),
     slackWorkspaceUrl().catch((error: unknown) => {
       log('warn', 'slack workspace url failed', { error: errorMessage(error) });
       return null;
-    })
+    }),
+    Promise.all(
+      allProjects().map(async (project) => ({
+        project: project.alias,
+        list: await recentReadyList(project, now).catch((error: unknown) => {
+          log('warn', 'ready list failed', { project: project.name, error: errorMessage(error) });
+          return null;
+        })
+      }))
+    )
   ]);
   const ids = items.map(({ id }) => id);
   const itemRuns =
@@ -132,6 +147,7 @@ export const loadInboxView = async (): Promise<InboxView> => {
     user,
     now: new Date(),
     items: withChecks.toSorted((a, b) => a.entry.since.getTime() - b.entry.since.getTime()),
-    working: working.length > 0
+    working: working.length > 0,
+    ready
   };
 };

@@ -114,6 +114,8 @@ export {
   questionElicitation,
   readQuestions
 } from './questions';
+export type { CandidateIssue, ReadyIssue, ReadyList } from './ready';
+export { readyLine, readyList } from './ready';
 export type {
   CiFailureAction,
   ClosingActivity,
