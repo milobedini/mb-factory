@@ -467,6 +467,10 @@ mb-factory/
 | 5   | **Scorers, self-improvement and benchmarks**: scorer task, self-improvement PRs on the plugin, a benchmark suite, weekly Notion report                                                                                                                                                             | At least one accepted self-improvement PR; one benchmarked config change                                                                 |
 | 6   | **Reusability**: `factory init` onboards a second project                                                                                                                                                                                                                                          | A second repo runs through the factory with config only                                                                                  |
 
+### Per project and shared (Phase 6)
+
+Raised by the user 2026-10-26: by Phase 6, everything that can be scoped by project should be. Already per project: `factory.yaml`, work items, runs, jobs and job slots, findings, Slack channel and thread, Linear team. Shared on purpose, because they guard the one Claude subscription: the usage governor and readings, the pause switch, the run cap. Shared today and to be split: `console_problems` (add `project`, from the log line's fields or the request's project, so each health message lists its own project's problems and keeps the unattributed ones in a factory-wide section), and the console pages' filters (Runs, Inbox, Usage by project).
+
 ### Questions one at a time (Phase 3)
 
 Agreed 2026-10-25, after TAS-11's spec interview arrived as five questions in one free-text message. A Linear elicitation carries one `select` at most, and free text always works alongside it. Today's stopgap (`linear-reporting`): each batch offers a single **Use these defaults** option.
