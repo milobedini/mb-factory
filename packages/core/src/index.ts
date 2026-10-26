@@ -44,6 +44,7 @@ export {
   jobCheckText,
   jobTitle,
   latestSlot,
+  neutraliseMarkdown,
   nextSlot,
   readJobReport,
   slotDay

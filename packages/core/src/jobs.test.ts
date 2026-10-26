@@ -7,6 +7,7 @@ import {
   isWorthFiling,
   jobCheckText,
   latestSlot,
+  neutraliseMarkdown,
   nextSlot,
   readJobReport,
   slotDay
@@ -196,6 +197,22 @@ describe('findingIssue', () => {
     const issue = findingIssue(long, context);
     expect(issue.title).toHaveLength(80);
     expect(issue.estimate).toBeNull();
+  });
+});
+
+describe('neutraliseMarkdown', () => {
+  it('drops images and shows where links go', () => {
+    expect(
+      neutraliseMarkdown(
+        'See ![pixel](https://evil.example/p.png) and [the docs](https://evil.example/login "Docs"). <img src="https://x/y">'
+      )
+    ).toBe('See [image removed: pixel] and the docs (https://evil.example/login). [image removed]');
+  });
+
+  it('leaves plain text and code alone', () => {
+    expect(neutraliseMarkdown('Use `cursor.execute(sql, [param])` in views.py:42.')).toBe(
+      'Use `cursor.execute(sql, [param])` in views.py:42.'
+    );
   });
 });
 
