@@ -458,14 +458,14 @@ describe('nextStepAfterRun', () => {
 
   it('hands the questions a stage reported to the router to ask', () => {
     expect(nextStepAfterRun(asking('triage'), loop)).toEqual({
-      questions: [{ prompt: 'Store images where?', topic: null, why: null, options: ['Blob', 'Disk'] }]
+      questions: [{ prompt: 'Store images where?', topic: null, why: null, options: ['Blob', 'Disk'], keep: null }]
     });
   });
 
   it('asks a spec’s questions while it waits in Spec Review', () => {
     expect(nextStepAfterRun(asking('spec'), { ...loop, hasPr: true })).toEqual({
       stage: 'spec_review',
-      questions: [{ prompt: 'Store images where?', topic: null, why: null, options: ['Blob', 'Disk'] }]
+      questions: [{ prompt: 'Store images where?', topic: null, why: null, options: ['Blob', 'Disk'], keep: null }]
     });
   });
 
@@ -527,6 +527,33 @@ describe('nextStepAfterRun', () => {
     expect(nextStepAfterRun(reviewed('human_decision_needed', [fixable]), loop)).toEqual(toHuman);
     expect(nextStepAfterRun(reviewed(undefined, [fixable]), loop)).toEqual(toHuman);
     expect(nextStepAfterRun(reviewed('revision_needed', [forHuman]), loop)).toEqual(toHuman);
+  });
+
+  it('asks the questions a review left for a human, but not while it sends the PR back for a revision', () => {
+    const question = {
+      prompt: 'Ship before the pages move?',
+      options: ['Hold the PR', 'Accept the interim look'],
+      suggested: 'Accept the interim look',
+      keep: 'Accept the interim look'
+    };
+    const report = (verdict: string, findings: unknown[]) => ({
+      ...reviewed(verdict, findings),
+      report: { ...reviewed(verdict, findings).report, questions: [question] }
+    });
+    expect(nextStepAfterRun(report('human_decision_needed', [forHuman]), loop)).toEqual({
+      stage: 'awaiting_merge',
+      reviewRounds: 1,
+      questions: [
+        {
+          prompt: 'Ship before the pages move?',
+          topic: null,
+          why: null,
+          options: ['Accept the interim look', 'Hold the PR'],
+          keep: 'Accept the interim look'
+        }
+      ]
+    });
+    expect(nextStepAfterRun(report('revision_needed', [fixable]), loop)).not.toHaveProperty('questions');
   });
 
   it('leaves a review that failed in In Review', () => {

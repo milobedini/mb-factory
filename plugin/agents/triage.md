@@ -28,6 +28,7 @@ The router acts on your report straight away: `done` with `next: spec` or `next:
    - XS or S: local and obvious, low risk. M: several files, bounded uncertainty. L or XL: cross-cutting, risky or a full feature.
    - **Ambiguity** exists only when a human must decide: more than one reasonable behaviour, or a requirement the issue leaves out. Technical uncertainty that research resolves isn't ambiguity. The default is none.
    - `next: spec` when there's ambiguity, or the size is L or larger. Otherwise `next: implement`. Past XL, recommend slicing the work into a project instead.
+   - A part of a split issue (a sub-issue whose description says its spec is approved) goes to `next: implement` whatever its size: its spec is the parent's `specs/<PARENT-ID>.md`, already approved. Size it, and name the spec and the part in the brief.
 5. **Record.** Set the issue's estimate to the size (the team uses Linear's T-shirt scale, whose API values are XS = 1, S = 2, M = 3, L = 5, XL = 8) and add the `factory` label. Post the `**Triage brief**` comment (see `linear-reporting`):
 
    ```markdown

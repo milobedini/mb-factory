@@ -97,7 +97,10 @@ export {
   GOVERNOR_WORKFLOW,
   STAGE_WORKFLOW
 } from './oidc';
+export type { SpecPart } from './parts';
+export { partDescription, partsFiledText, readSpecParts } from './parts';
 export type {
+  AfterAnswers,
   AnswerResult,
   AnswerSource,
   AnswerUpdate,
@@ -107,9 +110,11 @@ export type {
 } from './questions';
 export {
   ANSWER_SOURCES,
+  afterAnswers,
   answeredRequest,
   answersPrompt,
   applyAnswer,
+  keptText,
   MAX_QUESTIONS,
   questionElicitation,
   readQuestions

@@ -51,6 +51,14 @@ export const requestReviewers = async (repository: string, prNumber: number, rev
   }
 };
 
+// A comment on the PR's conversation, such as the decisions taken on review's questions.
+export const commentOnPullRequest = async (repository: string, prNumber: number, body: string): Promise<void> => {
+  const response = await githubRequest(`/repos/${repository}/issues/${prNumber}/comments`, { body });
+  if (!response.ok) {
+    throw await failure('PR comment', response);
+  }
+};
+
 // The Usage page's Refresh: one governor run that probes whatever the readings say.
 export const startGovernorProbe = async (): Promise<void> => {
   const response = await githubRequest(

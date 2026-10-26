@@ -325,6 +325,69 @@ export const fileTriageIssue = async (
   return issueCreate.issue;
 };
 
+type ParentForParts = {
+  issue: {
+    id: string;
+    identifier: string;
+    team: { id: string };
+    project: { id: string } | null;
+    children: { nodes: { id: string }[] };
+  } | null;
+  issueLabels: TeamForFiling['issueLabels'];
+};
+
+export type SubIssue = { title: string; description: string; estimate: number | null };
+
+// The later parts of a split issue, as its sub-issues in its project, each blocked by the part before (the first by
+// the issue itself), undelegated so each is delegated when it's ready. Nothing is filed when the issue already has
+// sub-issues, so approving the same spec twice files them once.
+export const fileSubIssues = async (
+  organizationId: string,
+  parentId: string,
+  parts: SubIssue[]
+): Promise<CreatedIssue[]> => {
+  const { issue: parent, issueLabels } = await linearGraphql<ParentForParts>(
+    organizationId,
+    'query ParentForParts($id: String!) { issue(id: $id) { id identifier team { id } project { id } children(first: 1) { nodes { id } } } issueLabels(filter: { name: { eqIgnoreCase: "factory" } }) { nodes { id name team { id } } } }',
+    { id: parentId }
+  );
+  if (!parent) {
+    throw new Error('Linear has no such parent issue');
+  }
+  if (parent.children.nodes.length > 0) {
+    return [];
+  }
+  const labelIds = await labelIdsFor(organizationId, parent.team.id, ['factory'], issueLabels.nodes);
+  // One after another: each part's blocker is the one filed before it.
+  return parts.reduce<Promise<CreatedIssue[]>>(async (filing, { title, description, estimate }) => {
+    const filed = await filing;
+    const { issueCreate } = await linearGraphql<{ issueCreate: { issue: CreatedIssue | null } }>(
+      organizationId,
+      'mutation SubIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { issue { id identifier url title } } }',
+      {
+        input: {
+          teamId: parent.team.id,
+          parentId: parent.id,
+          title,
+          description,
+          labelIds,
+          ...(parent.project ? { projectId: parent.project.id } : {}),
+          ...(estimate === null ? {} : { estimate })
+        }
+      }
+    );
+    if (!issueCreate.issue) {
+      throw new Error('Linear created no sub-issue');
+    }
+    await linearGraphql(
+      organizationId,
+      'mutation PartBlocked($input: IssueRelationCreateInput!) { issueRelationCreate(input: $input) { success } }',
+      { input: { issueId: filed.at(-1)?.id ?? parent.id, relatedIssueId: issueCreate.issue.id, type: 'blocks' } }
+    );
+    return [...filed, issueCreate.issue];
+  }, Promise.resolve([]));
+};
+
 // The issue's workflow state type (`triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled`), or null when
 // Linear can't find it.
 export const issueStateType = async (organizationId: string, issueId: string): Promise<string | null> => {

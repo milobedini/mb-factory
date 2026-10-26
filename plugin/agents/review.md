@@ -64,6 +64,15 @@ Each finding:
 
 `guard` is the rubric's guard for the finding's class; leave it out when there's none.
 
+For `human_decision_needed`, every finding with `needsHuman: true` also becomes a question in the report's `questions` (the format in `linear-reporting`), so the human settles it with a tap in Slack or Linear instead of reading the PR. The options are the ways to settle it, your suggestion first; `keep` names the option that leaves the PR as it is ("Accept the interim look", "Merge as it is"), and is left out when every option needs a change. If every answer is a `keep`, the PR waits for the human's merge; otherwise the implement stage gets the answers and the next round checks its change. Still post the finding on GitHub as above: the inline conversation is where the decision is resolved.
+
+```json
+{ "prompt": "Ship this before the pages move onto the components?", "topic": "Bare controls until part 3",
+  "why": "Preflight strips the native controls on four live pages until part 3 restyles them.",
+  "options": ["Accept the interim look", "Add an interim base style", "Hold the PR"],
+  "suggested": "Accept the interim look", "keep": "Accept the interim look" }
+```
+
 ## Exit
 
 - `done` with the verdict, and `next: implement` for `revision_needed` in round 1, `next: human` otherwise. From round 2 on, every finding left goes to the human (post it on GitHub, `needsHuman: true`): the router stops the loop there. Only findings with `needsHuman: false` go back to the implement stage, so mark each one honestly.

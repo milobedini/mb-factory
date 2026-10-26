@@ -98,7 +98,9 @@ export const slackQuestionCard = (agent: AgentRole, round: CardQuestion[], issue
     ? `Reply in this thread to answer in your own words. Also in <${issueUrl}|Linear>.`
     : closed
       ? 'The work moved on before these were all answered.'
-      : `The ${agent} run starts again with your answers.`;
+      : agent === 'review'
+        ? 'Answered: the build stage makes any change you asked for, or the PR stays as it is.'
+        : `The ${agent} run starts again with your answers.`;
   return {
     text: current ? `${title}: ${oneLine(current.prompt)}` : `${title}: ${status}`,
     blocks: [

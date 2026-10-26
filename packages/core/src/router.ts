@@ -455,6 +455,8 @@ const afterReview = (report: unknown, { reviewRounds, maxReviewRounds }: ReviewL
     { reviewRounds: round, maxReviewRounds }
   );
   const stage = moved.ok ? moved.stage : 'awaiting_merge';
+  // The findings left for a human come as questions, so they're answered with a tap like any other stage's.
+  const questions = stage === 'awaiting_merge' ? readQuestions(report) : [];
   return stage === 'building'
     ? {
         stage,
@@ -466,7 +468,7 @@ const afterReview = (report: unknown, { reviewRounds, maxReviewRounds }: ReviewL
           prompt: findingsPrompt(round, fixable)
         }
       }
-    : { stage, reviewRounds: round };
+    : { stage, reviewRounds: round, ...(questions.length > 0 ? { questions } : {}) };
 };
 
 // What follows a run that finished its stage. Anything else (a question, `next: human`, a failure) waits for a human;

@@ -66,4 +66,5 @@ Your last act is to write JSON to `FACTORY_REPORT_PATH`. The router reads only t
 - `next`: the stage you recommend after this one, or `human`. The router may disagree.
 - `findings`: review runs only (see the `review` agent).
 - `guards`: implement runs only. Each guard against a class of problem that didn't fit in the PR, as `{ "title": "Lint rule against unscoped recipe queries", "problem": "the class, with the instance that showed it", "guard": "what to build and where" }`. The console files each in the team's Triage inbox; at most five a run.
-- `questions`: with `needs_input`, the questions for the router to ask one at a time (see `linear-reporting`).
+- `questions`: with `needs_input`, the questions for the router to ask one at a time (see `linear-reporting`); a review also reports them with `human_decision_needed` (see the `review` agent).
+- `parts`: spec runs only, when the work is split: the parts after this issue's, in order (see the `spec` agent). The console files them as sub-issues when the spec is approved.

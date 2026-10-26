@@ -18,7 +18,7 @@ import type {
   StopCause
 } from '@mb-factory/core';
 import {
-  answeredRequest,
+  afterAnswers,
   applyAnswer,
   briefRound,
   buildDispatchPayload,
@@ -43,6 +43,7 @@ import {
   isMajorBump,
   isOpenRun,
   isReadyRequest,
+  keptText,
   linearSlackReplyText,
   linearStatusFor,
   modelFor,
@@ -58,6 +59,8 @@ import {
   parseSlackAction,
   parseSlackMention,
   parseSlackThreadReply,
+  partDescription,
+  partsFiledText,
   prClosedText,
   QUESTION_GONE,
   questionElicitation,
@@ -65,6 +68,8 @@ import {
   READY_HEADING,
   READY_UNREADABLE,
   readBump,
+  readQuestions,
+  readSpecParts,
   resumeRequestFor,
   reviewersFor,
   runRequestFor,
@@ -99,7 +104,14 @@ import { getDb } from '@/db/client';
 import { events, questions, queue, runs, stageChanges, workItems } from '@/db/schema';
 
 import { requireEnv } from './env';
-import { cancelActionsRun, pullMergeState, pullRequestInfo, requestReviewers, sendStageDispatch } from './github-api';
+import {
+  cancelActionsRun,
+  commentOnPullRequest,
+  pullMergeState,
+  pullRequestInfo,
+  requestReviewers,
+  sendStageDispatch
+} from './github-api';
 import { fileGuards } from './guards';
 import { findJob, jobBriefFor, jobTitleOf, postJobMessage } from './job-runs';
 import type { AgentActivityContent } from './linear-api';
@@ -108,6 +120,7 @@ import {
   createIssue,
   createSessionOnIssue,
   delegateIssue,
+  fileSubIssues,
   findAppUserId,
   findUserIdByEmail,
   hasClosingActivity,
@@ -671,7 +684,34 @@ const currentQuestion = (round: AskedQuestion[]): AskedQuestion | undefined =>
 
 // A reply while questions are open answers the next one; the last answer starts the stage that asked, once.
 // Returns false when nothing was open, so the reply goes the usual way.
-const answerQuestion = async (project: FactoryConfig, workItem: WorkItem, body: string): Promise<boolean> => {
+// Answers that keep a reviewed PR as it is start nothing: the decisions are recorded where people look, and the PR
+// waits at the merge gate.
+const keepReviewedPr = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  round: AskedQuestion[],
+  from: ReplyFrom
+): Promise<void> => {
+  const text = keptText(round, from.via === 'slack' ? `by ${from.name} in Slack` : 'in Linear');
+  const { prNumber } = workItem;
+  log('info', 'review decisions kept the PR', { issue: workItem.issueIdentifier });
+  await Promise.all([
+    replyInThread(project, workItem, `${text}\nIt’s ready for you to merge.`),
+    postActivity(workItem, { type: 'response', body: text }),
+    prNumber
+      ? attempt('pr comment', { issue: workItem.issueIdentifier }, () =>
+          commentOnPullRequest(workItem.repository, prNumber, text)
+        )
+      : undefined
+  ]);
+};
+
+const answerQuestion = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  body: string,
+  from: ReplyFrom
+): Promise<boolean> => {
   const open = await openRound(workItem);
   const result = open && applyAnswer(open.round, body);
   if (!open || !result) {
@@ -703,7 +743,14 @@ const answerQuestion = async (project: FactoryConfig, workItem: WorkItem, body: 
   }));
   log('info', 'questions answered', { issue: workItem.issueIdentifier, runId: open.runId, count: answered.length });
   await refreshQuestionCard(project, workItem, open.runId);
-  await dispatchRun(project, await createRun(project, workItem, answeredRequest(open.agent, answered), open.runId));
+  // A review's questions say which answer keeps the PR as it is, in the review's own report.
+  const [asking] = await getDb().select({ report: runs.report }).from(runs).where(eq(runs.id, open.runId)).limit(1);
+  const after = afterAnswers(open.agent, answered, readQuestions(asking?.report));
+  if (after.kind === 'keep') {
+    await keepReviewedPr(project, workItem, answered, from);
+    return true;
+  }
+  await dispatchRun(project, await createRun(project, workItem, after.request, open.runId));
   return true;
 };
 
@@ -1071,7 +1118,7 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
   await (from.via === 'linear'
     ? replyInThread(project, workItem, slackReplyText(body, workItem.issueUrl))
     : postActivity(workItem, { type: 'thought', body: linearSlackReplyText(from.name, body) }));
-  if (await answerQuestion(project, workItem, body)) {
+  if (await answerQuestion(project, workItem, body, from)) {
     return;
   }
   const request = runRequestFor({ kind: 'prompted', body }, workItem.stage);
@@ -1085,6 +1132,39 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
     return;
   }
   await dispatchRun(project, await createRun(project, workItem, request));
+  if (request.trigger === 'spec_approved') {
+    await attempt('spec parts', { issue: workItem.issueIdentifier }, () => fileSpecParts(project, workItem));
+  }
+};
+
+// A spec that split its work: once approved, its later parts become sub-issues, each posted to delegate when the one
+// before it merges.
+const fileSpecParts = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
+  const [spec] = await getDb()
+    .select({ report: runs.report })
+    .from(runs)
+    .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'spec'), eq(runs.status, 'finished')))
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  const parts = readSpecParts(spec?.report);
+  if (parts.length === 0) {
+    return;
+  }
+  const parent = { identifier: workItem.issueIdentifier };
+  const filed = await fileSubIssues(
+    workItem.linearOrganizationId,
+    workItem.linearIssueId,
+    parts.map((part, index) => ({
+      title: part.title,
+      estimate: part.estimate,
+      description: partDescription(parent, part, { number: index + 2, total: parts.length + 1 })
+    }))
+  );
+  if (filed.length === 0) {
+    return;
+  }
+  log('info', 'spec parts filed', { issue: workItem.issueIdentifier, parts: filed.map((part) => part.identifier) });
+  await replyInThread(project, workItem, partsFiledText(parent, filed));
 };
 
 // A person's reply in a work item's thread steers the work like a reply in Linear, if they're on the allow-list.

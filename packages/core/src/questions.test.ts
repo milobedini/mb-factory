@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AskedQuestion } from './questions';
+import type { AskedQuestion, Question } from './questions';
 import {
+  afterAnswers,
   answeredRequest,
   answersPrompt,
   applyAnswer,
+  keptText,
   MAX_QUESTIONS,
   questionElicitation,
   readQuestions
@@ -31,8 +33,24 @@ const asked = (position: number, overrides: Partial<AskedQuestion> = {}): AskedQ
 describe('readQuestions', () => {
   it('puts the suggested option first', () => {
     expect(readQuestions({ questions: [storage] })).toEqual([
-      { prompt: 'Where should images live?', topic: null, why: null, options: ['Vercel Blob', 'Local disk', 'S3'] }
+      {
+        prompt: 'Where should images live?',
+        topic: null,
+        why: null,
+        options: ['Vercel Blob', 'Local disk', 'S3'],
+        keep: null
+      }
     ]);
+  });
+
+  it('reads which option keeps a PR as it is, when it names one', () => {
+    const [named, unnamed] = readQuestions({
+      questions: [
+        { ...storage, keep: ' local disk ' },
+        { ...storage, keep: 'Somewhere else' }
+      ]
+    });
+    expect([named?.keep, unnamed?.keep]).toEqual(['Local disk', null]);
   });
 
   it('keeps a topic, and drops only the topic when it’s too long', () => {
@@ -226,5 +244,50 @@ describe('answersPrompt', () => {
       priority: 'in_flight',
       prompt: answersPrompt(round)
     });
+  });
+});
+
+describe('afterAnswers', () => {
+  const reported: Question[] = [
+    { prompt: 'Question 1?', topic: null, why: null, options: ['Yes 1', 'No 1'], keep: 'Yes 1' },
+    { prompt: 'Question 2?', topic: null, why: null, options: ['Yes 2', 'No 2'], keep: 'No 2' }
+  ];
+
+  it('runs the stage that asked again, for any stage but review', () => {
+    const round = [asked(1, { answer: 'Yes 1', answerSource: 'option' })];
+    expect(afterAnswers('spec', round, reported)).toEqual({ kind: 'run', request: answeredRequest('spec', round) });
+  });
+
+  it('leaves a reviewed PR as it is when every answer keeps it', () => {
+    const round = [
+      asked(1, { answer: 'yes 1', answerSource: 'option' }),
+      asked(2, { answer: 'No 2', answerSource: 'default' })
+    ];
+    expect(afterAnswers('review', round, reported)).toEqual({ kind: 'keep' });
+    expect(keptText(round, 'by Milo')).toBe(
+      'Decided by Milo: the PR stays as it is.\n1. Question 1? → yes 1\n2. Question 2? → No 2'
+    );
+  });
+
+  it('sends any answer that changes the PR to implement, with every answer', () => {
+    const round = [
+      asked(1, { answer: 'Yes 1', answerSource: 'option' }),
+      asked(2, { answer: 'Add the interim rule', answerSource: 'text' })
+    ];
+    const after = afterAnswers('review', round, reported);
+    expect(after).toMatchObject({
+      kind: 'run',
+      request: { agent: 'implement', trigger: 'answered', priority: 'in_flight' }
+    });
+    expect(after.kind === 'run' && after.request.prompt).toContain('2. Question 2?\n   Answer: Add the interim rule');
+  });
+
+  it('needs a change when a question names no option that keeps the PR', () => {
+    const round = [asked(1, { answer: 'Yes 1', answerSource: 'option' })];
+    expect(
+      afterAnswers('review', round, [
+        { prompt: 'Question 1?', topic: null, why: null, options: ['Yes 1', 'No 1'], keep: null }
+      ]).kind
+    ).toBe('run');
   });
 });

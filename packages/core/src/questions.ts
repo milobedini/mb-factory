@@ -39,7 +39,9 @@ const questionSchema = z
     // Why it matters or what it trades off, shown smaller under the question.
     why: z.string().trim().min(1).max(MAX_WHY_LENGTH).nullish().catch(null),
     options: z.array(z.string().trim().min(1).max(MAX_OPTION_LENGTH)).min(2).max(MAX_OPTIONS),
-    suggested: z.string().trim().nullish()
+    suggested: z.string().trim().nullish(),
+    // A review's question only: the option that leaves the PR as it is.
+    keep: z.string().trim().nullish()
   })
   .refine(({ options }) => new Set(options.map(normalise)).size === options.length, {
     message: 'options must be distinct'
@@ -48,8 +50,14 @@ const questionSchema = z
     message: 'an option reads as the defaults shortcut'
   });
 
-// A question as the router asks it: the suggested option first.
-export type Question = { prompt: string; topic: string | null; why: string | null; options: string[] };
+// A question as the router asks it: the suggested option first. `keep` is the option, if any, that needs no change.
+export type Question = {
+  prompt: string;
+  topic: string | null;
+  why: string | null;
+  options: string[];
+  keep: string | null;
+};
 
 const reportQuestionsSchema = z.looseObject({ questions: z.array(z.unknown()).nullish() });
 
@@ -62,26 +70,30 @@ export const readQuestions = (report: unknown): Question[] =>
       if (!read.success) {
         return [];
       }
-      const { prompt, topic, why, options, suggested } = read.data;
-      const first = options.find((option) => suggested && normalise(option) === normalise(suggested)) ?? options[0];
+      const { prompt, topic, why, options, suggested, keep } = read.data;
+      const named = (wanted: string | null | undefined) =>
+        options.find((option) => wanted && normalise(option) === normalise(wanted));
+      const first = named(suggested) ?? options[0];
       return first
         ? [
             {
               prompt,
               topic: topic ?? null,
               why: why ?? null,
-              options: [first, ...options.filter((option) => option !== first)]
+              options: [first, ...options.filter((option) => option !== first)],
+              keep: named(keep) ?? null
             }
           ]
         : [];
     })
     .slice(0, MAX_QUESTIONS);
 
-export type PositionedQuestion = Question & { position: number };
+// As asked and stored: `keep` stays in the review's report, read back when the round is answered.
+export type PositionedQuestion = Omit<Question, 'keep'> & { position: number };
 
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
-export const topicOf = ({ topic, prompt }: Question): string => {
+export const topicOf = ({ topic, prompt }: Pick<Question, 'topic' | 'prompt'>): string => {
   const flat = oneLine(topic ?? prompt);
   return flat.length > MAX_TOPIC_LENGTH ? `${flat.slice(0, MAX_TOPIC_LENGTH)}…` : flat;
 };
@@ -187,3 +199,40 @@ export const answeredRequest = (agent: AgentRole, round: AskedQuestion[]): RunRe
   priority: 'in_flight',
   prompt: answersPrompt(round)
 });
+
+// A review's questions settle findings that need a human. Answers that all keep the PR as it is need no run; any other
+// answer is a change for the implement stage, which the next review round then checks.
+export type AfterAnswers = { kind: 'run'; request: RunRequest } | { kind: 'keep' };
+
+export const afterAnswers = (agent: AgentRole, round: AskedQuestion[], reported: Question[]): AfterAnswers => {
+  if (agent !== 'review') {
+    return { kind: 'run', request: answeredRequest(agent, round) };
+  }
+  const keeps = byPosition(round).every(({ position, answer }) => {
+    const keep = reported[position - 1]?.keep;
+    return keep !== null && keep !== undefined && answer !== null && normalise(answer) === normalise(keep);
+  });
+  return keeps
+    ? { kind: 'keep' }
+    : {
+        kind: 'run',
+        request: {
+          agent: 'implement',
+          trigger: 'answered',
+          priority: 'in_flight',
+          prompt: [
+            'The human decided the findings the review left for them. Make the change each answer asks for, leave the PR as it is where an answer says so, and answer each in one PR comment.',
+            answersPrompt(round)
+          ].join('\n')
+        }
+      };
+};
+
+// The decisions as a PR comment and a thread reply, when every answer kept the PR as it is.
+export const keptText = (round: AskedQuestion[], by: string): string =>
+  [
+    `Decided ${by}: the PR stays as it is.`,
+    ...byPosition(round).map(
+      ({ position, prompt, answer }) => `${position}. ${oneLine(prompt)} → ${oneLine(answer ?? '')}`
+    )
+  ].join('\n');
