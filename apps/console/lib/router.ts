@@ -119,6 +119,7 @@ import {
   commentOnPullRequest,
   commitParents,
   compareFiles,
+  defaultBranch,
   pullHead,
   pullMergeState,
   pullRequestInfo,
@@ -1657,7 +1658,7 @@ export const handleSlackAction = async (payload: unknown): Promise<void> => {
 const LOCKFILE_GATE_TEXT = 'Only lockfiles conflicted, so it’s back at the merge gate without another review.';
 
 // Whether a conflict fix changed only lockfiles, from GitHub's record rather than the run's report: the PR's last
-// review accepted it, the new head merges a commit already on the base branch into exactly the commit that review saw
+// review accepted it, the PR still targets the default branch, the new head merges a commit already on it into exactly the commit that review saw
 // (the branch's last push before it, from the webhooks), and apart from lockfiles the PR's changes are the reviewed
 // ones. A lockfile's contents aren't checked here: its manifest is, and CI installs from it.
 const lockfileOnlyMerge = async (
@@ -1703,11 +1704,18 @@ const lockfileOnlyMerge = async (
     return false;
   }
   try {
-    const pull = await pullHead(repository, prNumber);
+    const [pull, mainBranch] = await Promise.all([pullHead(repository, prNumber), defaultBranch(repository)]);
     const { head } = pull;
     const [firstParent, base, ...more] = await commitParents(repository, head);
-    // The merged-in parent must be the PR's own base branch, or code in it would never be compared.
-    if (firstParent !== reviewed || !base || more.length > 0 || !(await branchContains(repository, pull.base, base))) {
+    // Factory PRs target the default branch, and the merged-in parent must already be on it, or code in it would never
+    // be compared. A PR retargeted elsewhere is reviewed.
+    if (
+      pull.base !== mainBranch ||
+      firstParent !== reviewed ||
+      !base ||
+      more.length > 0 ||
+      !(await branchContains(repository, mainBranch, base))
+    ) {
       return false;
     }
     const [before, after] = await Promise.all([

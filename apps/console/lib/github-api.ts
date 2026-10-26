@@ -219,6 +219,9 @@ export const pullHead = async (repository: string, prNumber: number): Promise<{ 
   return { head: pull.head.sha, base: pull.base.ref };
 };
 
+export const defaultBranch = async (repository: string): Promise<string> =>
+  (await githubGet<{ default_branch: string }>(`/repos/${repository}`, 'repository')).default_branch;
+
 // Whether a branch already holds a commit: comparing the commit to the branch finds the branch ahead or the same.
 export const branchContains = async (repository: string, branch: string, sha: string): Promise<boolean> => {
   const { status } = await githubGet<{ status: string }>(
