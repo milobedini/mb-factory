@@ -36,6 +36,7 @@ describe('renderStagePrompt', () => {
       job: 'security',
       trigger: 'scheduled',
       slot: new Date('2026-10-27T06:00:00Z'),
+      scope: 'changes',
       since: 'a'.repeat(40)
     });
     expect(prompt).toContain('Spawn the `mb-factory:security` subagent in the foreground');
@@ -46,6 +47,7 @@ describe('renderStagePrompt', () => {
         'job: security',
         'trigger: scheduled',
         'slot: 2026-10-27T06:00:00.000Z',
+        'scope: changes',
         `since: ${'a'.repeat(40)}`,
         '</brief>'
       ].join('\n')

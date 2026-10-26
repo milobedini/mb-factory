@@ -42,8 +42,8 @@ export const slotOf = async (run: Run): Promise<Date> => {
 };
 
 export const jobBriefFor = async (project: FactoryConfig, job: Job, run: Run): Promise<JobBrief> => {
-  const [slot, since] = await Promise.all([slotOf(run), lastHead(project, job)]);
-  return { agent: run.agent, job: job.name, trigger: run.trigger, slot, since };
+  const [slot, since] = await Promise.all([slotOf(run), job.scope === 'repo' ? undefined : lastHead(project, job)]);
+  return { agent: run.agent, job: job.name, trigger: run.trigger, slot, scope: job.scope, since };
 };
 
 // A job has no thread: it says what it did in one top-level message in the project's channel.
@@ -62,4 +62,4 @@ export const postJobMessage = async (project: FactoryConfig, job: Pick<Job, 'nam
   }
 };
 
-export const jobTitleOf = (job: Job): string => jobTitle(job.agent);
+export const jobTitleOf = (job: Job): string => jobTitle(job);

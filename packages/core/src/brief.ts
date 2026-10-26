@@ -1,3 +1,4 @@
+import type { JobScope } from './config';
 import type { RunTrigger } from './runs';
 import type { AgentRole } from './stages';
 
@@ -20,7 +21,9 @@ export type JobBrief = {
   job: string;
   trigger: RunTrigger;
   slot: Date;
-  // The newest commit on the default branch the job's last run covered.
+  // `repo` when the job reads the whole repository rather than what changed.
+  scope: JobScope;
+  // The newest commit on the default branch the job's last run covered; never for a whole-repo job.
   since?: string;
 };
 
@@ -54,12 +57,13 @@ const renderBrief = ({ agent, issue, session, trigger, prompt, pr, branch, round
     .filter((line) => line !== undefined)
     .join('\n');
 
-const renderJobBrief = ({ agent, job, trigger, slot, since }: JobBrief): string =>
+const renderJobBrief = ({ agent, job, trigger, slot, scope, since }: JobBrief): string =>
   [
     `stage: ${agent}`,
     `job: ${oneLine(job)}`,
     `trigger: ${trigger}`,
     `slot: ${slot.toISOString()}`,
+    `scope: ${scope}`,
     since === undefined ? undefined : `since: ${oneLine(since)}`
   ]
     .filter((line) => line !== undefined)

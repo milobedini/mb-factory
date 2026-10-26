@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { Job } from './config';
+import { WEEKDAYS } from './config';
 import type { JobAgent } from './stages';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -51,18 +52,29 @@ const shiftDay = ({ year, month, day }: CalendarDay, days: number): CalendarDay 
   return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
 };
 
-// The job's most recent slot at or before `now`: today's if it has come, else yesterday's.
-export const latestSlot = ({ at }: Pick<Job, 'at'>, now: Date, timeZone: string): Date => {
+type SlotTime = Pick<Job, 'at' | 'day'>;
+
+const weekdayOf = ({ year, month, day }: CalendarDay): (typeof WEEKDAYS)[number] | undefined =>
+  WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+
+// The first of the seven days from `from`, stepping by `step`, that the job runs on: `from` itself for a daily job.
+const runDay = ({ day }: SlotTime, from: CalendarDay, step: 1 | -1): CalendarDay =>
+  Array.from({ length: 7 }, (_, index) => shiftDay(from, index * step)).find(
+    (candidate) => day === undefined || weekdayOf(candidate) === day
+  ) ?? from;
+
+// The job's most recent slot at or before `now`: today's if it has come, else the run day before.
+export const latestSlot = (job: SlotTime, now: Date, timeZone: string): Date => {
   const today = calendarDay(now, timeZone);
-  const slot = zonedMoment(today, at, timeZone);
-  return slot <= now ? slot : zonedMoment(shiftDay(today, -1), at, timeZone);
+  const start = zonedMoment(today, job.at, timeZone) <= now ? today : shiftDay(today, -1);
+  return zonedMoment(runDay(job, start, -1), job.at, timeZone);
 };
 
 // The job's first slot after `now`.
-export const nextSlot = ({ at }: Pick<Job, 'at'>, now: Date, timeZone: string): Date => {
+export const nextSlot = (job: SlotTime, now: Date, timeZone: string): Date => {
   const today = calendarDay(now, timeZone);
-  const slot = zonedMoment(today, at, timeZone);
-  return slot > now ? slot : zonedMoment(shiftDay(today, 1), at, timeZone);
+  const start = zonedMoment(today, job.at, timeZone) > now ? today : shiftDay(today, 1);
+  return zonedMoment(runDay(job, start, 1), job.at, timeZone);
 };
 
 export const FINDING_SEVERITIES = ['critical', 'high', 'moderate', 'low'] as const;
@@ -267,9 +279,9 @@ export const findingIssue = (finding: Finding, context: FindingContext): Finding
   };
 };
 
-const JOB_TITLES: Record<JobAgent, string> = { security: 'Daily security check', docs: 'Daily docs check' };
-
-export const jobTitle = (agent: JobAgent): string => JOB_TITLES[agent];
+// "Daily security check", or "Weekly docs pass over the whole repo".
+export const jobTitle = ({ agent, day, scope }: Pick<Job, 'agent' | 'day' | 'scope'>): string =>
+  `${day === undefined ? 'Daily' : 'Weekly'} ${agent} ${scope === 'repo' ? 'pass over the whole repo' : 'check'}`;
 
 // Labels on every issue the job files, so Triage shows where it came from.
 const JOB_LABELS: Record<JobAgent, string[]> = { security: ['security', 'factory'], docs: ['docs', 'factory'] };

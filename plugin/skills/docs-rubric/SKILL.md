@@ -30,13 +30,15 @@ A statement in a doc that the range made false: someone following it now fails, 
 - A convention in `AGENTS.md` or `CLAUDE.md` the range replaced (a new library, a changed test approach).
 - A lesson whose cause the range removed (an upgrade fixed the bug it works around): its fix is to delete or update the lesson.
 
+In a whole-repo pass (`scope: repo`) there's no range: drift is any of these that `HEAD` makes false, however long ago it happened.
+
 One finding per statement that drifted. Several wrong lines that one edit fixes (the same renamed command in three places in one file) are one finding.
 
 ## What not to file
 
 - Missing docs for something new: a feature the README doesn't mention isn't drift.
 - Wording, tone, typos, formatting, or a doc that could be clearer.
-- Drift the range didn't cause: a doc that was already wrong before it.
+- Drift the range didn't cause: a doc that was already wrong before it (the weekly whole-repo pass catches those).
 - A doc the range already updated correctly.
 
 ## Verify before reporting

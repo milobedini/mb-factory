@@ -67,3 +67,15 @@ jobs:
     agent: docs
     at: "06:30"
     model: sonnet
+  - name: security-weekly
+    agent: security
+    day: monday
+    at: "05:00"
+    scope: repo
+    model: sonnet
+  - name: docs-weekly
+    agent: docs
+    day: monday
+    at: "05:30"
+    scope: repo
+    model: sonnet

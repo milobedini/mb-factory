@@ -18,11 +18,19 @@ const githubLogin = z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9]
 // A job's daily slot, as a 24-hour time in the project's time zone.
 const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'not a 24-hour HH:MM time' });
 
+export const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+
+export const JOB_SCOPES = ['changes', 'repo'] as const;
+
 export const jobSchema = z.object({
   // Names the job in slots, findings and messages, so it must not change once the job has run.
   name: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/),
   agent: z.enum(JOB_AGENTS),
+  // Once a week on this day; every day when unset.
+  day: z.enum(WEEKDAYS).optional(),
   at: clockTime,
+  // `changes` reads the commits since the job's last run; `repo` reads the whole repository.
+  scope: z.enum(JOB_SCOPES).default('changes'),
   model: z.string().min(1)
 });
 
@@ -110,6 +118,7 @@ export const factoryConfigSchema = z.object({
 export type FactoryConfig = z.infer<typeof factoryConfigSchema>;
 export type UsagePolicy = z.infer<typeof usagePolicySchema>;
 export type Job = z.infer<typeof jobSchema>;
+export type JobScope = (typeof JOB_SCOPES)[number];
 
 export const parseFactoryConfig = (source: string): FactoryConfig => factoryConfigSchema.parse(parse(source));
 

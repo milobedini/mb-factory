@@ -112,11 +112,8 @@ const fileFinding = async (
       .select()
       .from(jobFindings)
       .where(
-        and(
-          eq(jobFindings.project, project.name),
-          eq(jobFindings.job, job.name),
-          eq(jobFindings.fingerprint, finding.fingerprint)
-        )
+        // Any job's filing counts: the weekly pass and the daily check find the same things.
+        and(eq(jobFindings.project, project.name), eq(jobFindings.fingerprint, finding.fingerprint))
       )
       .orderBy(desc(jobFindings.filedAt))
       .limit(1);

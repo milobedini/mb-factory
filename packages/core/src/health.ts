@@ -58,7 +58,7 @@ export type HealthInput = {
   openRuns: OpenRun[];
   heldRuns: HeldRun[];
   // Every daily slot, the health check's own included.
-  jobs: Pick<Job, 'name' | 'at'>[];
+  jobs: Pick<Job, 'name' | 'at' | 'day'>[];
   slots: FiredSlot[];
 };
 
@@ -135,7 +135,7 @@ const lateHold = ({ label, agent, releaseAt }: HeldRun, now: Date, timeZone: str
     : undefined;
 
 // The job's slots after `since` that should have fired by now.
-const dueSlots = (job: Pick<Job, 'at'>, since: Date, now: Date, timeZone: string): Date[] => {
+const dueSlots = (job: Pick<Job, 'at' | 'day'>, since: Date, now: Date, timeZone: string): Date[] => {
   const cutoff = now.getTime() - LATE_MINUTES * MINUTE_MS;
   const collect = (from: Date, found: Date[]): Date[] => {
     const slot = nextSlot(job, from, timeZone);

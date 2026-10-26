@@ -35,7 +35,7 @@ const loadJobRuns = (): Promise<JobRuns[]> =>
     allProjects().flatMap((project) =>
       project.jobs.map(async (job) => ({
         key: `${project.name}:${job.name}`,
-        title: `${jobTitle(job.agent)} (${project.alias})`,
+        title: `${jobTitle(job)} (${project.alias})`,
         runs: await getDb()
           .select()
           .from(runs)

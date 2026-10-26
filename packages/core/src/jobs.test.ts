@@ -18,6 +18,13 @@ import {
 const job = { at: '06:00' };
 const london = 'Europe/London';
 
+describe('jobTitle', () => {
+  it('names the cadence and what the job reads', () => {
+    expect(jobTitle({ agent: 'security', scope: 'changes' })).toBe('Daily security check');
+    expect(jobTitle({ agent: 'docs', day: 'monday', scope: 'repo' })).toBe('Weekly docs pass over the whole repo');
+  });
+});
+
 describe('latestSlot and nextSlot', () => {
   it('reads the slot in the project time zone, in winter and in summer', () => {
     // GMT: 06:00 London is 06:00 UTC.
@@ -34,6 +41,18 @@ describe('latestSlot and nextSlot', () => {
     const now = new Date('2026-10-27T06:00:00Z');
     expect(latestSlot(job, now, london)).toEqual(now);
     expect(nextSlot(job, now, london)).toEqual(new Date('2026-10-28T06:00:00Z'));
+  });
+
+  it('finds a weekly job’s slot on its day, across a change of clocks', () => {
+    const weekly = { at: '05:00', day: 'monday' as const };
+    // Mon 26 Oct 2026 is the first Monday in GMT; the Monday before was in BST.
+    expect(latestSlot(weekly, new Date('2026-10-27T09:00:00Z'), london)).toEqual(new Date('2026-10-26T05:00:00Z'));
+    expect(nextSlot(weekly, new Date('2026-10-27T09:00:00Z'), london)).toEqual(new Date('2026-11-02T05:00:00Z'));
+    expect(latestSlot(weekly, new Date('2026-10-26T04:59:00Z'), london)).toEqual(new Date('2026-10-19T04:00:00Z'));
+    expect(nextSlot(weekly, new Date('2026-10-26T04:59:00Z'), london)).toEqual(new Date('2026-10-26T05:00:00Z'));
+    const now = new Date('2026-10-26T05:00:00Z');
+    expect(latestSlot(weekly, now, london)).toEqual(now);
+    expect(nextSlot(weekly, now, london)).toEqual(new Date('2026-11-02T05:00:00Z'));
   });
 
   it('crosses a change of clocks', () => {
@@ -222,7 +241,7 @@ describe('findingIssue', () => {
     if (!docs) {
       throw new Error('expected a finding');
     }
-    const issue = findingIssue(docs, { ...context, jobTitle: jobTitle('docs') });
+    const issue = findingIssue(docs, { ...context, jobTitle: jobTitle({ agent: 'docs', scope: 'changes' }) });
     expect(issue.title).toBe('Docs: README still says to run the backend tests with manage.py test');
     expect(issue.priority).toBe(3);
     expect(issue.description).toContain('**Kind:** docs drift');

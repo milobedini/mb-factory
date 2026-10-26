@@ -1,6 +1,6 @@
 export type { Brief, DispatchPayload, JobBrief } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
-export type { FactoryConfig, Job, UsagePolicy } from './config';
+export type { FactoryConfig, Job, JobScope, UsagePolicy } from './config';
 export { factoryConfigSchema, jobSchema, parseFactoryConfig, reviewersFor, usagePolicySchema } from './config';
 export type {
   BreakdownRow,
