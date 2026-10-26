@@ -24,8 +24,10 @@ on:
         type: string
         default: https://mb-factory-console.vercel.app
     secrets:
+      # Not required here: once the project keeps it in its `factory` environment, the caller passes an empty value
+      # and the environment's wins. The input check fails the run when neither has it.
       CLAUDE_CODE_OAUTH_TOKEN:
-        required: true
+        required: false
       # The project's own GitHub App, which can push workflow files (Anthropic's Claude app can't). Only implement runs
       # use it; other runs, and every run without both, use the Claude app through the action's OIDC exchange.
       FACTORY_APP_CLIENT_ID:
@@ -56,6 +58,7 @@ jobs:
       FACTORY_REF: ${{ inputs.factory_ref }}
       CONSOLE_URL: ${{ inputs.console_url }}
       HAS_FACTORY_APP: ${{ secrets.FACTORY_APP_CLIENT_ID != '' && secrets.FACTORY_APP_PRIVATE_KEY != '' }}
+      HAS_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
     steps:
       - name: Check the inputs
         run: |
@@ -63,6 +66,7 @@ jobs:
           [[ "$MODEL" =~ ^[a-z0-9.-]+$ ]] || { echo "::error::model has unexpected characters"; exit 1; }
           [[ "$FACTORY_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::factory_ref has unexpected characters"; exit 1; }
           [[ "$CONSOLE_URL" =~ ^https://[A-Za-z0-9.-]+$ ]] || { echo "::error::console_url must be an https origin"; exit 1; }
+          [[ "$HAS_CLAUDE_TOKEN" == true ]] || { echo "::error::CLAUDE_CODE_OAUTH_TOKEN is in neither the factory environment nor the repository"; exit 1; }
           echo "FACTORY_REPORT_PATH=$RUNNER_TEMP/factory-report.json" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v7
