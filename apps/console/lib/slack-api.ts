@@ -117,3 +117,26 @@ export const slackPermalink = async (channel: string, ts: string): Promise<strin
   }
   return permalink;
 };
+
+// The workspace's address, which doesn't change while an instance runs.
+const workspaceUrls = new Map<string, Promise<string>>();
+
+const fetchWorkspaceUrl = async (): Promise<string> => {
+  const { url } = (await callSlack('auth.test', {})) as SlackResponse & { url?: string };
+  if (!url) {
+    throw new Error('Slack auth.test returned no url');
+  }
+  return url;
+};
+
+export const slackWorkspaceUrl = (): Promise<string> => {
+  const known = workspaceUrls.get('bot');
+  if (known !== undefined) {
+    return known;
+  }
+  const fetching = fetchWorkspaceUrl();
+  workspaceUrls.set('bot', fetching);
+  // A failed lookup is tried again next time rather than remembered.
+  fetching.catch(() => workspaceUrls.delete('bot'));
+  return fetching;
+};

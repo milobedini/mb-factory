@@ -23,6 +23,8 @@ export {
   USAGE_STATUSES,
   USAGE_WINDOWS
 } from './governor';
+export type { ChecksState, InboxEntry, InboxKind, InboxQuestion, InboxRun } from './inbox';
+export { checksState, INBOX_KINDS, inboxEntry } from './inbox';
 export type { ClaimCheck, StageRunClaims } from './oidc';
 export {
   checkGovernorClaims,
@@ -133,6 +135,7 @@ export {
   SPEC_GATE_GONE,
   slackFiledText,
   slackIssueFromRequest,
+  slackMessageUrl,
   slackPlainText,
   slackQuestionCard,
   slackSpecGateMessage,

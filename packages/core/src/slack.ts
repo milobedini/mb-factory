@@ -353,3 +353,7 @@ export const wrongChannelText = (channels: string[]): string =>
   channels.length > 0
     ? `Mention me in ${channels.join(' or ')} to start work.`
     : 'No project here takes requests from Slack.';
+
+// Slack's permalink shape for a message: the `ts` without its dot, after a `p`. A thread's link is its first message's.
+export const slackMessageUrl = (workspaceUrl: string, channel: string, ts: string): string =>
+  `${workspaceUrl.replace(/\/$/, '')}/archives/${channel}/p${ts.replace('.', '')}`;

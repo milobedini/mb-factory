@@ -1,6 +1,7 @@
 import type { RunTrigger, Stage } from '@mb-factory/core';
 import { formatReleaseAt, formatRunTime, isOpenRun, linearStatusFor, runTiming } from '@mb-factory/core';
 
+import { AutoRefresh } from '@/app/auto-refresh';
 import { consoleTimeZone, findProject } from '@/lib/projects';
 import type { RunRow, WorkItemRuns } from '@/lib/runs-view';
 import { loadRunsView } from '@/lib/runs-view';
@@ -159,8 +160,10 @@ const WorkItemSection = ({ item, now }: { item: WorkItemRuns; now: Date }) => {
 
 export const RunsTimeline = async () => {
   const view = await loadRunsView();
+  const working = view.workItems.some(({ runs }) => runs.some(({ status }) => isOpenRun(status)));
   return (
     <div className="flex flex-col gap-6">
+      <AutoRefresh active={working} />
       {view.workItems.length === 0 ? (
         <p className="text-foreground/70">Nothing has run yet. Delegate an issue to the factory in Linear.</p>
       ) : (

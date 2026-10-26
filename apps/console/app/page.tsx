@@ -4,7 +4,7 @@ const SECTIONS = [
   { title: 'Usage', detail: '5-hour and weekly windows, governor state, queue', href: '/usage' },
   { title: 'Dashboard', detail: 'Autonomy, cycle time, usage per PR' },
   { title: 'Runs', detail: 'Every stage run, grouped by work item', href: '/runs' },
-  { title: 'Inbox', detail: 'Questions, spec reviews and PRs waiting on you' }
+  { title: 'Inbox', detail: 'Questions, spec reviews and PRs waiting on you', href: '/inbox' }
 ];
 
 const Home = () => (

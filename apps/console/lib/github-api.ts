@@ -1,5 +1,5 @@
-import type { DispatchPayload } from '@mb-factory/core';
-import { DISPATCH_EVENT } from '@mb-factory/core';
+import type { ChecksState, DispatchPayload } from '@mb-factory/core';
+import { checksState, DISPATCH_EVENT } from '@mb-factory/core';
 
 import { requireEnv } from './env';
 
@@ -60,4 +60,27 @@ export const startGovernorProbe = async (): Promise<void> => {
   if (!response.ok) {
     throw await failure('governor dispatch', response);
   }
+};
+
+type WorkflowRuns = { workflow_runs: { workflow_id: number; status: string; conclusion: string | null }[] };
+
+// A PR branch's CI for the Inbox: the latest pull_request run of each workflow (GitHub lists newest first). Actions
+// read is enough, where the check-runs API would need the Checks permission too.
+export const branchChecks = async (repository: string, branch: string): Promise<ChecksState> => {
+  const query = new URLSearchParams({ branch, event: 'pull_request', per_page: '50' });
+  const response = await fetch(`${API_URL}/repos/${repository}/actions/runs?${query}`, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${requireEnv('GITHUB_DISPATCH_TOKEN')}`,
+      'X-GitHub-Api-Version': '2022-11-28'
+    }
+  });
+  if (!response.ok) {
+    throw await failure('workflow runs', response);
+  }
+  const { workflow_runs: workflowRuns } = (await response.json()) as WorkflowRuns;
+  const latest = workflowRuns.filter(
+    (run, index) => workflowRuns.findIndex(({ workflow_id }) => workflow_id === run.workflow_id) === index
+  );
+  return checksState(latest);
 };

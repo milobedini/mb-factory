@@ -13,6 +13,7 @@ import {
   parseSlackThreadReply,
   slackFiledText,
   slackIssueFromRequest,
+  slackMessageUrl,
   slackPlainText,
   slackQuestionCard,
   slackSpecGateMessage,
@@ -339,5 +340,13 @@ describe('intake replies', () => {
     expect(emptyMentionText(config)).toContain('@Tastebook');
     expect(wrongChannelText(['#tastebook-factory'])).toBe('Mention me in #tastebook-factory to start work.');
     expect(wrongChannelText([])).toBe('No project here takes requests from Slack.');
+  });
+});
+
+describe('slackMessageUrl', () => {
+  it('builds the permalink from the workspace address, channel and ts', () => {
+    expect(slackMessageUrl('https://tastebook.slack.com/', 'C0CBSE2Q6FQ', '1793000285.963819')).toBe(
+      'https://tastebook.slack.com/archives/C0CBSE2Q6FQ/p1793000285963819'
+    );
   });
 });
