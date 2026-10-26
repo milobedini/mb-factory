@@ -13,6 +13,17 @@ const isTimeZone = (zone: string): boolean => {
 
 const githubLogin = z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/);
 
+// A job's daily slot, as a 24-hour time in the project's time zone.
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'not a 24-hour HH:MM time' });
+
+export const jobSchema = z.object({
+  // Names the job in slots, findings and messages, so it must not change once the job has run.
+  name: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/),
+  agent: z.enum(['security']),
+  at: clockTime,
+  model: z.string().min(1)
+});
+
 const notionId = z.string().regex(/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/);
 
 export const usagePolicySchema = z.object({
@@ -88,11 +99,19 @@ export const factoryConfigSchema = z.object({
   }),
   review: z.object({ maxRounds: z.int().min(0).max(5) }),
   concurrency: z.object({ maxRuns: z.int().min(1) }),
-  usage: usagePolicySchema
+  usage: usagePolicySchema,
+  // Scheduled jobs, run once a day through the governor at the lowest priority.
+  jobs: z
+    .array(jobSchema)
+    .default([])
+    .refine((jobs) => new Set(jobs.map(({ name }) => name)).size === jobs.length, {
+      message: 'job names must be distinct'
+    })
 });
 
 export type FactoryConfig = z.infer<typeof factoryConfigSchema>;
 export type UsagePolicy = z.infer<typeof usagePolicySchema>;
+export type Job = z.infer<typeof jobSchema>;
 
 export const parseFactoryConfig = (source: string): FactoryConfig => factoryConfigSchema.parse(parse(source));
 

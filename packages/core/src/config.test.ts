@@ -48,6 +48,21 @@ describe('parseFactoryConfig', () => {
   });
 });
 
+describe('jobs', () => {
+  it('reads the daily security check, and defaults to no jobs', () => {
+    expect(parseFactoryConfig(tastebookConfig).jobs).toEqual([
+      { name: 'security', agent: 'security', at: '06:00', model: 'sonnet' }
+    ]);
+    expect(parseFactoryConfig(tastebookConfig.slice(0, tastebookConfig.indexOf('\njobs:'))).jobs).toEqual([]);
+  });
+
+  it('rejects a time that is not HH:MM and a repeated name', () => {
+    expect(() => parseFactoryConfig(tastebookConfig.replace('at: "06:00"', 'at: "6am"'))).toThrow(/HH:MM/);
+    const repeated = `${tastebookConfig}  - name: security\n    agent: security\n    at: "18:00"\n    model: sonnet\n`;
+    expect(() => parseFactoryConfig(repeated)).toThrow(/distinct/);
+  });
+});
+
 describe('reviewersFor', () => {
   const config = parseFactoryConfig(tastebookConfig);
 

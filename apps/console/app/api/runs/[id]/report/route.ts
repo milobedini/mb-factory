@@ -2,9 +2,10 @@ import { checkStageRunClaims, runReportSchema, summariseRun } from '@mb-factory/
 import { after } from 'next/server';
 
 import { verifyGitHubOidc } from '@/lib/github-oidc';
+import { handleJobRunFinished } from '@/lib/jobs';
 import { log } from '@/lib/log';
 import { handleRunFinished } from '@/lib/router';
-import { findRun, recordRunReport } from '@/lib/runs';
+import { findAnyRun, recordRunReport, runRepository } from '@/lib/runs';
 
 export const POST = async (request: Request, context: RouteContext<'/api/runs/[id]/report'>) => {
   const { id } = await context.params;
@@ -14,15 +15,12 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
     return new Response('invalid token', { status: 401 });
   }
 
-  const found = await findRun(id);
-  if (!found) {
+  const found = await findAnyRun(id);
+  const repository = found && runRepository(found);
+  if (!found || !repository) {
     return new Response('unknown run', { status: 404 });
   }
-  const check = checkStageRunClaims({
-    claims: verification.claims,
-    repository: found.workItem.repository,
-    actionsRunId: found.run.actionsRunId
-  });
+  const check = checkStageRunClaims({ claims: verification.claims, repository, actionsRunId: found.run.actionsRunId });
   if (!check.ok || found.run.actionsRunId === null) {
     log('warn', 'run report rejected', { runId: id, reason: check.ok ? 'run never started' : check.reason });
     return new Response('token does not match this run', { status: 403 });
@@ -40,14 +38,15 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
 
   log('info', 'run reported', {
     runId: id,
-    issue: found.workItem.issueIdentifier,
+    issue: found.workItem?.issueIdentifier,
+    job: found.run.job ?? undefined,
     status: summary.status,
     outcome: summary.outcome,
     costUsd: summary.usage?.costUsd
   });
   after(async () => {
     try {
-      await handleRunFinished(id);
+      await (found.workItem ? handleRunFinished(id) : handleJobRunFinished(id));
     } catch (error) {
       log('error', 'run follow-up failed', {
         runId: id,

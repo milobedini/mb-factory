@@ -1,7 +1,7 @@
-export type { Brief, DispatchPayload } from './brief';
+export type { Brief, DispatchPayload, JobBrief } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
-export type { FactoryConfig, UsagePolicy } from './config';
-export { factoryConfigSchema, parseFactoryConfig, reviewersFor, usagePolicySchema } from './config';
+export type { FactoryConfig, Job, UsagePolicy } from './config';
+export { factoryConfigSchema, jobSchema, parseFactoryConfig, reviewersFor, usagePolicySchema } from './config';
 export type {
   Decision,
   DispatchRequest,
@@ -25,6 +25,29 @@ export {
 } from './governor';
 export type { ChecksState, InboxEntry, InboxKind, InboxQuestion, InboxRun } from './inbox';
 export { checksState, INBOX_KINDS, inboxEntry } from './inbox';
+export type {
+  CheckIssue,
+  CheckResult,
+  FiledBefore,
+  Filing,
+  Finding,
+  FindingContext,
+  FindingIssue,
+  FindingSeverity,
+  JobReport
+} from './jobs';
+export {
+  decideFiling,
+  FINDING_SEVERITIES,
+  findingIssue,
+  isWorthFiling,
+  jobCheckText,
+  jobTitle,
+  latestSlot,
+  nextSlot,
+  readJobReport,
+  slotDay
+} from './jobs';
 export type { ClaimCheck, StageRunClaims } from './oidc';
 export {
   checkGovernorClaims,

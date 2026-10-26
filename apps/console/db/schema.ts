@@ -15,6 +15,7 @@ import {
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
+  check,
   doublePrecision,
   index,
   integer,
@@ -92,9 +93,10 @@ export const runs = pgTable(
   'runs',
   {
     id: uuid().primaryKey().defaultRandom(),
-    workItemId: uuid()
-      .notNull()
-      .references(() => workItems.id, { onDelete: 'cascade' }),
+    // Empty for a scheduled job's run, which belongs to `project` and `job` instead.
+    workItemId: uuid().references(() => workItems.id, { onDelete: 'cascade' }),
+    project: text(),
+    job: text(),
     parentRunId: uuid().references((): AnyPgColumn => runs.id, { onDelete: 'set null' }),
     agent: text({ enum: AGENT_ROLES }).notNull(),
     model: text().notNull(),
@@ -126,8 +128,43 @@ export const runs = pgTable(
   },
   (table) => [
     index('runs_work_item_idx').on(table.workItemId, table.createdAt),
-    index('runs_active_idx').on(table.status).where(sql`${table.status} in ('dispatched', 'running')`)
+    index('runs_active_idx').on(table.status).where(sql`${table.status} in ('dispatched', 'running')`),
+    index('runs_job_idx').on(table.project, table.job, table.createdAt).where(sql`${table.job} is not null`),
+    check('runs_work_item_or_job', sql`(${table.workItemId} is null) = (${table.job} is not null)`),
+    check('runs_job_has_project', sql`${table.job} is null or ${table.project} is not null`)
   ]
+);
+
+// One row per scheduled slot that fired: inserting it is what fires the slot, so it runs once however many wakes
+// arrive.
+export const jobSlots = pgTable(
+  'job_slots',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    project: text().notNull(),
+    job: text().notNull(),
+    slotAt: timestamp({ withTimezone: true }).notNull(),
+    runId: uuid().references(() => runs.id, { onDelete: 'set null' }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [uniqueIndex('job_slots_slot_idx').on(table.project, table.job, table.slotAt)]
+);
+
+// Each Linear issue a job filed, by the finding's fingerprint, so the same finding isn't filed twice.
+export const jobFindings = pgTable(
+  'job_findings',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    project: text().notNull(),
+    job: text().notNull(),
+    fingerprint: text().notNull(),
+    linearIssueId: text().notNull(),
+    issueIdentifier: text().notNull(),
+    issueUrl: text().notNull(),
+    runId: uuid().references(() => runs.id, { onDelete: 'set null' }),
+    filedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [index('job_findings_fingerprint_idx').on(table.project, table.job, table.fingerprint, table.filedAt)]
 );
 
 // Questions a stage reported, which the router asks one at a time; the answers go back to the stage in one run.

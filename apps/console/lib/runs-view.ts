@@ -1,12 +1,12 @@
 import type { RunTotals } from '@mb-factory/core';
-import { canRerun, runTotals } from '@mb-factory/core';
-import { asc, desc, inArray } from 'drizzle-orm';
+import { canRerun, jobTitle, runTotals } from '@mb-factory/core';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { after } from 'next/server';
 
 import { getDb } from '@/db/client';
 import { runs, workItems } from '@/db/schema';
 
-import { findProject } from './projects';
+import { allProjects, findProject } from './projects';
 import { releaseQueueOnActivity } from './router';
 import type { ConsoleUser } from './session';
 import { requireConsoleUser } from './session';
@@ -22,16 +22,39 @@ export type WorkItemRuns = {
   rerunnableId: string | null;
 };
 
-export type RunsView = { user: ConsoleUser; now: Date; workItems: WorkItemRuns[] };
+// A scheduled job's latest runs, newest first.
+export type JobRuns = { key: string; title: string; runs: RunRow[] };
+
+export type RunsView = { user: ConsoleUser; now: Date; workItems: WorkItemRuns[]; jobs: JobRuns[] };
 
 const WORK_ITEM_LIMIT = 25;
+const JOB_RUN_LIMIT = 7;
+
+const loadJobRuns = (): Promise<JobRuns[]> =>
+  Promise.all(
+    allProjects().flatMap((project) =>
+      project.jobs.map(async (job) => ({
+        key: `${project.name}:${job.name}`,
+        title: `${jobTitle(job.agent)} (${project.alias})`,
+        runs: await getDb()
+          .select()
+          .from(runs)
+          .where(and(eq(runs.project, project.name), eq(runs.job, job.name)))
+          .orderBy(desc(runs.createdAt))
+          .limit(JOB_RUN_LIMIT)
+      }))
+    )
+  );
 
 // The Runs page's data: the most recently active work items, each with its runs oldest first. Checks the session first.
 export const loadRunsView = async (): Promise<RunsView> => {
   const user = await requireConsoleUser();
   after(() => releaseQueueOnActivity('runs page'));
   const db = getDb();
-  const items = await db.select().from(workItems).orderBy(desc(workItems.updatedAt)).limit(WORK_ITEM_LIMIT);
+  const [items, jobs] = await Promise.all([
+    db.select().from(workItems).orderBy(desc(workItems.updatedAt)).limit(WORK_ITEM_LIMIT),
+    loadJobRuns()
+  ]);
   const itemRuns =
     items.length === 0
       ? []
@@ -48,6 +71,7 @@ export const loadRunsView = async (): Promise<RunsView> => {
   return {
     user,
     now: new Date(),
+    jobs,
     workItems: items.map((workItem) => {
       const own = itemRuns.filter(({ workItemId }) => workItemId === workItem.id);
       const latest = own.at(-1);

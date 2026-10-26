@@ -1,4 +1,4 @@
-import { deriveKey, isSignedWake, nextWake, signWake, WAKE_TOPIC, wakeBooking } from '@mb-factory/core';
+import { deriveKey, isSignedWake, nextSlot, nextWake, signWake, WAKE_TOPIC, wakeBooking } from '@mb-factory/core';
 import { send } from '@vercel/queue';
 import { and, gt, isNull } from 'drizzle-orm';
 
@@ -7,6 +7,7 @@ import { queue } from '@/db/schema';
 
 import { requireEnv } from './env';
 import { log } from './log';
+import { allProjects } from './projects';
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -27,17 +28,15 @@ export const bookWake = async (at: Date, cause: string): Promise<void> => {
   }
 };
 
-// The next moment anything is due: today, the earliest release time of held work.
+// The next moment anything is due: the earliest release time of held work, or the next slot of a scheduled job.
 export const bookNextWake = async (cause: string): Promise<Date | undefined> => {
   const now = new Date();
   const held = await getDb()
     .select({ releaseAt: queue.releaseAt })
     .from(queue)
     .where(and(isNull(queue.releasedAt), gt(queue.releaseAt, now)));
-  const next = nextWake(
-    held.map(({ releaseAt }) => releaseAt),
-    now
-  );
+  const slots = allProjects().flatMap((project) => project.jobs.map((job) => nextSlot(job, now, project.timeZone)));
+  const next = nextWake([...held.map(({ releaseAt }) => releaseAt), ...slots], now);
   if (next) {
     await bookWake(next, cause);
   }

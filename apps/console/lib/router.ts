@@ -80,6 +80,7 @@ import { events, questions, queue, runs, workItems } from '@/db/schema';
 
 import { requireEnv } from './env';
 import { cancelActionsRun, pullMergeState, requestReviewers, sendStageDispatch } from './github-api';
+import { findJob, jobBriefFor, jobTitleOf, postJobMessage } from './job-runs';
 import type { AgentActivityContent } from './linear-api';
 import {
   createAgentActivity,
@@ -95,7 +96,7 @@ import { log } from './log';
 import { currentPause } from './pause';
 import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
 import type { RunWithWorkItem } from './runs';
-import { findRun } from './runs';
+import { findAnyRun, findRun } from './runs';
 import {
   postSlackEphemeral,
   postSlackMessage,
@@ -179,11 +180,12 @@ const openSlackThread = async (project: FactoryConfig, workItem: WorkItem, title
   });
 };
 
+// Holds a run in the queue, books a wake-up for when the hold should lift, and says so once with `tell`: in the work
+// item's session and thread, or a job's channel.
 const holdRun = async (
-  project: FactoryConfig,
-  { run, workItem }: RunWithWorkItem,
+  run: Run,
   decision: Extract<GovernedDecision, { kind: 'hold' }>,
-  now: Date
+  tell: () => Promise<unknown>
 ): Promise<void> => {
   const db = getDb();
   const held = await db
@@ -191,7 +193,7 @@ const holdRun = async (
     .values({ runId: run.id, priority: run.priority, reason: decision.reason, releaseAt: decision.releaseAt })
     .onConflictDoNothing()
     .returning({ id: queue.id });
-  log('info', 'run held', { runId: run.id, issue: workItem.issueIdentifier, reason: decision.reason });
+  log('info', 'run held', { runId: run.id, workItemId: run.workItemId, job: run.job, reason: decision.reason });
   if (decision.releaseAt) {
     // Wakes the console when the hold should lift, whether or not anything else happens by then.
     await bookWake(decision.releaseAt, decision.reason);
@@ -204,8 +206,7 @@ const holdRun = async (
       .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)));
     return;
   }
-  const text = queuedThought(decision, now, project.timeZone);
-  await Promise.all([postActivity(workItem, { type: 'thought', body: text }), replyInThread(project, workItem, text)]);
+  await tell();
 };
 
 // The merge gate is the one that waits on GitHub, so its reviewers are asked there.
@@ -406,40 +407,91 @@ const startRun = async (
   return 'started';
 };
 
+// A job's run has no session or work item: its brief names the slot, and nothing is posted until it reports.
+const startJobRun = async (project: FactoryConfig, run: Run, now: Date): Promise<StartResult> => {
+  const job = findJob(project, run.job);
+  if (!job) {
+    log('warn', 'run not dispatched: factory.yaml no longer has its job', { runId: run.id, job: run.job });
+    return 'skipped';
+  }
+  // Jobs keep their configured model: the governor already holds them first whenever it would downshift.
+  if (!(await claimRun(project, run, job.model, now))) {
+    return 'not_claimed';
+  }
+  await getDb()
+    .update(queue)
+    .set({ releasedAt: now })
+    .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)));
+  const payload = buildDispatchPayload({
+    runId: run.id,
+    model: job.model,
+    brief: await jobBriefFor(project, job, run)
+  });
+  try {
+    await sendStageDispatch(repositoryOf(project), payload);
+  } catch (error) {
+    log('error', 'run dispatch failed', { runId: run.id, job: job.name, error: errorMessage(error) });
+    await getDb()
+      .update(runs)
+      .set({ status: 'finished', outcome: 'failed', summary: 'GitHub rejected the stage dispatch.', finishedAt: now })
+      .where(eq(runs.id, run.id));
+    await postJobMessage(project, job, `*${jobTitleOf(job)}:* couldn’t start: GitHub rejected the dispatch.`);
+    return 'skipped';
+  }
+  log('info', 'run dispatched', { runId: run.id, job: job.name, model: job.model });
+  return 'started';
+};
+
 // Runs the governor for one queued run, then dispatches it or holds it in the queue.
-const dispatchRun = async (project: FactoryConfig, runId: string, retried = false): Promise<void> => {
-  const found = await findRun(runId);
+export const dispatchRun = async (project: FactoryConfig, runId: string, retried = false): Promise<void> => {
+  const found = await findAnyRun(runId);
   if (found?.run.status !== 'queued') {
     return;
   }
+  const { run, workItem } = found;
   const db = getDb();
   const [readings, pause, runningCount, busyCount] = await Promise.all([
     latestReadings(),
     currentPause(),
     db.$count(runs, inArray(runs.status, ACTIVE_STATUSES)),
-    db.$count(runs, and(eq(runs.workItemId, found.workItem.id), inArray(runs.status, ACTIVE_STATUSES)))
+    workItem ? db.$count(runs, and(eq(runs.workItemId, workItem.id), inArray(runs.status, ACTIVE_STATUSES))) : 0
   ]);
   const now = new Date();
   const { decision, staleWindows } = governDispatch({
     policy: project.usage,
     readings,
-    priority: found.run.priority,
+    priority: run.priority,
     runningCount,
     maxRuns: project.concurrency.maxRuns,
     now,
     workItemBusy: busyCount > 0,
     paused: pause !== undefined,
-    allowUsage: found.run.usageOverrideBy !== null
+    allowUsage: run.usageOverrideBy !== null
   });
   if (staleWindows.length > 0) {
     // No probe until Phase 1 step 4: decide on the readings there are, and say so.
     log('warn', 'governor decided on stale usage readings', { runId, staleWindows, decision: decision.kind });
   }
+  const hold = (held: Extract<GovernedDecision, { kind: 'hold' }>) => {
+    const text = queuedThought(held, now, project.timeZone);
+    if (workItem) {
+      return holdRun(run, held, () =>
+        Promise.all([postActivity(workItem, { type: 'thought', body: text }), replyInThread(project, workItem, text)])
+      );
+    }
+    const job = findJob(project, run.job);
+    return holdRun(run, held, () =>
+      job ? postJobMessage(project, job, `*${jobTitleOf(job)}:* ${text}`) : Promise.resolve()
+    );
+  };
   if (decision.kind === 'hold') {
-    await holdRun(project, found, decision, now);
+    await hold(decision);
     return;
   }
-  if ((await startRun(project, found, decision.downshift, now)) !== 'not_claimed') {
+  const started = workItem
+    ? await startRun(project, { run, workItem }, decision.downshift, now)
+    : await startJobRun(project, run, now);
+  if (started !== 'not_claimed') {
     return;
   }
   // Another dispatch took the slot (or another run on this issue started) since the governor looked: decide again.
@@ -447,7 +499,7 @@ const dispatchRun = async (project: FactoryConfig, runId: string, retried = fals
     await dispatchRun(project, runId, true);
     return;
   }
-  await holdRun(project, found, { kind: 'hold', state: decision.state, reason: 'concurrency' }, now);
+  await hold({ kind: 'hold', state: decision.state, reason: 'concurrency' });
 };
 
 const toAsked = ({ id, position, prompt, topic, why, options, answer, answerSource }: QuestionRow): AskedQuestion => ({
@@ -646,19 +698,26 @@ const createRun = async (
 
 // Cancel from the Runs page: the run and its Actions run, then a final word in Linear and Slack.
 export const cancelRunFromConsole = async (runId: string, login: string): Promise<boolean> => {
-  const found = await findRun(runId);
-  const project = found && findProject(found.workItem.project);
+  const found = await findAnyRun(runId);
+  const projectName = found?.workItem?.project ?? found?.run.project;
+  const project = projectName ? findProject(projectName) : undefined;
   if (!found || !project || !isOpenRun(found.run.status)) {
     return false;
   }
+  const { run, workItem } = found;
   const text = stoppedText({ kind: 'console', login });
-  if (!(await cancelRun(found.run, found.workItem, text, new Date()))) {
+  // A job's run has no session or thread to tell; the Runs page shows it stopped.
+  if (
+    !(await cancelRun(run, { repository: workItem?.repository ?? repositoryOf(project), workItem }, text, new Date()))
+  ) {
     return false;
   }
-  await Promise.all([
-    postActivity(found.workItem, { type: 'response', body: text }),
-    replyInThread(project, found.workItem, text)
-  ]);
+  if (workItem) {
+    await Promise.all([
+      postActivity(workItem, { type: 'response', body: text }),
+      replyInThread(project, workItem, text)
+    ]);
+  }
   await releaseQueue();
   return true;
 };
@@ -697,12 +756,15 @@ export const allowRunOnce = async (runId: string, login: string): Promise<boolea
     .update(runs)
     .set({ usageOverrideBy: login })
     .where(and(eq(runs.id, runId), eq(runs.status, 'queued')))
-    .returning({ workItemId: runs.workItemId });
+    .returning({ workItemId: runs.workItemId, project: runs.project });
   if (!allowed) {
     return false;
   }
-  const [workItem] = await getDb().select().from(workItems).where(eq(workItems.id, allowed.workItemId)).limit(1);
-  const project = workItem && findProject(workItem.project);
+  const [workItem] = allowed.workItemId
+    ? await getDb().select().from(workItems).where(eq(workItems.id, allowed.workItemId)).limit(1)
+    : [];
+  const projectName = workItem?.project ?? allowed.project;
+  const project = projectName ? findProject(projectName) : undefined;
   log('info', 'run allowed once', { runId, login, issue: workItem?.issueIdentifier });
   if (project) {
     await dispatchRun(project, runId);
@@ -713,10 +775,16 @@ export const allowRunOnce = async (runId: string, login: string): Promise<boolea
 // Releases held runs, highest priority first, for as long as the governor allows.
 export const releaseQueue = async (): Promise<void> => {
   const waiting = await getDb()
-    .select({ runId: queue.runId, priority: queue.priority, heldAt: queue.heldAt, project: workItems.project })
+    .select({
+      runId: queue.runId,
+      priority: queue.priority,
+      heldAt: queue.heldAt,
+      // A job's run names its project itself.
+      project: sql<string>`coalesce(${workItems.project}, ${runs.project})`
+    })
     .from(queue)
     .innerJoin(runs, eq(queue.runId, runs.id))
-    .innerJoin(workItems, eq(runs.workItemId, workItems.id))
+    .leftJoin(workItems, eq(runs.workItemId, workItems.id))
     .where(isNull(queue.releasedAt));
   await orderQueue(waiting).reduce(async (previous, entry) => {
     await previous;
@@ -808,7 +876,12 @@ const startWork = async (project: FactoryConfig, event: Extract<SessionEvent, { 
   await dispatchRun(project, await createRun(project, workItem, request));
 };
 
-const cancelRun = async (run: Run, workItem: WorkItem, summary: string, now: Date): Promise<boolean> => {
+const cancelRun = async (
+  run: Run,
+  { repository, workItem }: { repository: string; workItem: WorkItem | null },
+  summary: string,
+  now: Date
+): Promise<boolean> => {
   const db = getDb();
   const canceled = await db
     .update(runs)
@@ -824,9 +897,15 @@ const cancelRun = async (run: Run, workItem: WorkItem, summary: string, now: Dat
     .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)));
   if (run.actionsRunId) {
     const actionsRunId = run.actionsRunId;
-    await attempt('actions run cancel', { runId: run.id }, () => cancelActionsRun(workItem.repository, actionsRunId));
+    await attempt('actions run cancel', { runId: run.id }, () => cancelActionsRun(repository, actionsRunId));
   }
-  log('info', 'run canceled', { runId: run.id, issue: workItem.issueIdentifier, from: run.status, summary });
+  log('info', 'run canceled', {
+    runId: run.id,
+    issue: workItem?.issueIdentifier,
+    job: run.job,
+    from: run.status,
+    summary
+  });
   return true;
 };
 
@@ -837,7 +916,9 @@ const cancelOpenRuns = async (workItem: WorkItem, summary: string): Promise<numb
     .from(runs)
     .where(and(eq(runs.workItemId, workItem.id), inArray(runs.status, OPEN_STATUSES)));
   const now = new Date();
-  const canceled = await Promise.all(open.map((run) => cancelRun(run, workItem, summary, now)));
+  const canceled = await Promise.all(
+    open.map((run) => cancelRun(run, { repository: workItem.repository, workItem }, summary, now))
+  );
   return canceled.filter(Boolean).length;
 };
 

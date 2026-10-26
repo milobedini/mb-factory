@@ -30,6 +30,28 @@ describe('renderStagePrompt', () => {
     );
   });
 
+  it('writes a job brief with its slot and where the last run got to', () => {
+    const prompt = renderStagePrompt({
+      agent: 'security',
+      job: 'security',
+      trigger: 'scheduled',
+      slot: new Date('2026-10-27T06:00:00Z'),
+      since: 'a'.repeat(40)
+    });
+    expect(prompt).toContain('Spawn the `mb-factory:security` subagent in the foreground');
+    expect(briefBlock(prompt)).toBe(
+      [
+        '<brief>',
+        'stage: security',
+        'job: security',
+        'trigger: scheduled',
+        'slot: 2026-10-27T06:00:00.000Z',
+        `since: ${'a'.repeat(40)}`,
+        '</brief>'
+      ].join('\n')
+    );
+  });
+
   it('adds the PR, branch, round and the human’s prompt as an indented block', () => {
     const prompt = renderStagePrompt({
       ...brief,

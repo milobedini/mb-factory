@@ -11,7 +11,8 @@ export const STAGES = [
 
 export type Stage = (typeof STAGES)[number];
 
-export const AGENT_ROLES = ['triage', 'spec', 'implement', 'verify', 'review'] as const;
+// `security` runs as a scheduled job, not on a work item.
+export const AGENT_ROLES = ['triage', 'spec', 'implement', 'verify', 'review', 'security'] as const;
 
 export type AgentRole = (typeof AGENT_ROLES)[number];
 

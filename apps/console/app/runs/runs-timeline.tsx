@@ -3,7 +3,7 @@ import { formatReleaseAt, formatRunTime, isOpenRun, linearStatusFor, runTiming }
 
 import { AutoRefresh } from '@/app/auto-refresh';
 import { consoleTimeZone, findProject } from '@/lib/projects';
-import type { RunRow, WorkItemRuns } from '@/lib/runs-view';
+import type { JobRuns, RunRow, WorkItemRuns } from '@/lib/runs-view';
 import { loadRunsView } from '@/lib/runs-view';
 
 import { cancelRunAction, rerunAction } from './actions';
@@ -18,7 +18,8 @@ const TRIGGER_COPY: Record<RunTrigger, string> = {
   conflict: 'merge conflict',
   rerun: 'resumed after the limit',
   console: 're-run from the console',
-  answered: 'answers'
+  answered: 'answers',
+  scheduled: 'scheduled'
 };
 
 const STAGE_STYLES: Partial<Record<Stage, string>> = {
@@ -159,9 +160,27 @@ const WorkItemSection = ({ item, now }: { item: WorkItemRuns; now: Date }) => {
   );
 };
 
+const JobSection = ({ job, now }: { job: JobRuns; now: Date }) => (
+  <section className="border-foreground/15 flex flex-col gap-4 rounded-lg border p-4">
+    <header>
+      <h2 className="font-medium">{job.title}</h2>
+      <p className="text-foreground/70 text-sm">Latest runs, newest first.</p>
+    </header>
+    {job.runs.length === 0 ? (
+      <p className="text-foreground/70 text-sm">It hasn’t run yet.</p>
+    ) : (
+      <ol className="ml-1 flex flex-col">
+        {job.runs.map((run) => (
+          <RunItem key={run.id} run={run} rerunnable={false} now={now} />
+        ))}
+      </ol>
+    )}
+  </section>
+);
+
 export const RunsTimeline = async () => {
   const view = await loadRunsView();
-  const working = view.workItems.some(({ runs }) => runs.some(({ status }) => isOpenRun(status)));
+  const working = [...view.workItems, ...view.jobs].some(({ runs }) => runs.some(({ status }) => isOpenRun(status)));
   return (
     <div className="flex flex-col gap-6">
       <AutoRefresh active={working} />
@@ -170,6 +189,9 @@ export const RunsTimeline = async () => {
       ) : (
         view.workItems.map((item) => <WorkItemSection key={item.workItem.id} item={item} now={view.now} />)
       )}
+      {view.jobs.map((job) => (
+        <JobSection key={job.key} job={job} now={view.now} />
+      ))}
       <footer className="border-foreground/15 text-foreground/70 flex flex-wrap items-center justify-between gap-3 border-t pt-4 text-sm">
         <span>Signed in as {view.user.login}</span>
         <form action="/api/auth/logout" method="post">

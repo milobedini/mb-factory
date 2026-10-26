@@ -12,7 +12,8 @@ export const RUN_TRIGGERS = [
   'delivered',
   'rerun',
   'console',
-  'answered'
+  'answered',
+  'scheduled'
 ] as const;
 
 export type RunTrigger = (typeof RUN_TRIGGERS)[number];

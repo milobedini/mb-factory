@@ -126,9 +126,13 @@ const HeldRow = ({ run, now }: { run: HeldRun; now: Date }) => (
   <li className="border-foreground/10 flex flex-wrap items-center justify-between gap-3 border-t py-3 first:border-t-0">
     <div className="flex flex-col gap-0.5">
       <p>
-        <a href={run.issueUrl} className="font-medium underline-offset-2 hover:underline">
-          {run.issueIdentifier}
-        </a>{' '}
+        {run.issueUrl ? (
+          <a href={run.issueUrl} className="font-medium underline-offset-2 hover:underline">
+            {run.issueIdentifier}
+          </a>
+        ) : (
+          <span className="font-medium">{run.job} job</span>
+        )}{' '}
         <span className="text-foreground/70 text-sm">
           {run.agent} · {run.trigger} · {run.priority.replace('_', '-')}
         </span>

@@ -63,3 +63,9 @@ usage:
   downshift:
     triage: haiku
     review: sonnet
+
+jobs:
+  - name: security
+    agent: security
+    at: "06:00"
+    model: sonnet

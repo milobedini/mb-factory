@@ -14,6 +14,16 @@ export type Brief = {
   round?: number;
 };
 
+// A scheduled job's brief: no issue or session, just the slot it fills and where the last run of it got to.
+export type JobBrief = {
+  agent: AgentRole;
+  job: string;
+  trigger: RunTrigger;
+  slot: Date;
+  // The newest commit on the default branch the job's last run covered.
+  since?: string;
+};
+
 // The `client_payload` of the repository_dispatch; the caller workflow passes each field to stage.yml.
 export type DispatchPayload = {
   run_id: string;
@@ -44,8 +54,21 @@ const renderBrief = ({ agent, issue, session, trigger, prompt, pr, branch, round
     .filter((line) => line !== undefined)
     .join('\n');
 
+const renderJobBrief = ({ agent, job, trigger, slot, since }: JobBrief): string =>
+  [
+    `stage: ${agent}`,
+    `job: ${oneLine(job)}`,
+    `trigger: ${trigger}`,
+    `slot: ${slot.toISOString()}`,
+    since === undefined ? undefined : `since: ${oneLine(since)}`
+  ]
+    .filter((line) => line !== undefined)
+    .join('\n');
+
+const isJobBrief = (brief: Brief | JobBrief): brief is JobBrief => 'job' in brief;
+
 // Skills in an agent's `skills:` are only preloaded when it runs as a subagent, so the main thread just hands over.
-export const renderStagePrompt = (brief: Brief): string =>
+export const renderStagePrompt = (brief: Brief | JobBrief): string =>
   [
     'You are the dispatcher for one mb-factory stage run. Do not do the stage work yourself.',
     '',
@@ -53,7 +76,7 @@ export const renderStagePrompt = (brief: Brief): string =>
     'Then check that the file at the path in FACTORY_REPORT_PATH holds a JSON stage report. If it does not, write one with outcome "failed" and a summary saying the stage agent ended without a report. Then stop.',
     '',
     '<brief>',
-    renderBrief(brief),
+    isJobBrief(brief) ? renderJobBrief(brief) : renderBrief(brief),
     '</brief>'
   ].join('\n');
 
@@ -64,5 +87,5 @@ export const buildDispatchPayload = ({
 }: {
   runId: string;
   model: string;
-  brief: Brief;
+  brief: Brief | JobBrief;
 }): DispatchPayload => ({ run_id: runId, model, prompt: renderStagePrompt(brief) });

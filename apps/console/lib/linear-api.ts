@@ -232,3 +232,100 @@ export const delegateIssue = async (organizationId: string, issueId: string, del
     { id: issueId, delegateId }
   );
 };
+
+type TeamForFiling = {
+  teams: {
+    nodes: {
+      id: string;
+      triageEnabled: boolean;
+      states: { nodes: { id: string }[] };
+    }[];
+  };
+  issueLabels: { nodes: { id: string; name: string; team: { id: string } | null }[] };
+};
+
+// The team's labels with these names, or the workspace's; any missing is created on the team.
+const labelIdsFor = async (
+  organizationId: string,
+  teamId: string,
+  names: string[],
+  found: TeamForFiling['issueLabels']['nodes']
+): Promise<string[]> =>
+  Promise.all(
+    names.map(async (name) => {
+      const usable = found.filter(
+        (label) => label.name.toLowerCase() === name.toLowerCase() && (!label.team || label.team.id === teamId)
+      );
+      const existing = usable.find(({ team }) => team?.id === teamId) ?? usable[0];
+      if (existing) {
+        return existing.id;
+      }
+      const { issueLabelCreate } = await linearGraphql<{ issueLabelCreate: { issueLabel: { id: string } } }>(
+        organizationId,
+        'mutation LabelCreate($input: IssueLabelCreateInput!) { issueLabelCreate(input: $input) { issueLabel { id } } }',
+        { input: { name, teamId } }
+      );
+      return issueLabelCreate.issueLabel.id;
+    })
+  );
+
+export type TriageIssue = {
+  teamKey: string;
+  title: string;
+  description: string;
+  priority: number;
+  estimate: number | null;
+  labels: string[];
+};
+
+// Filed in the team's Triage inbox, undelegated and unassigned: a person accepts or declines it before any work.
+export const fileTriageIssue = async (
+  organizationId: string,
+  { teamKey, title, description, priority, estimate, labels }: TriageIssue
+): Promise<CreatedIssue> => {
+  const { teams, issueLabels } = await linearGraphql<TeamForFiling>(
+    organizationId,
+    'query TeamForFiling($key: String!, $labels: IssueLabelFilter) { teams(filter: { key: { eq: $key } }) { nodes { id triageEnabled states(filter: { type: { eq: "triage" } }) { nodes { id } } } } issueLabels(filter: $labels) { nodes { id name team { id } } } }',
+    // Label names match without regard to case, as Linear compares them when creating one.
+    { key: teamKey, labels: { or: labels.map((name) => ({ name: { eqIgnoreCase: name } })) } }
+  );
+  const [team] = teams.nodes;
+  if (!team) {
+    throw new Error(`Linear has no team with the key ${teamKey}`);
+  }
+  const triageStateId = team.triageEnabled ? team.states.nodes[0]?.id : undefined;
+  if (!triageStateId) {
+    throw new Error(`The ${teamKey} team has no Triage status`);
+  }
+  const labelIds = await labelIdsFor(organizationId, team.id, labels, issueLabels.nodes);
+  const { issueCreate } = await linearGraphql<{ issueCreate: { success: boolean; issue: CreatedIssue | null } }>(
+    organizationId,
+    'mutation IssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url title } } }',
+    {
+      input: {
+        teamId: team.id,
+        stateId: triageStateId,
+        title,
+        description,
+        priority,
+        labelIds,
+        ...(estimate === null ? {} : { estimate })
+      }
+    }
+  );
+  if (!issueCreate.issue) {
+    throw new Error('Linear created no issue');
+  }
+  return issueCreate.issue;
+};
+
+// The issue's workflow state type (`triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled`), or null when
+// Linear can't find it.
+export const issueStateType = async (organizationId: string, issueId: string): Promise<string | null> => {
+  const { issue } = await linearGraphql<{ issue: { state: { type: string } } | null }>(
+    organizationId,
+    'query IssueStateType($id: String!) { issue(id: $id) { state { type } } }',
+    { id: issueId }
+  );
+  return issue?.state.type ?? null;
+};

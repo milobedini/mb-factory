@@ -71,6 +71,13 @@
       "when": 1792949126615,
       "tag": "0009_clear_husk",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793006065010,
+      "tag": "0010_salty_sumo",
+      "breakpoints": true
     }
   ]
 }

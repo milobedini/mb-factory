@@ -23,8 +23,10 @@ export type HeldRun = {
   agent: (typeof runs.$inferSelect)['agent'];
   trigger: (typeof runs.$inferSelect)['trigger'];
   usageOverrideBy: string | null;
-  issueIdentifier: string;
-  issueUrl: string;
+  // A scheduled job's run has no issue, only the job's name.
+  issueIdentifier: string | null;
+  issueUrl: string | null;
+  job: string | null;
 };
 
 export type UsageView = {
@@ -57,11 +59,12 @@ export const loadUsageView = async (): Promise<UsageView> => {
         trigger: runs.trigger,
         usageOverrideBy: runs.usageOverrideBy,
         issueIdentifier: workItems.issueIdentifier,
-        issueUrl: workItems.issueUrl
+        issueUrl: workItems.issueUrl,
+        job: runs.job
       })
       .from(queue)
       .innerJoin(runs, eq(queue.runId, runs.id))
-      .innerJoin(workItems, eq(runs.workItemId, workItems.id))
+      .leftJoin(workItems, eq(runs.workItemId, workItems.id))
       .where(isNull(queue.releasedAt)),
     db.select().from(usageReadings).orderBy(desc(usageReadings.takenAt)).limit(12)
   ]);

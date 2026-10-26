@@ -4,6 +4,8 @@ import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import { runs, usageReadings, workItems } from '@/db/schema';
 
+import { findProject, repositoryOf } from './projects';
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type RunWithWorkItem = {
@@ -11,6 +13,13 @@ export type RunWithWorkItem = {
   workItem: typeof workItems.$inferSelect;
 };
 
+// A run with its work item, or without one for a scheduled job's run.
+export type FoundRun = {
+  run: typeof runs.$inferSelect;
+  workItem: typeof workItems.$inferSelect | null;
+};
+
+// Work-item runs only; `findAnyRun` also finds a job's.
 export const findRun = async (runId: string): Promise<RunWithWorkItem | undefined> => {
   if (!UUID.test(runId)) {
     return undefined;
@@ -22,6 +31,28 @@ export const findRun = async (runId: string): Promise<RunWithWorkItem | undefine
     .where(eq(runs.id, runId))
     .limit(1);
   return row;
+};
+
+export const findAnyRun = async (runId: string): Promise<FoundRun | undefined> => {
+  if (!UUID.test(runId)) {
+    return undefined;
+  }
+  const [row] = await getDb()
+    .select({ run: runs, workItem: workItems })
+    .from(runs)
+    .leftJoin(workItems, eq(runs.workItemId, workItems.id))
+    .where(eq(runs.id, runId))
+    .limit(1);
+  return row;
+};
+
+// The repository a run works in: its work item's, or its job's project's.
+export const runRepository = ({ run, workItem }: FoundRun): string | undefined => {
+  if (workItem) {
+    return workItem.repository;
+  }
+  const project = run.project ? findProject(run.project) : undefined;
+  return project && repositoryOf(project);
 };
 
 // Returns false when the run had already left `dispatched`, so a replayed start does nothing.
@@ -40,7 +71,7 @@ export const markRunStarted = async (runId: string, claims: StageRunClaims, now:
 };
 
 export const recordRunReport = async (
-  { run, workItem }: RunWithWorkItem,
+  { run, workItem }: FoundRun,
   summary: RunSummary,
   now: Date
 ): Promise<boolean> => {
@@ -73,11 +104,11 @@ export const recordRunReport = async (
     runId: run.id,
     takenAt: now
   }));
-  const branch = summary.report?.branch ?? workItem.branch;
-  const prNumber = summary.report?.pr ?? workItem.prNumber;
+  const branch = summary.report?.branch ?? workItem?.branch;
+  const prNumber = summary.report?.pr ?? workItem?.prNumber;
   await Promise.all([
     readings.length > 0 ? db.insert(usageReadings).values(readings) : undefined,
-    branch !== workItem.branch || prNumber !== workItem.prNumber
+    workItem && (branch !== workItem.branch || prNumber !== workItem.prNumber)
       ? db.update(workItems).set({ branch, prNumber, updatedAt: now }).where(eq(workItems.id, workItem.id))
       : undefined
   ]);

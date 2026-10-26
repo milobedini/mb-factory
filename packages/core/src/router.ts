@@ -220,7 +220,7 @@ export const governDispatch = ({ workItemBusy, paused, allowUsage, ...request }:
 
 export type ModelledAgent = keyof FactoryConfig['models'];
 
-const isModelled = (agent: AgentRole): agent is ModelledAgent => agent !== 'verify';
+const isModelled = (agent: AgentRole): agent is ModelledAgent => agent !== 'verify' && agent !== 'security';
 
 export const modelFor = (config: FactoryConfig, agent: AgentRole, downshift: boolean): string => {
   if (!isModelled(agent)) {
@@ -576,7 +576,8 @@ const STARTED_BECAUSE: Record<RunTrigger, (round: number | undefined) => string>
   conflict: () => ' to resolve a merge conflict',
   rerun: () => ' again, after the usage limit reset',
   console: () => ' again, from the console',
-  answered: () => ' with your answers'
+  answered: () => ' with your answers',
+  scheduled: () => ', as scheduled'
 };
 
 // Says why, so the thread reads as a timeline on its own.

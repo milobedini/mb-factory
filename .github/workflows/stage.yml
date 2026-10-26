@@ -73,12 +73,15 @@ jobs:
           oidc=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
           echo "::add-mask::$oidc"
           response=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" "$CONSOLE_URL/api/runs/$RUN_ID/start")
-          linear_token=$(jq -r .linearAccessToken <<< "$response")
-          echo "::add-mask::$linear_token"
-          {
-            echo "LINEAR_ACCESS_TOKEN=$linear_token"
-            echo "LINEAR_AGENT_SESSION_ID=$(jq -r .agentSessionId <<< "$response")"
-          } >> "$GITHUB_ENV"
+          # A scheduled job's run reports only to the console, so it gets no Linear token or session.
+          linear_token=$(jq -r '.linearAccessToken // empty' <<< "$response")
+          if [[ -n "$linear_token" ]]; then
+            echo "::add-mask::$linear_token"
+            {
+              echo "LINEAR_ACCESS_TOKEN=$linear_token"
+              echo "LINEAR_AGENT_SESSION_ID=$(jq -r '.agentSessionId // empty' <<< "$response")"
+            } >> "$GITHUB_ENV"
+          fi
 
       - name: Run the stage
         id: claude
