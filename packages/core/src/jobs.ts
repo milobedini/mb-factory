@@ -198,12 +198,10 @@ const SEVERITY_LABEL: Record<FindingSeverity, string> = {
 const MAX_TITLE = 80;
 
 // The agent read public repo content to write a finding, so its text is untrusted: an image would load as soon as
-// someone opened the issue, and a link could hide where it goes. Images are dropped and links show their address.
-export const neutraliseMarkdown = (text: string): string =>
-  text
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, (_, alt: string) => `[image removed${alt ? `: ${alt}` : ''}]`)
-    .replace(/<img\b[^>]*>/gi, '[image removed]')
-    .replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g, (_, label: string, url: string) => `${label} (${url})`);
+// someone opened the issue, and a link could hide where it goes. Escaping the brackets and angle brackets means no
+// link, image, reference definition or HTML can render, whatever form it takes; a bare address stays visible as it is.
+// Code shows the backslashes too, which is the price of not parsing Markdown here.
+export const neutraliseMarkdown = (text: string): string => text.replace(/[\\[\]<>]/g, (character) => `\\${character}`);
 
 export type FindingIssue = { title: string; description: string; priority: number; estimate: number | null };
 

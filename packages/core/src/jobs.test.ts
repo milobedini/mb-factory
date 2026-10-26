@@ -201,17 +201,23 @@ describe('findingIssue', () => {
 });
 
 describe('neutraliseMarkdown', () => {
-  it('drops images and shows where links go', () => {
+  it('escapes every form of link, image and HTML', () => {
     expect(
       neutraliseMarkdown(
-        'See ![pixel](https://evil.example/p.png) and [the docs](https://evil.example/login "Docs"). <img src="https://x/y">'
+        'See ![pixel](https://evil.example/p.png), [the [nested] docs](https://evil.example/login), ![ref][1], <img src="https://x/y"> and <https://evil.example>.\n\n[1]: https://evil.example/q.png'
       )
-    ).toBe('See [image removed: pixel] and the docs (https://evil.example/login). [image removed]');
+    ).toBe(
+      'See !\\[pixel\\](https://evil.example/p.png), \\[the \\[nested\\] docs\\](https://evil.example/login), !\\[ref\\]\\[1\\], \\<img src="https://x/y"\\> and \\<https://evil.example\\>.\n\n\\[1\\]: https://evil.example/q.png'
+    );
   });
 
-  it('leaves plain text and code alone', () => {
-    expect(neutraliseMarkdown('Use `cursor.execute(sql, [param])` in views.py:42.')).toBe(
-      'Use `cursor.execute(sql, [param])` in views.py:42.'
+  it('escapes backslashes first, so an escape in the text cannot undo one', () => {
+    expect(neutraliseMarkdown('\\[x](y)')).toBe('\\\\\\[x\\](y)');
+  });
+
+  it('leaves text without brackets alone', () => {
+    expect(neutraliseMarkdown('Use parameters in views.py:42 (see https://docs.djangoproject.com).')).toBe(
+      'Use parameters in views.py:42 (see https://docs.djangoproject.com).'
     );
   });
 });
