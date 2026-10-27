@@ -19,6 +19,7 @@ import { scheduledRuns } from './github-api';
 import { postJobMessage } from './job-runs';
 import { log } from './log';
 import { loadReadyList, postReadyMessage } from './ready';
+import { newSentryIssues } from './sentry-api';
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -115,6 +116,15 @@ const loadScheduledRuns = async (project: FactoryConfig, since: Date): Promise<H
   return perRepo.flat();
 };
 
+// New Sentry issues, when the project reports to Sentry; a failed request is a warning, which tomorrow's check shows.
+const loadSentryIssues = async (project: FactoryConfig, since: Date): Promise<HealthInput['sentryIssues']> =>
+  project.sentry
+    ? newSentryIssues(project.sentry, since).catch((error: unknown) => {
+        log('warn', 'sentry issues failed', { project: project.name, error: errorMessage(error) });
+        return [];
+      })
+    : [];
+
 // The previous check's moment, so each one covers what came after it; the first looks back a day.
 const previousCheck = async (project: FactoryConfig, slotId: string, now: Date): Promise<Date> => {
   const [previous] = await getDb()
@@ -149,11 +159,12 @@ export const fireHealthCheck = async (project: FactoryConfig, now: Date): Promis
     return;
   }
   const since = await previousCheck(project, fired.id, now);
-  const [problems, runState, slots, scheduled] = await Promise.all([
+  const [problems, runState, slots, scheduled, sentryIssues] = await Promise.all([
     loadProblems(since),
     loadRuns(project, now),
     loadSlots(project, since),
-    loadScheduledRuns(project, since)
+    loadScheduledRuns(project, since),
+    loadSentryIssues(project, since)
   ]);
   const report = healthReport({
     now,
@@ -163,7 +174,8 @@ export const fireHealthCheck = async (project: FactoryConfig, now: Date): Promis
     ...runState,
     jobs: [...project.jobs, slot],
     slots,
-    scheduledRuns: scheduled
+    scheduledRuns: scheduled,
+    sentryIssues
   });
   const consoleUrl = requireEnv('CONSOLE_URL');
   await postJobMessage(project, slot, healthText(report, { now, since, timeZone: project.timeZone, consoleUrl }));

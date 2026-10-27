@@ -57,7 +57,8 @@ export type {
   OpenRun,
   ProblemGroup,
   ProblemLevel,
-  ScheduledRun
+  ScheduledRun,
+  SentryIssue
 } from './health';
 export {
   formatMinutes,

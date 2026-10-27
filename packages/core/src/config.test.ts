@@ -83,6 +83,25 @@ describe('health', () => {
   });
 });
 
+describe('sentry', () => {
+  it('reads where the app reports its errors, defaulting to sentry.io', () => {
+    expect(parseFactoryConfig(tastebookConfig).sentry).toEqual({
+      url: 'https://de.sentry.io',
+      organisation: 'milo-bedini',
+      projects: ['sentry-gray-fountain']
+    });
+    expect(parseFactoryConfig(tastebookConfig.replace('  url: https://de.sentry.io\n', '')).sentry?.url).toBe(
+      'https://sentry.io'
+    );
+  });
+
+  it('needs at least one project', () => {
+    expect(() =>
+      parseFactoryConfig(tastebookConfig.replace(/ {2}projects:\n {4}- sentry-gray-fountain\n/, '  projects: []\n'))
+    ).toThrow();
+  });
+});
+
 describe('reviewersFor', () => {
   const config = parseFactoryConfig(tastebookConfig);
 

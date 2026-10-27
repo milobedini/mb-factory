@@ -57,6 +57,17 @@ export type ScheduledRun = {
   url: string;
 };
 
+// An unresolved issue in one of the project's Sentry projects.
+export type SentryIssue = {
+  project: string;
+  shortId: string;
+  title: string;
+  // Events so far.
+  count: number;
+  firstSeen: Date;
+  url: string;
+};
+
 // What counts as a failed run; a cancelled one was stopped on purpose.
 const FAILED_CONCLUSIONS = ['failure', 'timed_out', 'startup_failure'];
 
@@ -74,6 +85,8 @@ export type HealthInput = {
   slots: FiredSlot[];
   // Scheduled runs created since `since`.
   scheduledRuns: ScheduledRun[];
+  // Unresolved Sentry issues first seen since `since`.
+  sentryIssues: SentryIssue[];
 };
 
 export type HealthReport = {
@@ -83,7 +96,10 @@ export type HealthReport = {
   held: string[];
   slots: string[];
   workflows: string[];
+  sentry: string[];
 };
+
+const plural = (count: number, one: string, many = `${one}s`): string => `${count} ${count === 1 ? one : many}`;
 
 const clip = (text: string, limit: number): string => (text.length > limit ? `${text.slice(0, limit - 1)}…` : text);
 
@@ -196,17 +212,27 @@ const workflowLines = ({ scheduledRuns, timeZone }: HealthInput): string[] => {
   });
 };
 
-// Everything worth a look since the last check, from the console's own records and the project's scheduled runs.
+// Each new issue, most events first. Titles come from the app's errors, so they're clipped and escaped.
+const sentryLines = ({ sentryIssues, since, timeZone }: HealthInput): string[] =>
+  sentryIssues
+    .filter(({ firstSeen }) => firstSeen > since)
+    .toSorted((a, b) => b.count - a.count || b.firstSeen.getTime() - a.firstSeen.getTime())
+    .map(
+      ({ shortId, title, count, firstSeen, url }) =>
+        `<${url}|${escapeSlack(shortId)}> ${escapeSlack(clip(title.replace(/\s+/g, ' ').trim(), MAX_DETAIL))}: ${plural(count, 'event')}, first at ${clockTime(firstSeen, timeZone)}`
+    );
+
+// Everything worth a look since the last check, from the console's own records, the project's scheduled runs and
+// its new Sentry issues.
 export const healthReport = (input: HealthInput): HealthReport => ({
   errors: problemLines(input, 'error'),
   warnings: problemLines(input, 'warn'),
   runs: input.openRuns.flatMap((run) => stuckRun(run, input.now) ?? []),
   held: input.heldRuns.flatMap((run) => lateHold(run, input.now, input.timeZone) ?? []),
   slots: slotLines(input),
-  workflows: workflowLines(input)
+  workflows: workflowLines(input),
+  sentry: sentryLines(input)
 });
-
-const plural = (count: number, one: string, many = `${one}s`): string => `${count} ${count === 1 ? one : many}`;
 
 const section = (title: string, lines: string[]): string[] =>
   lines.length === 0
@@ -226,7 +252,7 @@ export const healthText = (
   const total = Object.values(report).reduce((sum, lines) => sum + lines.length, 0);
   const sinceText = `${slotDay(since, timeZone)} ${clockTime(since, timeZone)}`;
   if (total === 0) {
-    return `${title} all clear. No warnings, errors, stuck runs, late jobs or failed workflows since ${sinceText}.`;
+    return `${title} all clear. No warnings, errors, stuck runs, late jobs, failed workflows or new Sentry issues since ${sinceText}.`;
   }
   return [
     `${title} ${plural(total, 'thing')} to look at since ${sinceText}.`,
@@ -236,6 +262,7 @@ export const healthText = (
     ...section('Held work', report.held),
     ...section('Scheduled jobs', report.slots),
     ...section('Scheduled workflows', report.workflows),
+    ...section('New in Sentry', report.sentry),
     `<${consoleUrl}/runs|Runs> · <${consoleUrl}/usage|Usage>`
   ].join('\n');
 };

@@ -118,7 +118,16 @@ export const factoryConfigSchema = z
         message: 'guard is reserved for guards'
       }),
     // The console's daily check on itself: warnings and errors, stuck runs, late jobs. No Claude run, so it isn't held.
-    health: z.object({ at: clockTime }).optional()
+    health: z.object({ at: clockTime }).optional(),
+    // Where the project's app reports its errors; the health check lists new unresolved Sentry issues from here.
+    sentry: z
+      .object({
+        // The organisation's region, such as https://de.sentry.io for one hosted in the EU.
+        url: z.url().default('https://sentry.io'),
+        organisation: z.string().min(1),
+        projects: z.array(z.string().min(1)).min(1)
+      })
+      .optional()
   })
   .refine((config) => !config.verify || config.models.verify, {
     message: 'models.verify is needed when verify is set',

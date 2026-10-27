@@ -64,6 +64,13 @@ usage:
 health:
   at: "07:00"
 
+# New unresolved issues here show in the health check. The organisation is hosted in the EU.
+sentry:
+  url: https://de.sentry.io
+  organisation: milo-bedini
+  projects:
+    - sentry-gray-fountain
+
 jobs:
   - name: security
     agent: security

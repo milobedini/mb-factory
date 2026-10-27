@@ -18,6 +18,7 @@ const input = (overrides: Partial<HealthInput> = {}): HealthInput => ({
   jobs: [],
   slots: [],
   scheduledRuns: [],
+  sentryIssues: [],
   ...overrides
 });
 
@@ -192,13 +193,49 @@ describe('healthReport scheduled workflows', () => {
   });
 });
 
+describe('healthReport Sentry issues', () => {
+  const issue = (shortId: string, title: string, count: number, firstSeen: string) => ({
+    project: 'tastebook',
+    shortId,
+    title,
+    count,
+    firstSeen: new Date(firstSeen),
+    url: `https://milo-bedini.sentry.io/issues/${shortId}/`
+  });
+
+  it('lists issues first seen since the last check, most events first', () => {
+    const report = healthReport(
+      input({
+        sentryIssues: [
+          issue('TB-3', 'TypeError: recipe is undefined', 1, '2026-10-27T01:12:00Z'),
+          issue('TB-4', 'OperationalError: connection refused', 14, '2026-10-26T22:40:00Z'),
+          issue('TB-1', 'Seen before the check', 30, '2026-10-26T06:00:00Z')
+        ]
+      })
+    );
+    expect(report.sentry).toEqual([
+      '<https://milo-bedini.sentry.io/issues/TB-4/|TB-4> OperationalError: connection refused: 14 events, first at 22:40',
+      '<https://milo-bedini.sentry.io/issues/TB-3/|TB-3> TypeError: recipe is undefined: 1 event, first at 01:12'
+    ]);
+  });
+
+  it('escapes and clips titles', () => {
+    const report = healthReport(
+      input({ sentryIssues: [issue('TB-5', `<b>\n${'x'.repeat(200)}`, 2, '2026-10-27T03:00:00Z')] })
+    );
+    expect(report.sentry[0]).toMatch(
+      /^<https:\/\/milo-bedini\.sentry\.io\/issues\/TB-5\/\|TB-5> &lt;b&gt; x+…: 2 events/
+    );
+  });
+});
+
 describe('healthText', () => {
   const context = { now, since, timeZone: london, consoleUrl: 'https://console.test' };
-  const empty = { errors: [], warnings: [], runs: [], held: [], slots: [], workflows: [] };
+  const empty = { errors: [], warnings: [], runs: [], held: [], slots: [], workflows: [], sentry: [] };
 
   it('says all is clear when nothing came up', () => {
     expect(healthText(empty, context)).toBe(
-      '*Factory health, Tue 27 Oct:* all clear. No warnings, errors, stuck runs, late jobs or failed workflows since Mon 26 Oct 07:00.'
+      '*Factory health, Tue 27 Oct:* all clear. No warnings, errors, stuck runs, late jobs, failed workflows or new Sentry issues since Mon 26 Oct 07:00.'
     );
   });
 
