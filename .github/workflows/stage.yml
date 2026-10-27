@@ -96,6 +96,25 @@ jobs:
           echo "::add-mask::$oidc"
           response=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" "$CONSOLE_URL/api/runs/$RUN_ID/start")
           echo "agent=$(jq -r '.agent // empty' <<< "$response")" >> "$GITHUB_OUTPUT"
+          # A conflict fix: what the merge step needs to try merging the base branch in without the agent.
+          # Each value is checked before it's written, so none can add a line of its own to the step's outputs.
+          merge=$(jq -c '.merge // empty' <<< "$response")
+          if [[ -n "$merge" ]]; then
+            pr=$(jq -r '.pr' <<< "$merge")
+            branch=$(jq -r '.branch' <<< "$merge")
+            base=$(jq -r '.base' <<< "$merge")
+            co_author=$(jq -r '.coAuthor // empty' <<< "$merge")
+            if [[ "$pr" =~ ^[0-9]+$ && "$branch" =~ ^[A-Za-z0-9._/-]+$ && "$base" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+              {
+                echo "merge_pr=$pr"
+                echo "merge_branch=$branch"
+                echo "merge_base=$base"
+              } >> "$GITHUB_OUTPUT"
+              if [[ "$co_author" =~ ^[A-Za-z0-9\ ._\'-]+\ \<[A-Za-z0-9._+@-]+\>$ ]]; then
+                echo "merge_co_author=$co_author" >> "$GITHUB_OUTPUT"
+              fi
+            fi
+          fi
           # A scheduled job's run reports only to the console, so it gets no Linear token or session; a question gets no
           # token either, only a pass to read Linear through the console, which forwards queries and nothing else.
           linear_token=$(jq -r '.linearAccessToken // empty' <<< "$response")
@@ -167,8 +186,79 @@ jobs:
           echo "name=${SLUG}[bot]" >> "$GITHUB_OUTPUT"
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
+      - name: Merge the base branch in without the agent
+        id: merge
+        # A conflict fix where only lockfiles conflict needs no agent: take the base branch's lockfile, regenerate it
+        # from the merged manifests with its package manager, and let CI judge. Any other conflict, an unknown lockfile
+        # or a step that fails puts the checkout back as it was, and the agent resolves it as before.
+        if: steps.start.outputs.merge_branch != '' && steps.app-token.outcome == 'success' && steps.bot.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.start.outputs.merge_pr }}
+          BRANCH: ${{ steps.start.outputs.merge_branch }}
+          BASE: ${{ steps.start.outputs.merge_base }}
+          CO_AUTHOR: ${{ steps.start.outputs.merge_co_author }}
+          BOT_NAME: ${{ steps.bot.outputs.name }}
+          BOT_ID: ${{ steps.bot.outputs.id }}
+        run: |
+          # Where the checkout started, so a give-up leaves the agent the same checkout it has always had.
+          start=$(git symbolic-ref --quiet --short HEAD || git rev-parse HEAD)
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          give_up() {
+            echo "Leaving the merge to the agent: $1"
+            git merge --abort 2> /dev/null || true
+            git reset --quiet --hard
+            git checkout --quiet "$start"
+            git branch --quiet -D "$BRANCH" 2> /dev/null || true
+            exit 0
+          }
+          # Anything failing unexpectedly gives up the same way, so the agent never starts mid-merge.
+          set -E
+          trap 'give_up "a command failed on line $LINENO"' ERR
+          relock() {
+            case "$(basename "$1")" in
+              pnpm-lock.yaml) (cd "$(dirname "$1")" && pnpm install --lockfile-only --ignore-scripts) ;;
+              package-lock.json) (cd "$(dirname "$1")" && npm install --package-lock-only --ignore-scripts) ;;
+              uv.lock) (cd "$(dirname "$1")" && uv lock) ;;
+              *) return 1 ;;
+            esac
+          }
+          git fetch --quiet "$remote" "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" "+refs/heads/$BASE:refs/remotes/origin/$BASE" \
+            || give_up "couldn't fetch $BRANCH and $BASE"
+          git checkout --quiet -B "$BRANCH" "origin/$BRANCH" || give_up "couldn't check out $BRANCH"
+          git merge --no-ff --no-commit "origin/$BASE" > /dev/null 2>&1 || true
+          conflicted=()
+          while IFS= read -r file; do conflicted+=("$file"); done < <(git diff --name-only --diff-filter=U)
+          [[ ${#conflicted[@]} -gt 0 ]] || give_up "nothing conflicts, so GitHub's merge state may be stale"
+          for file in "${conflicted[@]}"; do
+            git checkout --quiet --theirs -- "$file" || give_up "couldn't take $BASE's $file"
+            relock "$file" || give_up "$file isn't a lockfile this step can regenerate"
+            git add -- "$file"
+          done
+          # The package managers write only their lockfiles, now staged: a change left unstaged is a reason to stop.
+          git diff --quiet || give_up "regenerating changed more than the lockfiles"
+          message="Merge $BASE into $BRANCH, regenerating ${conflicted[*]}"
+          identity=(-c "user.name=$BOT_NAME" -c "user.email=${BOT_ID}+${BOT_NAME}@users.noreply.github.com")
+          if [[ -n "$CO_AUTHOR" ]]; then
+            git "${identity[@]}" commit --quiet -m "$message" -m "Co-authored-by: $CO_AUTHOR" || give_up "couldn't commit the merge"
+          else
+            git "${identity[@]}" commit --quiet -m "$message" || give_up "couldn't commit the merge"
+          fi
+          git push --quiet "$remote" "HEAD:refs/heads/$BRANCH" \
+            || give_up "couldn't push $BRANCH (it may have moved)"
+          # shellcheck disable=SC2016 # the backticks are Markdown for the PR comment
+          files=$(printf '`%s`, ' "${conflicted[@]}")
+          files=${files%, }
+          gh pr comment "$PR" --body "Merged \`$BASE\` in without an agent: only ${files} conflicted, so each was taken from \`$BASE\` and regenerated from the merged manifests with its package manager. CI checks the result." \
+            || echo "::warning::Couldn't comment on PR #$PR"
+          jq -n --argjson pr "$PR" --arg branch "$BRANCH" --arg summary "Merged $BASE into PR #$PR without an agent: only ${conflicted[*]} conflicted, so each was regenerated from the merged manifests. CI checks the result." \
+            '{stage: "implement", outcome: "done", summary: $summary, next: "review", pr: $pr, branch: $branch}' > "$FACTORY_REPORT_PATH"
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
       - name: Run the stage
         id: claude
+        if: steps.merge.outputs.merged != 'true'
         timeout-minutes: 50
         uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:

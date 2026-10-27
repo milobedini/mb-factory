@@ -1,7 +1,8 @@
-import { checkStageRunClaims } from '@mb-factory/core';
+import { checkStageRunClaims, coAuthorFor } from '@mb-factory/core';
 import { after } from 'next/server';
 
 import { findAskByRun, refreshAskCard } from '@/lib/ask-runs';
+import { defaultBranch } from '@/lib/github-api';
 import { verifyGitHubOidc } from '@/lib/github-oidc';
 import { getLinearAccessToken } from '@/lib/linear-api';
 import { linearPass } from '@/lib/linear-pass';
@@ -65,6 +66,23 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
     minValidityMs: RUN_TOKEN_VALIDITY_MS
   });
   log('info', 'run started', { runId: id, actionsRunId: check.claims.run_id, issue: workItem.issueIdentifier });
+  // A conflict fix first tries merging the base branch in without the agent, which works when only lockfiles conflict.
+  const { prNumber, branch } = workItem;
+  const project = findProject(workItem.project);
+  const merge =
+    found.run.agent === 'implement' && found.run.trigger === 'conflict' && prNumber && branch && project
+      ? {
+          pr: prNumber,
+          branch,
+          base: await defaultBranch(workItem.repository).catch(() => null),
+          coAuthor: coAuthorFor(project, workItem.assigneeEmail) ?? null
+        }
+      : null;
   // The stage workflow gives only implement runs the project app's token, which can push workflow files.
-  return Response.json({ agent: found.run.agent, linearAccessToken, agentSessionId: workItem.agentSessionId });
+  return Response.json({
+    agent: found.run.agent,
+    linearAccessToken,
+    agentSessionId: workItem.agentSessionId,
+    merge: merge?.base ? merge : null
+  });
 };
