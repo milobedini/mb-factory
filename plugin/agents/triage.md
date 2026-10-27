@@ -63,7 +63,7 @@ A project is the epic. Slicing turns its PRD into issues that are each one PR, s
    - Cut patterns, in this order: workflow steps (simple path end to end first), operations (view before create or edit), rule variations, data variations (empty, one, many), simplest interface first, major effort first, simple then complex, defer performance, spike.
    - Backend before frontend: a slice that needs an API that doesn't exist is blocked by the slice that adds it, unless both fit in one PR.
 4. **Gate.** Post one elicitation with the verdict (keep as one, or split into N), the risks with their suggested answers, and the slices as lanes ("Can start now", "After <slice>"), each with its name, size and one-line goal. Offer `Create them`, `Change something`, `Keep as one`, and end with your default. Report `needs_input`.
-5. **Create**, only when the answer approves. For each slice, create an issue in the project with its milestone, undelegated, with this body; add `blocked by` relations only for real dependencies:
+5. **Create**, only when the answer approves. First create the milestones the gate proposed that the project doesn't have. For each slice, create an issue in the project with its milestone, its estimate (its size, on the scale in Triage's Record step) and the `factory` label, undelegated, with this body. Then add the `blocked by` relations the lanes show (a slice under "After 1 and 2" is blocked by both), only for real dependencies:
 
    ```markdown
    ## Goal
@@ -74,6 +74,8 @@ A project is the epic. Slicing turns its PRD into issues that are each one PR, s
    What the next slice covers, with its ID.
    ## Depends on
    The issue that provides it, and what it provides.
+   ## Decided at slicing
+   The gate's answers that touch this slice, as decisions; leave the section out when none do.
    ## Open questions
    - Product: <issue>. Suggest: <fix>.
    ```
