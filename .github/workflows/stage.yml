@@ -29,7 +29,8 @@ on:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: false
       # The project's own GitHub App, which can push workflow files (Anthropic's Claude app can't). Only implement runs
-      # use it; other runs, and every run without both, use the Claude app through the action's OIDC exchange.
+      # use it, and verify's evidence job to attach the walkthrough; other runs, and every run without both, use the
+      # Claude app through the action's OIDC exchange.
       FACTORY_APP_CLIENT_ID:
         required: false
       FACTORY_APP_PRIVATE_KEY:
@@ -223,6 +224,7 @@ jobs:
     env:
       RUN_ID: ${{ inputs.run_id }}
       CONSOLE_URL: ${{ inputs.console_url }}
+      HAS_FACTORY_APP: ${{ secrets.FACTORY_APP_CLIENT_ID != '' && secrets.FACTORY_APP_PRIVATE_KEY != '' }}
     steps:
       - name: Get the report and evidence
         id: download
@@ -261,6 +263,53 @@ jobs:
               -H "x-content-type: $type" "https://vercel.com/api/blob/?pathname=$pathname"
             echo "Uploaded https://${store,,}.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/$name"
           done
+          if [[ -f "$evidence/walkthrough.webm" ]]; then echo "walkthrough=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Get the factory app's token
+        id: app-token
+        # Only to attach the walkthrough: this runner never ran the agent, so the key stays out of its reach.
+        if: steps.upload.outputs.walkthrough == 'true' && env.HAS_FACTORY_APP == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          # Attaching a file needs push access.
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Attach the walkthrough
+        # GitHub plays only videos stored with it, so the PR's link to the Blob copy becomes a player. Whatever goes
+        # wrong, the PR keeps the link, which works.
+        if: steps.app-token.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          STORE: ${{ vars.EVIDENCE_BLOB_STORE_ID }}
+        run: |
+          evidence="$RUNNER_TEMP/verify/evidence"
+          [[ "$STORE" =~ ^[A-Za-z0-9]+$ ]] || { echo "::warning::EVIDENCE_BLOB_STORE_ID is not set: the walkthrough stays a link"; exit 0; }
+          pr=$(jq -r '.report.pr // empty' "$RUNNER_TEMP/verify/run-report.json")
+          [[ "$pr" =~ ^[0-9]+$ ]] || { echo "::warning::The report names no PR: the walkthrough stays a link"; exit 0; }
+          gh pr edit --help | grep -q -- --attach || { echo "::warning::This runner's gh can't attach files: the walkthrough stays a link"; exit 0; }
+          # GitHub's limit for videos on free plans.
+          (( $(stat -c %s "$evidence/walkthrough.webm") <= 10000000 )) || { echo "::warning::The walkthrough is over 10 MB: it stays a link"; exit 0; }
+          link="[Watch the walkthrough](https://${STORE,,}.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/walkthrough.webm)"
+          original="$RUNNER_TEMP/original-body.md"
+          gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json body --jq .body > "$original"
+          (( $(grep -cxF "$link" "$original") == 1 )) || { echo "::warning::The PR doesn't link the walkthrough on a line of its own: it stays a link"; exit 0; }
+          # gh uploads the file and rewrites this reference to GitHub's URL, which plays when alone in its paragraph.
+          awk -v link="$link" '$0 == link { print "![Walkthrough](./walkthrough.webm)"; next } { print }' "$original" > "$evidence/body.md"
+          cd "$evidence"
+          if gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --body-file body.md --attach ./walkthrough.webm \
+            && ! gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json body --jq .body | grep -qF './walkthrough.webm'; then
+            echo "Attached the walkthrough to PR #$pr"
+          else
+            gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --body-file "$original"
+            echo "::warning::Couldn't attach the walkthrough: the PR keeps its link"
+          fi
 
       - name: Report the run
         if: always()

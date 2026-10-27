@@ -57,9 +57,9 @@ With no template, use `## Summary`, `## Decisions` (if any), `## Evidence`.
 
 ### Evidence
 
-Evidence comes from CI, never from a local machine. The verify stage records it in the runner and writes it into the description; the implement stage leaves `Recorded by the verify stage.` in its place for a change a user will see, or `Not verified on screen: <why>.` when it reports `notOnScreen`. List files in the order a reviewer should look, each as a bold line saying what it shows, a blank line, then the image alone in its paragraph (`![what it shows](url)`). GitHub doesn't play videos from other sites inline, so a video is a link: `[Watch the walkthrough](url)`.
+Evidence comes from CI, never from a local machine. The verify stage records it in the runner and writes it into the description; the implement stage leaves `Recorded by the verify stage.` in its place for a change a user will see, or `Not verified on screen: <why>.` when it reports `notOnScreen`. List files in the order a reviewer should look, each as a bold line saying what it shows, a blank line, then the image alone in its paragraph (`![what it shows](url)`). GitHub plays only videos stored with it, so the walkthrough is written as a bold `**Walkthrough**` line, a blank line, then `[Watch the walkthrough](url)` alone in its paragraph; after verify ends, the factory attaches the video to the PR and swaps that line for a player, or leaves the link when it can't.
 
-- **Feature:** each acceptance criterion a user can see as a bold line with its result (`met`, `not met: what showed instead`, `unverified: why`) and a screenshot of that state, then one video walking through them all.
+- **Feature:** first one laptop screenshot of the feature's main screen; then a screenshot per state on a phone, each under a bold line naming every criterion a user can see that it proves, each with its result (`met`, `not met: what showed instead`, `unverified: why`); then the walkthrough. A criterion `not met` gets its own screenshot of what showed instead.
 - **Bug:** before, then after, then the failing test's name and its one assertion line from the run on unchanged code.
 - **Chore:** "No visible change." and the checks line.
 
