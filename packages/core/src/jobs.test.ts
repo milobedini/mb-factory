@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Finding } from './jobs';
 import {
+  coveredHead,
   decideFiling,
   findingIssue,
   isWorthFiling,
@@ -179,6 +180,51 @@ describe('isWorthFiling', () => {
   });
 });
 
+describe('coveredHead', () => {
+  const filed = new Set(['code:xss:a', 'docs:README.md:setup']);
+
+  it('starts after the newest run when everything it found was filed', () => {
+    expect(
+      coveredHead(
+        [
+          { head: 'c3', fingerprints: ['code:xss:a'] },
+          { head: 'c2', fingerprints: [] }
+        ],
+        filed
+      )
+    ).toBe('c3');
+  });
+
+  it('holds back to the newest run whose findings all reached Linear', () => {
+    expect(
+      coveredHead(
+        [
+          { head: 'c3', fingerprints: ['code:xss:a', 'code:csrf:b'] },
+          { head: 'c2', fingerprints: ['docs:README.md:setup'] },
+          { head: 'c1', fingerprints: [] }
+        ],
+        filed
+      )
+    ).toBe('c2');
+  });
+
+  it('moves on from the oldest run given when none of them filed everything', () => {
+    expect(
+      coveredHead(
+        [
+          { head: 'c3', fingerprints: ['code:csrf:b'] },
+          { head: 'c2', fingerprints: ['code:sqli:c'] }
+        ],
+        filed
+      )
+    ).toBe('c2');
+  });
+
+  it('has no head before the first run', () => {
+    expect(coveredHead([], filed)).toBeUndefined();
+  });
+});
+
 describe('decideFiling', () => {
   const previous = { identifier: 'TAS-20', url: 'https://linear.app/tastebook/issue/TAS-20' };
 
@@ -303,7 +349,7 @@ describe('jobCheckText', () => {
         gaps: [],
         filed: [{ identifier: 'TAS-21', url: 'https://l/TAS-21', title: 'Security: <script> in titles' }],
         known: [{ identifier: 'TAS-20', url: 'https://l/TAS-20' }],
-        failedToFile: 1
+        unfiled: ['Session cookie & CSRF token readable']
       },
       runUrl
     );
@@ -311,7 +357,31 @@ describe('jobCheckText', () => {
       `*Daily security check, Tue 27 Oct:* filed 1 issue in Triage. Reviewed 1 commit on main. <${runUrl}|Run log>`,
       '• <https://l/TAS-21|TAS-21> Security: &lt;script&gt; in titles',
       'Already filed: <https://l/TAS-20|TAS-20>.',
-      '1 finding couldn’t be filed in Linear; the details are in the console log.'
+      'Also couldn’t file 1 finding in Linear:',
+      '• Session cookie &amp; CSRF token readable',
+      'Linear’s reason is in the next health message. The next check looks at the same commits again.'
+    ]);
+  });
+
+  it('leads with what it couldn’t file when Linear refused everything', () => {
+    const text = jobCheckText(
+      'Daily docs check',
+      'Tue 27 Oct',
+      {
+        kind: 'filed',
+        commits: 82,
+        gaps: [],
+        filed: [],
+        known: [],
+        unfiled: ['README names the old domain', 'Stale setup steps']
+      },
+      null
+    );
+    expect(text.split('\n')).toEqual([
+      '*Daily docs check, Tue 27 Oct:* couldn’t file 2 findings in Linear. Reviewed 82 commits on main.',
+      '• README names the old domain',
+      '• Stale setup steps',
+      'Linear’s reason is in the next health message. The next check looks at the same commits again.'
     ]);
   });
 
@@ -325,7 +395,7 @@ describe('jobCheckText', () => {
         gaps: [],
         filed: [],
         known: [{ identifier: 'TAS-20', url: 'https://l/TAS-20' }],
-        failedToFile: 0
+        unfiled: []
       },
       null
     );

@@ -77,6 +77,7 @@ export { checksState, INBOX_KINDS, inboxEntry } from './inbox';
 export type {
   CheckIssue,
   CheckResult,
+  CoveredRun,
   FiledBefore,
   Filing,
   Finding,
@@ -87,6 +88,7 @@ export type {
   JobReport
 } from './jobs';
 export {
+  coveredHead,
   decideFiling,
   FINDING_KINDS,
   FINDING_SEVERITIES,

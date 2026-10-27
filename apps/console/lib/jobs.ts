@@ -96,7 +96,10 @@ export const fireDueJobs = async (now: Date): Promise<void> => {
   );
 };
 
-type Filed = { kind: 'filed'; issue: CheckIssue } | { kind: 'known'; issue: CheckIssue } | { kind: 'failed' };
+type Filed =
+  | { kind: 'filed'; issue: CheckIssue }
+  | { kind: 'known'; issue: CheckIssue }
+  | { kind: 'failed'; title: string };
 
 // Files one finding unless an earlier issue for it is still open or was declined.
 const fileFinding = async (
@@ -162,7 +165,7 @@ const fileFinding = async (
     return { kind: 'filed', issue: created };
   } catch (error) {
     log('error', 'job finding filing failed', { fingerprint: finding.fingerprint, error: errorMessage(error) });
-    return { kind: 'failed' };
+    return { kind: 'failed', title: finding.title };
   }
 };
 
@@ -201,7 +204,7 @@ const checkResult = async (project: FactoryConfig, job: Job, run: Run, day: stri
     gaps: report.gaps,
     filed: filed.flatMap((result) => (result.kind === 'filed' ? [result.issue] : [])),
     known: filed.flatMap((result) => (result.kind === 'known' ? [result.issue] : [])),
-    failedToFile: filed.filter(({ kind }) => kind === 'failed').length
+    unfiled: filed.flatMap((result) => (result.kind === 'failed' ? [result.title] : []))
   };
 };
 

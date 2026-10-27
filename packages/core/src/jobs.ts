@@ -184,6 +184,14 @@ export const readJobReport = (report: unknown, agent: JobAgent): JobReport => {
   };
 };
 
+export type CoveredRun = { head: string; fingerprints: string[] };
+
+// Where the next check starts: after the newest run (runs come newest first) whose findings all reached Linear, so one
+// Linear refused is found again rather than lost. Past the runs given, the oldest one's head, so a check that can't
+// file for days still moves on.
+export const coveredHead = (runs: CoveredRun[], filed: ReadonlySet<string>): string | undefined =>
+  (runs.find(({ fingerprints }) => fingerprints.every((fingerprint) => filed.has(fingerprint))) ?? runs.at(-1))?.head;
+
 // The latest issue filed for a fingerprint, with its Linear state type, or null when it can't be read.
 export type FiledBefore = { identifier: string; url: string; stateType: string | null };
 
@@ -302,7 +310,8 @@ export type CheckResult =
       gaps: string[];
       filed: CheckIssue[];
       known: CheckIssue[];
-      failedToFile: number;
+      // Titles of the findings Linear refused, so the channel shows what was found without opening the console.
+      unfiled: string[];
     }
   | { kind: 'failed'; summary: string };
 
@@ -324,10 +333,16 @@ export const jobCheckText = (title: string, day: string, result: CheckResult, ru
       ? `*${title}, ${day}:* nothing to file, but not everything was checked.${reviewed(result.commits)}${log}\n${notChecked}`
       : `*${title}, ${day}:* clean.${reviewed(result.commits)} Nothing new to file.${log}`;
   }
-  const lines = [
+  const unfiled =
+    result.unfiled.length > 0 ? `couldn’t file ${plural(result.unfiled.length, 'finding')} in Linear` : '';
+  const headline =
     result.filed.length > 0
-      ? `*${title}, ${day}:* filed ${plural(result.filed.length, 'issue')} in Triage.${reviewed(result.commits)}${log}`
-      : `*${title}, ${day}:* nothing new to file.${reviewed(result.commits)}${log}`,
+      ? `filed ${plural(result.filed.length, 'issue')} in Triage.`
+      : unfiled
+        ? `${unfiled}.`
+        : 'nothing new to file.';
+  const lines = [
+    `*${title}, ${day}:* ${headline}${reviewed(result.commits)}${log}`,
     ...result.filed.map(
       ({ identifier, url, title: issueTitle }) =>
         `• ${slackLink(url, identifier)}${issueTitle ? ` ${escapeSlack(issueTitle)}` : ''}`
@@ -335,8 +350,11 @@ export const jobCheckText = (title: string, day: string, result: CheckResult, ru
     result.known.length > 0
       ? `Already filed: ${result.known.map(({ identifier, url }) => slackLink(url, identifier)).join(', ')}.`
       : undefined,
-    result.failedToFile > 0
-      ? `${plural(result.failedToFile, 'finding')} couldn’t be filed in Linear; the details are in the console log.`
+    // The headline already says so when nothing was filed.
+    unfiled && result.filed.length > 0 ? `Also ${unfiled}:` : undefined,
+    ...result.unfiled.map((findingTitle) => `• ${escapeSlack(findingTitle)}`),
+    unfiled
+      ? 'Linear’s reason is in the next health message. The next check looks at the same commits again.'
       : undefined,
     notChecked
   ];
