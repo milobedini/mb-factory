@@ -96,14 +96,22 @@ jobs:
           echo "::add-mask::$oidc"
           response=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" "$CONSOLE_URL/api/runs/$RUN_ID/start")
           echo "agent=$(jq -r '.agent // empty' <<< "$response")" >> "$GITHUB_OUTPUT"
-          # A scheduled job's run reports only to the console, so it gets no Linear token or session; a question gets a
-          # token to read Linear with, and no session.
+          # A scheduled job's run reports only to the console, so it gets no Linear token or session; a question gets no
+          # token either, only a pass to read Linear through the console, which forwards queries and nothing else.
           linear_token=$(jq -r '.linearAccessToken // empty' <<< "$response")
           if [[ -n "$linear_token" ]]; then
             echo "::add-mask::$linear_token"
             {
               echo "LINEAR_ACCESS_TOKEN=$linear_token"
               echo "LINEAR_AGENT_SESSION_ID=$(jq -r '.agentSessionId // empty' <<< "$response")"
+            } >> "$GITHUB_ENV"
+          fi
+          linear_pass=$(jq -r '.linearPass // empty' <<< "$response")
+          if [[ -n "$linear_pass" ]]; then
+            echo "::add-mask::$linear_pass"
+            {
+              echo "LINEAR_PROXY_URL=$CONSOLE_URL/api/runs/$RUN_ID/linear"
+              echo "LINEAR_PROXY_PASS=$linear_pass"
             } >> "$GITHUB_ENV"
           fi
 

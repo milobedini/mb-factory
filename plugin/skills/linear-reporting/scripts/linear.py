@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Post Linear agent activities, update the session plan and links, or run raw GraphQL.
 
-Reads LINEAR_ACCESS_TOKEN and LINEAR_AGENT_SESSION_ID from the environment. Standard library only.
+Reads LINEAR_ACCESS_TOKEN and LINEAR_AGENT_SESSION_ID from the environment. A read-only run has LINEAR_PROXY_URL and
+LINEAR_PROXY_PASS instead: its GraphQL goes through the console, which forwards queries only. Standard library only.
 
   linear.py activity thought --body "Reading the recipe list code"
   linear.py activity thought --body "Running the tests" --ephemeral
@@ -17,6 +18,7 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 API_URL = 'https://api.linear.app/graphql'
@@ -24,14 +26,20 @@ PLAN_STATUSES = {'pending', 'inProgress', 'completed', 'canceled'}
 
 
 def graphql(query, variables):
-    token = os.environ['LINEAR_ACCESS_TOKEN']
+    proxy = os.environ.get('LINEAR_PROXY_URL')
+    url, token = (proxy, os.environ['LINEAR_PROXY_PASS']) if proxy else (API_URL, os.environ['LINEAR_ACCESS_TOKEN'])
     request = urllib.request.Request(
-        API_URL,
+        url,
         data=json.dumps({'query': query, 'variables': variables}).encode(),
         headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {token}'},
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        body = json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            body = json.load(response)
+    except urllib.error.HTTPError as error:
+        if not proxy:
+            raise
+        sys.exit(f'The console refused the request ({error.code}): {error.read().decode(errors="replace")}')
     if body.get('errors'):
         sys.exit('Linear GraphQL error: ' + '; '.join(error['message'] for error in body['errors']))
     return body['data']

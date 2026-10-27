@@ -162,6 +162,7 @@ export {
   readJobReport,
   slotDay
 } from './jobs';
+export { isLinearPassFor, isReadOnlyDocument, signLinearPass } from './linear-proxy';
 export type { AcceptedPr, PullForMerge } from './merge';
 export {
   approveRefusedText,

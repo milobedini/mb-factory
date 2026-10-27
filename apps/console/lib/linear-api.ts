@@ -94,6 +94,26 @@ export const linearGraphql = async <T>(
   return body.data;
 };
 
+// A question run's GraphQL, already checked to be read-only, sent with the app's token. Linear's answer goes back as it
+// came, errors and all, so the agent sees what it would have seen calling Linear itself.
+export const forwardLinearQuery = async (
+  organizationId: string,
+  request: { query: string; variables: Record<string, unknown> }
+): Promise<Response> => {
+  const response = await fetch(GRAPHQL_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await getLinearAccessToken(organizationId)}`
+    },
+    body: JSON.stringify(request)
+  });
+  return new Response(await response.text(), {
+    status: response.status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+};
+
 export type AgentActivityContent =
   | { type: 'thought'; body: string }
   | { type: 'elicitation'; body: string }

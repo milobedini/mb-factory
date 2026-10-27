@@ -2,9 +2,9 @@ import { checkStageRunClaims } from '@mb-factory/core';
 import { after } from 'next/server';
 
 import { findAskByRun, refreshAskCard } from '@/lib/ask-runs';
-import { requireEnv } from '@/lib/env';
 import { verifyGitHubOidc } from '@/lib/github-oidc';
 import { getLinearAccessToken } from '@/lib/linear-api';
+import { linearPass } from '@/lib/linear-pass';
 import { log } from '@/lib/log';
 import { findProject } from '@/lib/projects';
 import { findAnyRun, markRunStarted, runRepository } from '@/lib/runs';
@@ -47,10 +47,13 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
       }
     });
     log('info', 'run started', { runId: id, actionsRunId: check.claims.run_id, agent: 'ask' });
-    const linearAccessToken = await getLinearAccessToken(requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID'), {
-      minValidityMs: RUN_TOKEN_VALIDITY_MS
+    // It only reads Linear, so it gets no token that could write: a pass for `/linear`, which forwards queries only.
+    return Response.json({
+      agent: found.run.agent,
+      linearAccessToken: null,
+      linearPass: linearPass(id, new Date(Date.now() + RUN_TOKEN_VALIDITY_MS)),
+      agentSessionId: null
     });
-    return Response.json({ agent: found.run.agent, linearAccessToken, agentSessionId: null });
   }
   if (!workItem) {
     // A job reports only to the console, so its run gets no Linear token.
