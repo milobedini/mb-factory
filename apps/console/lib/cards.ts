@@ -99,6 +99,7 @@ export const loadCardInput = async (
       : false,
     questionsUrl,
     beforeMerging: workItem.stage === 'awaiting_merge' ? readBeforeMerging(review?.report) : undefined,
+    mergeEffect: project.mergeEffect,
     next: readNextIssues(workItem.nextReady),
     now: new Date(),
     timeZone: project.timeZone,

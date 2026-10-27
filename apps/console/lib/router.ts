@@ -2308,7 +2308,8 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
               workItemId: workItem.id,
               prNumber: readyToMerge,
               prUrl,
-              beforeMerging: run.agent === 'review' ? readBeforeMerging(run.report) : undefined
+              beforeMerging: run.agent === 'review' ? readBeforeMerging(run.report) : undefined,
+              mergeEffect: project.mergeEffect
             })
           )
         : mentionIf(finishedText);

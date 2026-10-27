@@ -55,6 +55,9 @@ export const factoryConfigSchema = z
     alias: z.string().min(1),
     // Times in messages to humans, such as when held work will be released.
     timeZone: z.string().refine(isTimeZone, { message: 'not an IANA time zone' }).default('UTC'),
+    // What merging a PR sets off, said in Approve and merge's confirm ("…and merge it, which deploys it to production").
+    // Left out, the confirm says nothing about it.
+    mergeEffect: z.string().min(1).max(80).optional(),
     repositories: z
       .array(
         z.object({

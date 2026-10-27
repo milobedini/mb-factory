@@ -44,7 +44,12 @@ describe('readBeforeMerging', () => {
 
 describe('slackAcceptedMessage', () => {
   const finished = 'The review run finished. Round 3: accepted with no findings.';
-  const pr = { workItemId, prNumber: 39, prUrl: 'https://github.com/o/r/pull/39' };
+  const pr = {
+    workItemId,
+    prNumber: 39,
+    prUrl: 'https://github.com/o/r/pull/39',
+    mergeEffect: 'deploys it to production'
+  };
 
   it('adds what to check before merging, then Approve and merge with its confirm and Open PR', () => {
     const message = slackAcceptedMessage(finished, { ...pr, beforeMerging: 'Seed recipes are <placeholders>.' });
@@ -72,6 +77,17 @@ describe('slackAcceptedMessage', () => {
     expect(text).toMatch(/\n\nBefore merging: Check this\. .*…$/);
   });
 
+  it('says what merging sets off only when the project says', () => {
+    const confirmText = (mergeEffect: string | undefined): string => {
+      const [merge] = elements(slackAcceptedMessage(finished, { ...pr, beforeMerging: undefined, mergeEffect }).blocks);
+      return (merge?.confirm as { text: { text: string } } | undefined)?.text.text ?? '';
+    };
+    expect(confirmText('deploys it to production')).toBe(
+      'You’ll approve PR #39 on GitHub as yourself and merge it, which deploys it to production.'
+    );
+    expect(confirmText(undefined)).toBe('You’ll approve PR #39 on GitHub as yourself and merge it.');
+  });
+
   it('is what the merge button sends back', () => {
     const [merge] = elements(slackAcceptedMessage(finished, { ...pr, beforeMerging: undefined }).blocks);
     const payload = {
@@ -91,7 +107,8 @@ describe('slackMergeSettled', () => {
       workItemId,
       prNumber: 39,
       prUrl: 'https://github.com/o/r/pull/39',
-      beforeMerging: 'Check it.'
+      beforeMerging: 'Check it.',
+      mergeEffect: undefined
     });
     const line = mergedLine({ by: 'Milo Bedini', time: '16:52', repository: 'o/r', sha: accepted });
     expect(line).toBe(

@@ -24,6 +24,7 @@ describe('parseFactoryConfig', () => {
     expect(config.alias).toBe('Tastebook');
     expect(config.repositories).toEqual([{ owner: 'milobedini', name: 'tastebook', reviewers: ['milobedini'] }]);
     expect(config.usage.fiveHour).toEqual({ throttleAt: 0.6, pauseAt: 0.8 });
+    expect(config.mergeEffect).toBe('deploys it to production');
   });
 
   it('reads the time zone and Slack channel ID, and defaults the time zone to UTC', () => {

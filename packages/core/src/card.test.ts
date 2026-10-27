@@ -246,7 +246,11 @@ describe('workItemCard', () => {
   it('asks to confirm a merge, with what review said to check first', () => {
     const card = workItemCard(
       input(
-        { runs: [run(), run({ agent: 'review' })], beforeMerging: 'Check the seed recipes read well.' },
+        {
+          runs: [run(), run({ agent: 'review' })],
+          beforeMerging: 'Check the seed recipes read well.',
+          mergeEffect: 'deploys it to production'
+        },
         { stage: 'awaiting_merge', prNumber: 38 }
       )
     );

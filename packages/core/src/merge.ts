@@ -32,9 +32,13 @@ const BEFORE_MERGING = '*Before merging:* ';
 
 export const beforeMergingLine = (note: string): string => `${BEFORE_MERGING}${escapeSlack(note)}`;
 
+// What the confirm says besides the PR: review's note, and what merging sets off (the project's `mergeEffect`).
+export type MergeNotes = { beforeMerging: string | undefined; mergeEffect: string | undefined };
+
 // Slack's own confirm dialog, shown before anything is sent to GitHub. Plain text: the dialog shows mrkdwn's asterisks.
-export const mergeConfirm = (prNumber: number, beforeMerging: string | undefined): SlackBlock => {
-  const base = `You’ll approve PR #${prNumber} on GitHub as yourself and merge it, which deploys it to production.`;
+export const mergeConfirm = (prNumber: number, { beforeMerging, mergeEffect }: MergeNotes): SlackBlock => {
+  const effect = mergeEffect ? `, which ${mergeEffect}` : '';
+  const base = `You’ll approve PR #${prNumber} on GitHub as yourself and merge it${effect}.`;
   const text = beforeMerging ? `${base}\n\nBefore merging: ${beforeMerging}` : base;
   return {
     title: { type: 'plain_text', text: `Merge PR #${prNumber}?` },
@@ -45,9 +49,9 @@ export const mergeConfirm = (prNumber: number, beforeMerging: string | undefined
   };
 };
 
-export const mergeButton = (workItemId: string, prNumber: number, beforeMerging: string | undefined): SlackBlock => ({
+export const mergeButton = (workItemId: string, prNumber: number, notes: MergeNotes): SlackBlock => ({
   ...button(MERGE_ACTION, MERGE_BUTTON, { m: workItemId }, true),
-  confirm: mergeConfirm(prNumber, beforeMerging)
+  confirm: mergeConfirm(prNumber, notes)
 });
 
 const openPrButton = (prNumber: number, prUrl: string): SlackBlock => ({
@@ -57,7 +61,7 @@ const openPrButton = (prNumber: number, prUrl: string): SlackBlock => ({
   url: prUrl
 });
 
-export type AcceptedPr = { workItemId: string; prNumber: number; prUrl: string; beforeMerging: string | undefined };
+export type AcceptedPr = { workItemId: string; prNumber: number; prUrl: string } & MergeNotes;
 
 // Review's finished message when the PR is ready to merge: what it said, what to check first, and the buttons.
 export const slackAcceptedMessage = (finishedText: string, pr: AcceptedPr): SlackMessage => {
@@ -69,7 +73,7 @@ export const slackAcceptedMessage = (finishedText: string, pr: AcceptedPr): Slac
       ...(note ? [section(note)] : []),
       {
         type: 'actions',
-        elements: [mergeButton(pr.workItemId, pr.prNumber, pr.beforeMerging), openPrButton(pr.prNumber, pr.prUrl)]
+        elements: [mergeButton(pr.workItemId, pr.prNumber, pr), openPrButton(pr.prNumber, pr.prUrl)]
       }
     ]
   };

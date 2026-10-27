@@ -82,8 +82,10 @@ export type CardInput = {
   rerunnable: boolean;
   // The question card in the thread, while questions wait.
   questionsUrl: string | null;
-  // What the review the PR waits on says to check before merging, for Approve and merge's confirm.
+  // What the review the PR waits on says to check before merging, and what merging sets off (the project's
+  // `mergeEffect`), for Approve and merge's confirm.
   beforeMerging?: string;
+  mergeEffect?: string;
   next: NextIssue[];
   now: Date;
   timeZone: string;
@@ -392,7 +394,10 @@ const cardButtons = (input: CardInput, status: CardStatus, entry: InboxEntry | u
   if (status === 'ready') {
     return prUrl && workItem.prNumber
       ? [
-          mergeButton(workItem.id, workItem.prNumber, input.beforeMerging),
+          mergeButton(workItem.id, workItem.prNumber, {
+            beforeMerging: input.beforeMerging,
+            mergeEffect: input.mergeEffect
+          }),
           linkButton('pr_open', `Open PR #${workItem.prNumber}`, prUrl)
         ]
       : [];
