@@ -5,6 +5,8 @@ import {
   coveredHead,
   decideFiling,
   findingIssue,
+  groupFindings,
+  groupIssue,
   isWorthFiling,
   jobCheckText,
   jobLabels,
@@ -305,6 +307,67 @@ describe('findingIssue', () => {
     const issue = findingIssue(long, context);
     expect(issue.title).toHaveLength(80);
     expect(issue.estimate).toBeNull();
+  });
+});
+
+describe('groupFindings and groupIssue', () => {
+  const context = {
+    jobTitle: 'Daily security check',
+    repository: 'milobedini/tastebook',
+    head: 'b'.repeat(40),
+    runUrl: null,
+    day: 'Tue 27 Oct'
+  };
+  const lhci = 'Update @lhci/cli in frontend';
+  const findings = readJobReport(
+    {
+      findings: [
+        { ...advisory, fingerprint: 'advisory:tmp@0.0.33', title: 'tmp has a path traversal', group: lhci },
+        codeFinding,
+        {
+          ...advisory,
+          fingerprint: 'advisory:basic-ftp@5.3.1',
+          title: 'basic-ftp has a slow parser',
+          severity: 'moderate',
+          size: 'S',
+          group: `  ${lhci}  `
+        }
+      ]
+    },
+    'security'
+  ).findings;
+  const items = findings.map((finding) => ({ finding }));
+
+  it('reads a group and puts findings with the same one together, in the order they came', () => {
+    expect(findings.map(({ group }) => group ?? null)).toEqual([lhci, null, lhci]);
+    expect(groupFindings(items).map((group) => group.map(({ finding }) => finding.fingerprint))).toEqual([
+      ['advisory:tmp@0.0.33', 'advisory:basic-ftp@5.3.1'],
+      ['code:missing-authorisation:backend/recipes/views.py']
+    ]);
+  });
+
+  it('files a group as one issue at its worst severity and largest size', () => {
+    const [group] = groupFindings(items);
+    if (!group) {
+      throw new Error('expected a group');
+    }
+    const issue = groupIssue([...group].reverse(), context);
+    expect(issue.title).toBe('Security: Update @lhci/cli in frontend (2 advisories)');
+    expect(issue.priority).toBe(2);
+    expect(issue.estimate).toBe(2);
+    expect(issue.description).toContain('**Severity:** High, the worst of 2. One change fixes them all:');
+    expect(issue.description).toContain('## tmp has a path traversal');
+    expect(issue.description).toContain('## basic-ftp has a slow parser');
+    expect(issue.description).toContain('Fingerprints: `advisory:basic-ftp@5.3.1`, `advisory:tmp@0.0.33`');
+  });
+
+  it('files a group of one as the finding itself', () => {
+    const [, single] = groupFindings(items);
+    const [first] = single ?? [];
+    if (!first) {
+      throw new Error('expected a finding');
+    }
+    expect(groupIssue([first], context)).toEqual(findingIssue(first.finding, context));
   });
 });
 

@@ -115,7 +115,17 @@ const findingSchema = z
       .refine((path) => !path.split('/').includes('..'))
       .nullish()
       .catch(null),
-    line: z.int().positive().nullish().catch(null)
+    line: z.int().positive().nullish().catch(null),
+    // The one change that fixes several findings, as a short imperative ("Update @lhci/cli in frontend"); findings
+    // with the same group are filed as one issue.
+    group: z
+      .string()
+      .trim()
+      .min(1)
+      .max(60)
+      .transform((group) => group.replace(/\s+/g, ' '))
+      .nullish()
+      .catch(null)
   })
   .refine(({ fingerprint, kind }) => fingerprint.startsWith(`${kind}:`), {
     message: 'the fingerprint names another kind'
@@ -257,33 +267,98 @@ const location = ({ path, line }: Finding, { repository, head }: FindingContext)
     : `\`${shown}\``;
 };
 
-// One finding as a Linear issue: what triage would want to read before accepting it.
-export const findingIssue = (finding: Finding, context: FindingContext): FindingIssue => {
+const facts = (finding: Finding, context: FindingContext): string => {
   const where = location(finding, context);
   const kind = KIND_LABEL[finding.kind] + (finding.kind === 'advisory' && finding.scope ? ` (${finding.scope})` : '');
-  const found = `Found by the ${context.jobTitle.toLowerCase()} on ${context.day}${context.runUrl ? ` ([run log](${context.runUrl}))` : ''}.`;
+  return `**Severity:** ${SEVERITY_LABEL[finding.severity]} · **Kind:** ${kind}${where ? ` · **Where:** ${where}` : ''}`;
+};
+
+const foundBy = ({ jobTitle: title, day, runUrl }: FindingContext): string =>
+  `Found by the ${title.toLowerCase()} on ${day}${runUrl ? ` ([run log](${runUrl}))` : ''}.`;
+
+const cameBack = (previous: FiledBefore | undefined): string =>
+  previous ? ` It came back after [${previous.identifier}](${previous.url}) was done.` : '';
+
+// One finding as a Linear issue: what triage would want to read before accepting it.
+export const findingIssue = (finding: Finding, context: FindingContext): FindingIssue => ({
+  title: clip(`${TITLE_PREFIX[finding.kind]}: ${finding.title.replace(/\s+/g, ' ')}`, MAX_TITLE),
+  description: [
+    facts(finding, context),
+    '',
+    '## What',
+    '',
+    neutraliseMarkdown(finding.evidence),
+    '',
+    '## Fix',
+    '',
+    neutraliseMarkdown(finding.fix),
+    '',
+    '---',
+    '',
+    `${foundBy(context)}${cameBack(context.previous)}`,
+    `Fingerprint: \`${finding.fingerprint}\``
+  ].join('\n'),
+  priority: PRIORITY[finding.severity],
+  estimate: finding.size ? ESTIMATE[finding.size] : null
+});
+
+// A finding about to be filed, with the done issue it came back after, if any.
+export type FilingFinding = { finding: Finding; previous?: FiledBefore };
+
+// Findings one change fixes, by their `group`, in the order they came; a finding without one stands alone.
+export const groupFindings = <T extends { finding: Finding }>(items: T[]): T[][] => {
+  // A finding without a group gets its own key: its position, which no group name can equal.
+  const keys = items.map(({ finding }, index) => finding.group ?? index);
+  return keys
+    .filter((key, index) => keys.indexOf(key) === index)
+    .map((key) => items.filter((_, index) => keys[index] === key));
+};
+
+const KIND_NOUN: Record<FindingKind, [string, string]> = {
+  advisory: ['advisory', 'advisories'],
+  code: ['finding', 'findings'],
+  docs: ['finding', 'findings']
+};
+
+// A group as one issue, at its worst severity and largest size, since one change fixes them all; a group of one is
+// filed as that finding.
+export const groupIssue = (items: FilingFinding[], context: Omit<FindingContext, 'previous'>): FindingIssue => {
+  const [first] = items;
+  if (!first) {
+    throw new Error('A group has at least one finding');
+  }
+  if (items.length === 1) {
+    return findingIssue(first.finding, { ...context, previous: first.previous });
+  }
+  const findings = items.map(({ finding }) => finding);
+  const worst = findings.reduce((a, b) => (SEVERITY_RANK[b.severity] > SEVERITY_RANK[a.severity] ? b : a));
+  const estimates = findings.flatMap(({ size }) => (size ? [ESTIMATE[size]] : []));
+  const [one, many] = KIND_NOUN[first.finding.kind];
   return {
-    title: clip(`${TITLE_PREFIX[finding.kind]}: ${finding.title.replace(/\s+/g, ' ')}`, MAX_TITLE),
+    title: clip(
+      `${TITLE_PREFIX[first.finding.kind]}: ${first.finding.group ?? ''} (${plural(items.length, one, many)})`,
+      MAX_TITLE
+    ),
     description: [
-      `**Severity:** ${SEVERITY_LABEL[finding.severity]} · **Kind:** ${kind}${where ? ` · **Where:** ${where}` : ''}`,
-      '',
-      '## What',
-      '',
-      neutraliseMarkdown(finding.evidence),
-      '',
-      '## Fix',
-      '',
-      neutraliseMarkdown(finding.fix),
+      `**Severity:** ${SEVERITY_LABEL[worst.severity]}, the worst of ${items.length}. One change fixes them all: ${neutraliseMarkdown(first.finding.group ?? '')}.`,
+      ...items.flatMap(({ finding, previous }) => [
+        '',
+        `## ${neutraliseMarkdown(finding.title.replace(/\s+/g, ' '))}`,
+        '',
+        facts(finding, context),
+        '',
+        neutraliseMarkdown(finding.evidence),
+        '',
+        `**Fix:** ${neutraliseMarkdown(finding.fix)}${cameBack(previous)}`
+      ]),
       '',
       '---',
       '',
-      context.previous
-        ? `${found} It came back after [${context.previous.identifier}](${context.previous.url}) was done.`
-        : found,
-      `Fingerprint: \`${finding.fingerprint}\``
+      foundBy(context),
+      `Fingerprints: ${findings.map(({ fingerprint }) => `\`${fingerprint}\``).join(', ')}`
     ].join('\n'),
-    priority: PRIORITY[finding.severity],
-    estimate: finding.size ? ESTIMATE[finding.size] : null
+    priority: PRIORITY[worst.severity],
+    estimate: estimates.length > 0 ? Math.max(...estimates) : null
   };
 };
 

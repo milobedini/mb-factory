@@ -1,8 +1,9 @@
-import type { CheckIssue, CheckResult, FactoryConfig, Finding, Job } from '@mb-factory/core';
+import type { CheckIssue, CheckResult, FactoryConfig, FilingFinding, Finding, Job } from '@mb-factory/core';
 import {
   decideFiling,
   dispatchLapsedBefore,
-  findingIssue,
+  groupFindings,
+  groupIssue,
   jobCheckText,
   jobLabels,
   latestSlot,
@@ -101,15 +102,10 @@ type Filed =
   | { kind: 'known'; issue: CheckIssue }
   | { kind: 'failed'; title: string };
 
-// Files one finding unless an earlier issue for it is still open or was declined.
-const fileFinding = async (
-  project: FactoryConfig,
-  job: Job,
-  run: Run,
-  finding: Finding,
-  head: string | null,
-  day: string
-): Promise<Filed> => {
+type Decided = { kind: 'file'; item: FilingFinding } | Exclude<Filed, { kind: 'filed' }>;
+
+// Whether a finding needs an issue: not while an earlier one for it is still open, or after it was declined.
+const decideFinding = async (project: FactoryConfig, finding: Finding): Promise<Decided> => {
   const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
   try {
     const [before] = await getDb()
@@ -138,38 +134,59 @@ const fileFinding = async (
       });
       return { kind: 'known', issue: filing.previous };
     }
-    const issue = findingIssue(finding, {
-      jobTitle: jobTitleOf(job),
-      repository: repositoryOf(project),
-      head,
-      runUrl: run.actionsRunUrl,
-      day,
-      previous: filing.kind === 'refile' ? filing.previous : undefined
-    });
-    const created = await fileTriageIssue(organizationId, {
-      teamKey: project.linear.teamKey,
-      ...issue,
-      // Created on the team if they don't exist yet.
-      labels: jobLabels(job.agent)
-    });
-    await getDb().insert(jobFindings).values({
-      project: project.name,
-      job: job.name,
-      fingerprint: finding.fingerprint,
-      linearIssueId: created.id,
-      issueIdentifier: created.identifier,
-      issueUrl: created.url,
-      runId: run.id
-    });
-    log('info', 'job finding filed', { fingerprint: finding.fingerprint, issue: created.identifier });
-    return { kind: 'filed', issue: created };
+    return { kind: 'file', item: { finding, previous: filing.kind === 'refile' ? filing.previous : undefined } };
   } catch (error) {
     log('error', 'job finding filing failed', { fingerprint: finding.fingerprint, error: errorMessage(error) });
     return { kind: 'failed', title: finding.title };
   }
 };
 
-// Findings are filed one after another, so two of them can't race to create the same missing label.
+// One issue for findings one change fixes (or a finding on its own), with a row per fingerprint so each is known later.
+const fileGroup = async (
+  project: FactoryConfig,
+  job: Job,
+  run: Run,
+  group: FilingFinding[],
+  head: string | null,
+  day: string
+): Promise<Filed[]> => {
+  const fingerprints = group.map(({ finding }) => finding.fingerprint);
+  try {
+    const issue = groupIssue(group, {
+      jobTitle: jobTitleOf(job),
+      repository: repositoryOf(project),
+      head,
+      runUrl: run.actionsRunUrl,
+      day
+    });
+    const created = await fileTriageIssue(requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID'), {
+      teamKey: project.linear.teamKey,
+      ...issue,
+      // Created on the team if they don't exist yet.
+      labels: jobLabels(job.agent)
+    });
+    await getDb()
+      .insert(jobFindings)
+      .values(
+        fingerprints.map((fingerprint) => ({
+          project: project.name,
+          job: job.name,
+          fingerprint,
+          linearIssueId: created.id,
+          issueIdentifier: created.identifier,
+          issueUrl: created.url,
+          runId: run.id
+        }))
+      );
+    log('info', 'job finding filed', { fingerprints, issue: created.identifier });
+    return [{ kind: 'filed', issue: created }];
+  } catch (error) {
+    log('error', 'job finding filing failed', { fingerprints, error: errorMessage(error) });
+    return group.map(({ finding }) => ({ kind: 'failed', title: finding.title }));
+  }
+};
+
+// Groups are filed one after another, so two of them can't race to create the same missing label.
 const fileFindings = async (
   project: FactoryConfig,
   job: Job,
@@ -177,11 +194,15 @@ const fileFindings = async (
   findings: Finding[],
   head: string | null,
   day: string
-): Promise<Filed[]> =>
-  findings.reduce<Promise<Filed[]>>(
-    async (done, finding) => [...(await done), await fileFinding(project, job, run, finding, head, day)],
+): Promise<Filed[]> => {
+  const decided = await Promise.all(findings.map((finding) => decideFinding(project, finding)));
+  const toFile = decided.flatMap((result) => (result.kind === 'file' ? [result.item] : []));
+  const filed = await groupFindings(toFile).reduce<Promise<Filed[]>>(
+    async (done, group) => [...(await done), ...(await fileGroup(project, job, run, group, head, day))],
     Promise.resolve([])
   );
+  return [...decided.flatMap((result) => (result.kind === 'file' ? [] : [result])), ...filed];
+};
 
 const checkResult = async (project: FactoryConfig, job: Job, run: Run, day: string): Promise<CheckResult> => {
   if (run.status === 'limit_hit') {
@@ -203,7 +224,10 @@ const checkResult = async (project: FactoryConfig, job: Job, run: Run, day: stri
     commits: report.commits,
     gaps: report.gaps,
     filed: filed.flatMap((result) => (result.kind === 'filed' ? [result.issue] : [])),
-    known: filed.flatMap((result) => (result.kind === 'known' ? [result.issue] : [])),
+    // Findings filed together share an issue: list it once.
+    known: filed
+      .flatMap((result) => (result.kind === 'known' ? [result.issue] : []))
+      .filter((issue, index, all) => all.findIndex(({ identifier }) => identifier === issue.identifier) === index),
     unfiled: filed.flatMap((result) => (result.kind === 'failed' ? [result.title] : []))
   };
 };

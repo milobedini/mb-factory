@@ -65,5 +65,6 @@ Docs drift is never `critical`.
 | `fix` | The edit, specific enough for the implement stage: the file and the replacement text. |
 | `size` | Usually `XS`; `S` when several docs need the same change. |
 | `path`, `line` | The doc and the line of the statement. |
+| `group` | Only when one edit fixes this and other findings in the report, such as the same stale statement in several docs: the same short imperative on each of them ("Replace the old domain in the docs", under 60 characters). The console files a group as one issue. Leave it out otherwise. |
 
 Write as you would for a colleague: plain, specific, British English.

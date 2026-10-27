@@ -69,5 +69,6 @@ Advisories keep the severity their advisory gives, unless the vulnerable functio
 | `fix` | The change, specific enough for the implement stage: the file, the version or the code. |
 | `size` | `XS`, `S`, `M`, `L` or `XL`, as triage sizes work. A version bump is usually `XS`. |
 | `path`, `line` | Code findings: the file and the line where it happens. |
+| `group` | Only when one change fixes this and other findings in the report, such as advisories that all arrive through the same direct dependency: the same short imperative on each of them, naming that change and where ("Update @lhci/cli in frontend", under 60 characters). The console files a group as one issue. Leave it out otherwise, and don't group findings that need different changes. |
 
 Write as you would for a colleague: plain, specific, British English, no alarm. The repo is public and the issues may be read by anyone in the workspace, so describe the problem and the fix, not a ready-made exploit.
