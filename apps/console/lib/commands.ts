@@ -48,8 +48,8 @@ const answer = async (project: FactoryConfig, request: CommandRequest, command: 
         return { text: LINEAR_UNREADABLE };
       }
       return list.ready.length > 0
-        ? readyMessage(project, READY_HEADING, list.ready)
-        : { text: nothingReadyText(requireEnv('CONSOLE_URL')) };
+        ? readyMessage(project, READY_HEADING, list.ready, list.needsSize)
+        : { text: nothingReadyText(requireEnv('CONSOLE_URL'), list.needsSize) };
     }
     case 'pause': {
       const pause = await currentPause();

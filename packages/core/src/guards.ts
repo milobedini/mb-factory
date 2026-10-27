@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import type { FiledBefore, FindingIssue } from './jobs';
 import { neutraliseMarkdown } from './jobs';
+import { ESTIMATES } from './sizes';
 
 // A guard against a whole class of problem that the implement stage couldn't fit in its PR. It reports it as data and
 // the console files it in Triage, so a person decides whether it's worth building.
@@ -52,6 +53,7 @@ export type GuardContext = {
 
 const linked = (text: string, url: string | null): string => (url ? `[${text}](${url})` : text);
 
+// Every guard is a small check or rule of its own, so it's filed as S; triage corrects the size if it's more.
 export const guardIssue = (guard: Guard, context: GuardContext): FindingIssue => {
   const title = flatten(guard.title);
   const raised = [
@@ -78,6 +80,6 @@ export const guardIssue = (guard: Guard, context: GuardContext): FindingIssue =>
       `Fingerprint: \`${guardFingerprint(context.issueIdentifier, guard)}\``
     ].join('\n'),
     priority: 4,
-    estimate: null
+    estimate: ESTIMATES.S
   };
 };

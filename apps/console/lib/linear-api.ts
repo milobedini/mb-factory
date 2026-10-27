@@ -200,8 +200,9 @@ export const createIssue = async (
     teamKey,
     title,
     description,
-    assigneeId
-  }: { teamKey: string; title: string; description: string; assigneeId: string | null }
+    assigneeId,
+    estimate = null
+  }: { teamKey: string; title: string; description: string; assigneeId: string | null; estimate?: number | null }
 ): Promise<CreatedIssue> => {
   const { teams } = await linearGraphql<{ teams: { nodes: { id: string }[] } }>(
     organizationId,
@@ -215,7 +216,15 @@ export const createIssue = async (
   const { issueCreate } = await linearGraphql<{ issueCreate: { success: boolean; issue: CreatedIssue | null } }>(
     organizationId,
     'mutation IssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url title } } }',
-    { input: { teamId: team.id, title, description, ...(assigneeId ? { assigneeId } : {}) } }
+    {
+      input: {
+        teamId: team.id,
+        title,
+        description,
+        ...(assigneeId ? { assigneeId } : {}),
+        ...(estimate === null ? {} : { estimate })
+      }
+    }
   );
   if (!issueCreate.issue) {
     throw new Error('Linear created no issue');

@@ -34,7 +34,7 @@ export type ReadyIssue = {
   waitingOn: string[];
 };
 
-export type ReadyList = { ready: ReadyIssue[]; yours: ReadyIssue[] };
+export type ReadyList = { ready: ReadyIssue[]; yours: ReadyIssue[]; needsSize: ReadyIssue[] };
 
 const CLOSED_PROJECT = ['completed', 'canceled'];
 
@@ -67,16 +67,21 @@ const toReady = (issue: CandidateIssue): ReadyIssue => ({
   waitingOn: issue.blockers.filter(({ finished }) => !finished).map(({ identifier }) => identifier)
 });
 
-// What can be delegated now: accepted out of Triage, in an open project or none, not delegated or assigned, nothing left
-// blocking it. An issue assigned to a person is theirs to do, so it's listed apart and never offered to the factory.
+// What can be delegated now: accepted out of Triage, in an open project or none, sized, not delegated or assigned,
+// nothing left blocking it. An issue assigned to a person is theirs to do, so it's listed apart and never offered to the
+// factory. An unassigned issue with no size isn't ready, blocked or not: it's listed as needing one, so it isn't lost.
 export const readyList = (issues: CandidateIssue[]): ReadyList => {
   const open = issues
     .filter(({ delegated, project }) => !delegated && !(project && CLOSED_PROJECT.includes(project.statusType)))
-    .toSorted(byOrder)
-    .map(toReady);
+    .toSorted(byOrder);
+  const unassigned = open.filter(({ assignee }) => assignee === null);
   return {
-    ready: open.filter(({ assignee, waitingOn }) => assignee === null && waitingOn.length === 0),
-    yours: open.filter(({ assignee }) => assignee !== null)
+    ready: unassigned
+      .filter(({ estimate }) => estimate !== null)
+      .map(toReady)
+      .filter(({ waitingOn }) => waitingOn.length === 0),
+    yours: open.filter(({ assignee }) => assignee !== null).map(toReady),
+    needsSize: unassigned.filter(({ estimate }) => estimate === null).map(toReady)
   };
 };
 

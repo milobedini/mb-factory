@@ -68,7 +68,7 @@ When the PR can merge as it is (`accepted`, or questions that might all be kept)
 
 For `human_decision_needed`, every finding with `needsHuman: true` also becomes a question in the report's `questions` (the format in `linear-reporting`), so the human settles it with a tap in Slack or Linear instead of reading the PR. The options are the ways to settle it, your suggestion first; `keep` names the option that leaves the PR as it is ("Accept the interim look", "Merge as it is"), and is left out when every option needs a change. Don't ask a question whose options all leave the PR as it is, such as "merge now or wait for a check": that's the human's merge decision, and an implement run can't wait. Say what to check before merging in `beforeMerging` instead. If every answer is a `keep`, the PR waits for the human's merge; otherwise the implement stage gets the answers and the next round checks its change. Still post the finding on GitHub as above: the inline conversation is where the decision is resolved.
 
-An option that defers work to later ("Ship as is, follow up") must say what later is: give the question a `followUp` naming that option, with the issue to file (`title` as an issue title, at most 80 characters; `body`: what's wrong, why it waits, and what done looks like, at most 2,000 characters). When that option is the answer, the console files it in Triage and links it in the thread. Without a `followUp`, don't offer a follow-up option: nothing would track it.
+An option that defers work to later ("Ship as is, follow up") must say what later is: give the question a `followUp` naming that option, with the issue to file (`title` as an issue title, at most 80 characters; `body`: what's wrong, why it waits, and what done looks like, at most 2,000 characters; `size`: `XS`, `S`, `M`, `L` or `XL`, as triage sizes work). When that option is the answer, the console files it in Triage and links it in the thread. Without a `followUp`, don't offer a follow-up option: nothing would track it.
 
 ```json
 { "prompt": "Ship this before the pages move onto the components?", "topic": "Bare controls until part 3",
@@ -82,7 +82,8 @@ An option that defers work to later ("Ship as is, follow up") must say what late
   "options": ["Flag parmesan as meat", "Ship as is, follow up", "Hold the PR"],
   "suggested": "Flag parmesan as meat", "keep": "Ship as is, follow up",
   "followUp": { "option": "Ship as is, follow up", "title": "Count animal rennet against the vegetarian tag",
-    "body": "Parmesan is made with calf rennet but flagged dairy only, so the page implies vegetarians can keep it. Add a rennet flag that stops the vegetarian tag; parmesan carries it." } }
+    "body": "Parmesan is made with calf rennet but flagged dairy only, so the page implies vegetarians can keep it. Add a rennet flag that stops the vegetarian tag; parmesan carries it.",
+    "size": "S" } }
 ```
 
 ## Exit

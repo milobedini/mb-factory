@@ -121,12 +121,13 @@ const ReadySections = ({ ready }: { ready: ProjectReady[] }) => {
   const unread = ready.filter(({ list }) => list === null).map(({ project }) => project);
   const readyNow = ready.flatMap(({ list }) => list?.ready ?? []);
   const yours = ready.flatMap(({ list }) => list?.yours ?? []);
+  const needsSize = ready.flatMap(({ list }) => list?.needsSize ?? []);
   return (
     <div className="border-foreground/15 flex flex-col gap-6 border-t pt-6">
       {unread.length > 0 && <p className="text-warn text-sm">Couldn’t read Linear for {unread.join(', ')}.</p>}
       <ReadyGroup
         title="Ready to delegate"
-        note="Unstarted issues out of Triage, unassigned, with nothing left blocking them; in your project order (no project last), then by priority."
+        note="Unstarted issues out of Triage, sized, unassigned, with nothing left blocking them; in your project order (no project last), then by priority."
         empty="Nothing is ready to delegate."
         issues={readyNow}
       />
@@ -136,6 +137,14 @@ const ReadySections = ({ ready }: { ready: ProjectReady[] }) => {
         empty="Nothing is assigned to anyone."
         issues={yours}
       />
+      {needsSize.length > 0 && (
+        <ReadyGroup
+          title="Needs a size"
+          note="Unassigned, but not ready until someone sets an estimate in Linear."
+          empty=""
+          issues={needsSize}
+        />
+      )}
     </div>
   );
 };

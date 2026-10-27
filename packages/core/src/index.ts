@@ -344,6 +344,7 @@ export {
   linearSlackReplyText,
   MAX_READY_ROWS,
   mentioning,
+  needsSizeText,
   notAllowedText,
   notAllowedToStartText,
   nothingReadyText,

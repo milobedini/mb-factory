@@ -22,7 +22,7 @@ const report = {
   summary: 'Mostly server side.',
   head: HEAD,
   answer: '*Mostly, but not everywhere.* The catalogue filters in Django.\n\nThe cuisine chips filter in the browser.',
-  ticket: { title: 'Filter cuisines on the server', request: 'Move the cuisine filter to the API.' }
+  ticket: { title: 'Filter cuisines on the server', request: 'Move the cuisine filter to the API.', size: 'S' }
 };
 
 const elements = (block: unknown): { value?: string; text: { text: string } }[] =>
@@ -33,7 +33,7 @@ describe('readAskReport', () => {
     expect(readAskReport(report)).toEqual({
       answer: report.answer,
       head: HEAD,
-      ticket: { title: 'Filter cuisines on the server', request: 'Move the cuisine filter to the API.' }
+      ticket: { title: 'Filter cuisines on the server', request: 'Move the cuisine filter to the API.', estimate: 2 }
     });
   });
 

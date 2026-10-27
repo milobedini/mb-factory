@@ -4,6 +4,7 @@ import { CARD_COLOURS, STATUS_EMOJI } from './card';
 import { clock } from './home';
 import { neutraliseMarkdown } from './jobs';
 import { formatRunTime } from './runs';
+import { ESTIMATES, SIZES } from './sizes';
 import type { SlackBlock, SlackMessage } from './slack';
 import { button, escapeSlack, slackEmoji } from './slack';
 
@@ -28,7 +29,8 @@ const MAX_TICKET_REQUEST = 4000;
 
 const ticketSchema = z.looseObject({
   title: z.string().trim().min(1),
-  request: z.string().trim().min(1)
+  request: z.string().trim().min(1),
+  size: z.enum(SIZES).nullish().catch(null)
 });
 
 const askReportSchema = z.looseObject({
@@ -43,7 +45,7 @@ const askReportSchema = z.looseObject({
   ticket: ticketSchema.nullish().catch(null)
 });
 
-export type AskTicket = { title: string; request: string };
+export type AskTicket = { title: string; request: string; estimate: number | null };
 
 export type AskReport = { answer: string; head: string | null; ticket: AskTicket | null };
 
@@ -66,7 +68,8 @@ export const readAskReport = (report: unknown): AskReport | undefined => {
     ticket: parsed.ticket
       ? {
           title: clip(oneLine(parsed.ticket.title), MAX_TICKET_TITLE),
-          request: clip(parsed.ticket.request.trim(), MAX_TICKET_REQUEST)
+          request: clip(parsed.ticket.request.trim(), MAX_TICKET_REQUEST),
+          estimate: parsed.ticket.size ? ESTIMATES[parsed.ticket.size] : null
         }
       : null
   };
@@ -284,7 +287,7 @@ export type AskContext = {
 // A ticket filed from a question's thread: the request (Markdown as it should read: made inert first when the agent
 // wrote it), then the question and answer it came from.
 export const askTicketIssue = (
-  { title, request }: AskTicket,
+  { title, request }: Pick<AskTicket, 'title' | 'request'>,
   { question, answer, askerName, permalink }: AskContext
 ): { title: string; description: string } => ({
   title: clip(oneLine(title), MAX_TICKET_TITLE),

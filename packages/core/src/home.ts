@@ -3,7 +3,7 @@ import { cardSummary, linkButton, STATUS_EMOJI } from './card';
 import type { ReadyIssue } from './ready';
 import { formatReleaseAt } from './router';
 import type { SlackBlock, SlackMessage } from './slack';
-import { button, escapeSlack, issueMetaText, slackEmoji } from './slack';
+import { button, escapeSlack, issueMetaText, needsSizeText, slackEmoji } from './slack';
 import type { UsageSummary, WindowSummary } from './usage';
 
 // The app's Home tab in Slack: what needs the viewer, what's running, what's ready to start, the scheduled checks and
@@ -55,6 +55,8 @@ export type HomeInput = {
   items: CardInput[];
   // Null when Linear couldn't be read.
   ready: ReadyIssue[] | null;
+  // Unassigned issues that can't be ready until someone sizes them.
+  needsSize: ReadyIssue[];
   checks: HomeCheck[];
   // Warnings and errors the console logged in the last day.
   problems: number;
@@ -265,6 +267,7 @@ export const homeView = (input: HomeInput): HomeView => {
           )
         ]
       : []),
+    ...(input.needsSize.length > 0 ? [context(needsSizeText(input.needsSize))] : []),
     divider,
     section('*Checks*'),
     ...input.checks.map((check) => checkRow(check, input)),

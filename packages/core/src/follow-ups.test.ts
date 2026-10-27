@@ -16,7 +16,8 @@ const report = {
       followUp: {
         option: 'ship as is, follow up',
         title: 'Count animal rennet against the vegetarian tag',
-        body: 'Parmesan is made with calf rennet but is flagged dairy only.'
+        body: 'Parmesan is made with calf rennet but is flagged dairy only.',
+        size: 'S'
       }
     }
   ]
@@ -40,7 +41,8 @@ describe('review follow-ups', () => {
     expect(readQuestions(report)[0]?.followUp).toEqual({
       option: 'Ship as is, follow up',
       title: 'Count animal rennet against the vegetarian tag',
-      body: 'Parmesan is made with calf rennet but is flagged dairy only.'
+      body: 'Parmesan is made with calf rennet but is flagged dairy only.',
+      size: 'S'
     });
     const stray = {
       questions: [{ ...report.questions[0], followUp: { ...report.questions[0]?.followUp, option: 'Later' } }]
@@ -79,7 +81,11 @@ describe('review follow-ups', () => {
         "Decided in [TAS-43](https://linear.app/tastebook/issue/TAS-43)'s review, round 1 ([its PR](https://github.com/milobedini/tastebook/pull/44)): Should parmesan count as meat, so the page tells vegetarians to leave it out? → Ship as is, follow up."
       ].join('\n')
     );
-    expect(issue.estimate).toBeNull();
+    expect(issue.estimate).toBe(2);
+    expect(
+      followUpIssue({ ...chosen, size: null }, { issueIdentifier: 'TAS-43', issueUrl: null, prUrl: null, round: 1 })
+        .estimate
+    ).toBeNull();
   });
 
   it('says where the follow-ups were filed', () => {

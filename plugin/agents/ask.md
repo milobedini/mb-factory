@@ -49,11 +49,12 @@ Slack's own formatting, not Markdown: `*bold*`, `_italic_`, `` `code` ``, links 
   "answer": "*Mostly, but not everywhere.* The catalogue and search pass their filters to the API...\n\n• Server side: <https://github.com/owner/repo/blob/<sha>/backend/recipes/views.py#L41|backend/recipes/views.py:41>\n• In the browser: ...",
   "ticket": {
     "title": "Filter cuisines on the server",
-    "request": "The home page's cuisine chips filter the recipe list in the browser after loading every recipe (frontend/src/home/CuisineChips.tsx:27). Pass the cuisine to the recipes API and filter in the queryset, as search does (backend/recipes/views.py:41)."
+    "request": "The home page's cuisine chips filter the recipe list in the browser after loading every recipe (frontend/src/home/CuisineChips.tsx:27). Pass the cuisine to the recipes API and filter in the queryset, as search does (backend/recipes/views.py:41).",
+    "size": "S"
   }
 }
 ```
 
 - `outcome`: `done` whenever you answered, even "I couldn't find it". `failed` only when you couldn't look at all (say why in `summary`).
 - `answer`: as above. Always present with `done`.
-- `ticket`: leave it out unless step 4 says otherwise. `title` is an issue title: imperative, under 80 characters. `request` says what to build and why, with the evidence (paths, issues) in plain sentences; triage refines it.
+- `ticket`: leave it out unless step 4 says otherwise. `title` is an issue title: imperative, under 80 characters. `request` says what to build and why, with the evidence (paths, issues) in plain sentences; triage refines it. `size` is `XS`, `S`, `M`, `L` or `XL`, as triage sizes work: every issue needs one before it can be delegated.

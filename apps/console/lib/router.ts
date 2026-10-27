@@ -1589,10 +1589,12 @@ const answerReadyRequest = async (
     return;
   }
   if (list.ready.length === 0) {
-    await sayInThread(nothingReadyText(requireEnv('CONSOLE_URL')));
+    await sayInThread(nothingReadyText(requireEnv('CONSOLE_URL'), list.needsSize));
     return;
   }
-  await attempt('slack ready message', { channel }, () => postReadyMessage(project, READY_HEADING, list.ready, ts));
+  await attempt('slack ready message', { channel }, () =>
+    postReadyMessage(project, READY_HEADING, list.ready, { threadTs: ts, needsSize: list.needsSize })
+  );
 };
 
 type SlackThread = { channel: string; threadTs: string };
@@ -1959,7 +1961,7 @@ const handleDelegateTap = async (
     // Slack doesn't send an ephemeral message back, so it's redrawn from the list it was drawn from.
     action.ephemeral && responseUrl && outcomes.length > 0
       ? attempt('slack ephemeral edit', { issues: action.identifiers }, () => {
-          const reply = readyMessage(project, READY_HEADING, list.ready);
+          const reply = readyMessage(project, READY_HEADING, list.ready, list.needsSize);
           return respondToSlack(
             responseUrl,
             { ...reply, blocks: settleReadyMessage(reply.blocks, outcomes, project.timeZone) },
@@ -2370,11 +2372,12 @@ const handleAskTicketTap = async (
     { title: ticket.title, request: neutraliseMarkdown(ticket.request) },
     await askContextFor(ask, run)
   );
-  // Unassigned like any Slack request: whoever starts it owns it.
+  // Unassigned like any Slack request: whoever starts it owns it. Sized by the agent that suggested it.
   const issue = await createIssue(organizationId, {
     teamKey: project.linear.teamKey,
     ...filing,
-    assigneeId: null
+    assigneeId: null,
+    estimate: ticket.estimate
   }).catch((error: unknown) => {
     log('error', 'linear issue for a question failed', { askId: ask.id, error: errorMessage(error) });
     return undefined;

@@ -765,8 +765,19 @@ export const emptyMentionText = (config: FactoryConfig): string =>
 // A mention asking what's ready rather than for new work: the one word, as typed, with any closing punctuation.
 export const isReadyRequest = (request: string): boolean => /^ready[?!.]*$/i.test(request.trim());
 
-export const nothingReadyText = (consoleUrl: string): string =>
-  `Nothing is ready to delegate. The <${consoleUrl}/inbox|Inbox> shows what’s waiting on what.`;
+// Unassigned issues with no size: none can be delegated until someone sets its estimate in Linear.
+export const needsSizeText = (issues: ReadyIssue[]): string => {
+  const shown = issues.slice(0, MAX_READY_ROWS);
+  const more = issues.length - shown.length;
+  return `Needs a size before it can be delegated: ${shown
+    .map(({ identifier, url }) => `<${url}|${escapeSlack(identifier)}>`)
+    .join(', ')}${more > 0 ? ` and ${more} more` : ''}. Set an estimate in Linear.`;
+};
+
+export const nothingReadyText = (consoleUrl: string, needsSize: ReadyIssue[] = []): string =>
+  `Nothing is ready to delegate. The <${consoleUrl}/inbox|Inbox> shows what’s waiting on what.${
+    needsSize.length > 0 ? `\n${needsSizeText(needsSize)}` : ''
+  }`;
 
 export const notAllowedToStartText = (config: FactoryConfig): string =>
   `Only the people listed for ${config.alias} can start work here. Ask one of them, or file an issue in Linear.`;
@@ -802,7 +813,12 @@ export const unblockedHeading = (identifier: string, canceled: boolean, count: n
 export const slackReadyMessage = (
   heading: string,
   issues: ReadyIssue[],
-  { alias, consoleUrl, emojiPrefix }: { alias: string; consoleUrl: string; emojiPrefix: string }
+  {
+    alias,
+    consoleUrl,
+    emojiPrefix,
+    needsSize = []
+  }: { alias: string; consoleUrl: string; emojiPrefix: string; needsSize?: ReadyIssue[] }
 ): SlackMessage => {
   const shown = issues.slice(0, MAX_READY_ROWS);
   const more = issues.length - shown.length;
@@ -818,6 +834,7 @@ export const slackReadyMessage = (
         accessory: button('delegate', 'Delegate', { d: [issue.identifier] })
       })),
       ...(shown.length > 1 ? [delegateAllBlock(shown.map(({ identifier }) => identifier))] : []),
+      ...(needsSize.length > 0 ? [context(needsSizeText(needsSize))] : []),
       context(
         `Delegating assigns the issue to you and starts it, like delegating to @${escapeSlack(alias)} in Linear. ${
           more > 0 ? `${more} more on the ${inbox}.` : inbox

@@ -34,7 +34,7 @@ describe('guardIssue', () => {
     const issue = guardIssue(guard, context);
     expect(issue.title).toBe('Guard: Lint rule against unscoped recipe queries');
     expect(issue.priority).toBe(4);
-    expect(issue.estimate).toBeNull();
+    expect(issue.estimate).toBe(2);
     expect(issue.description).toContain('Raised while working on [TAS-30](https://linear.app/tastebook/issue/TAS-30)');
     expect(issue.description).toContain('[its PR](https://github.com/milobedini/tastebook/pull/40)');
     expect(issue.description).toContain('Fingerprint: `guard:tas-30:lint-rule-against-unscoped-recipe-queries`');

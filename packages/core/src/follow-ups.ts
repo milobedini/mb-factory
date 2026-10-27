@@ -1,6 +1,7 @@
 import type { FindingIssue } from './jobs';
 import { neutraliseMarkdown } from './jobs';
 import type { ChosenFollowUp } from './questions';
+import { ESTIMATES } from './sizes';
 import { escapeSlack } from './slack';
 
 const MAX_TITLE = 80;
@@ -16,8 +17,8 @@ export type FollowUpContext = {
 
 const linked = (text: string, url: string | null): string => (url ? `[${text}](${url})` : text);
 
-// The review wrote the title and body from the PR, so they're made inert like a job's findings. Unsized and unprioritised:
-// a person sizes it when they accept it out of Triage.
+// The review wrote the title and body from the PR, so they're made inert like a job's findings. Sized by the review,
+// unprioritised: a person sets the priority when they accept it out of Triage.
 export const followUpIssue = (followUp: ChosenFollowUp, context: FollowUpContext): FindingIssue => {
   const title = flatten(followUp.title);
   return {
@@ -30,7 +31,7 @@ export const followUpIssue = (followUp: ChosenFollowUp, context: FollowUpContext
       `Decided in ${linked(context.issueIdentifier, context.issueUrl)}'s review, round ${context.round}${context.prUrl ? ` (${linked('its PR', context.prUrl)})` : ''}: ${neutraliseMarkdown(flatten(followUp.prompt))} → ${neutraliseMarkdown(followUp.option)}.`
     ].join('\n'),
     priority: 0,
-    estimate: null
+    estimate: followUp.size ? ESTIMATES[followUp.size] : null
   };
 };
 

@@ -181,7 +181,7 @@ export const fireHealthCheck = async (project: FactoryConfig, now: Date): Promis
   await postJobMessage(project, slot, healthText(report, { now, since, timeZone: project.timeZone, consoleUrl }));
   // Only a hint for the day, after the health message so a Linear outage can't hold that up.
   await loadReadyList(project)
-    .then(({ ready }) => postReadyMessage(project, READY_HEADING, ready))
+    .then(({ ready, needsSize }) => postReadyMessage(project, READY_HEADING, ready, { needsSize }))
     .catch((error: unknown) => {
       log('warn', 'ready list failed', { project: project.name, error: errorMessage(error) });
     });

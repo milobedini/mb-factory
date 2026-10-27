@@ -96,6 +96,7 @@ const input = (overrides: Partial<HomeInput> = {}): HomeInput => ({
   paused: null,
   items: [],
   ready: [],
+  needsSize: [],
   checks: [],
   problems: 0,
   week: { merged: 9, runs: 41, failed: 3, costUsd: 38.2 },

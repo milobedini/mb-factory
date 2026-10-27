@@ -1,5 +1,5 @@
 import type { CandidateIssue, FactoryConfig, ReadyIssue, ReadyList, SlackMessage } from '@mb-factory/core';
-import { readyList, slackReadyMessage } from '@mb-factory/core';
+import { nothingReadyText, readyList, slackReadyMessage } from '@mb-factory/core';
 
 import { requireEnv } from './env';
 import { linearGraphql } from './linear-api';
@@ -101,23 +101,36 @@ export const recentReadyList = async (project: FactoryConfig, now: Date): Promis
   return list;
 };
 
-// Ready issues with a Delegate button each.
-export const readyMessage = (project: FactoryConfig, heading: string, issues: ReadyIssue[]): SlackMessage =>
+// Ready issues with a Delegate button each, then any that need a size first.
+export const readyMessage = (
+  project: FactoryConfig,
+  heading: string,
+  issues: ReadyIssue[],
+  needsSize: ReadyIssue[] = []
+): SlackMessage =>
   slackReadyMessage(heading, issues, {
     alias: project.alias,
     consoleUrl: requireEnv('CONSOLE_URL'),
-    emojiPrefix: project.slack?.emojiPrefix ?? 'mbf'
+    emojiPrefix: project.slack?.emojiPrefix ?? 'mbf',
+    needsSize
   });
 
 // A message in the project's channel listing ready issues: top-level, or in the thread of the mention that asked for it.
+// With none ready, it only says which need a size, if any do.
 export const postReadyMessage = async (
   project: FactoryConfig,
   heading: string,
   issues: ReadyIssue[],
-  threadTs?: string
+  { threadTs, needsSize = [] }: { threadTs?: string; needsSize?: ReadyIssue[] } = {}
 ): Promise<void> => {
-  if (!project.slack || issues.length === 0) {
+  if (!project.slack || (issues.length === 0 && needsSize.length === 0)) {
     return;
   }
-  await postSlackMessage({ channel: project.slack.channelId, threadTs, ...readyMessage(project, heading, issues) });
+  await postSlackMessage({
+    channel: project.slack.channelId,
+    threadTs,
+    ...(issues.length > 0
+      ? readyMessage(project, heading, issues, needsSize)
+      : { text: nothingReadyText(requireEnv('CONSOLE_URL'), needsSize) })
+  });
 };

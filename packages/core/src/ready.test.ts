@@ -17,7 +17,7 @@ const issue = (identifier: string, overrides: Partial<CandidateIssue> = {}): Can
   title: `Issue ${identifier}`,
   url: `https://linear.app/tastebook/issue/${identifier}`,
   priority: 0,
-  estimate: null,
+  estimate: 2,
   assignee: null,
   delegated: false,
   project: platform,
@@ -71,7 +71,7 @@ describe('readyList', () => {
       issue('TAS-40', { project: { ...recipes, statusType: 'completed' } }),
       issue('TAS-41', { project: { ...recipes, statusType: 'canceled' } })
     ]);
-    expect(list).toEqual({ ready: [], yours: [] });
+    expect(list).toEqual({ ready: [], yours: [], needsSize: [] });
   });
 
   it('orders by the team’s project order, then priority with none last, then oldest first', () => {
@@ -96,9 +96,16 @@ describe('readyList', () => {
     expect(list.ready[1]).toMatchObject({ project: null, projectUrl: null, milestone: null });
   });
 
-  it('shows the size, unsized until triage sets one', () => {
-    const [sized, unsized] = readyList([issue('TAS-23', { estimate: 2 }), issue('TAS-26')]).ready;
-    expect([sized?.size, unsized?.size]).toEqual(['S', 'unsized']);
+  it('shows the size, and lists unassigned issues with none as needing one, blocked or not', () => {
+    const list = readyList([
+      issue('TAS-23', { estimate: 3 }),
+      issue('TAS-19', { estimate: null, project: null }),
+      issue('TAS-26', { estimate: null, blockers: [{ identifier: 'TAS-23', finished: false }] }),
+      issue('TAS-58', { estimate: null, assignee: 'Milo Bedini' })
+    ]);
+    expect(list.ready.map(({ identifier, size }) => [identifier, size])).toEqual([['TAS-23', 'M']]);
+    expect(identifiers(list.needsSize)).toEqual(['TAS-26', 'TAS-19']);
+    expect(identifiers(list.yours)).toEqual(['TAS-58']);
   });
 });
 

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import type { Job } from './config';
 import { WEEKDAYS } from './config';
+import { ESTIMATES, SIZES } from './sizes';
 import type { JobAgent } from './stages';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -80,8 +81,6 @@ export const nextSlot = (job: SlotTime, now: Date, timeZone: string): Date => {
 export const FINDING_SEVERITIES = ['critical', 'high', 'moderate', 'low'] as const;
 
 export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
-
-const SIZES = ['XS', 'S', 'M', 'L', 'XL'] as const;
 
 export const FINDING_KINDS = ['advisory', 'code', 'docs'] as const;
 
@@ -224,8 +223,6 @@ export const decideFiling = (previous: FiledBefore | undefined): Filing => {
 
 // Linear's priorities: 1 urgent, 2 high, 3 medium, 4 low.
 const PRIORITY: Record<FindingSeverity, number> = { critical: 1, high: 2, moderate: 3, low: 4 };
-// The team's T-shirt estimates as Linear stores them.
-const ESTIMATE: Record<(typeof SIZES)[number], number> = { XS: 1, S: 2, M: 3, L: 5, XL: 8 };
 
 const SEVERITY_LABEL: Record<FindingSeverity, string> = {
   critical: 'Critical',
@@ -299,7 +296,7 @@ export const findingIssue = (finding: Finding, context: FindingContext): Finding
     `Fingerprint: \`${finding.fingerprint}\``
   ].join('\n'),
   priority: PRIORITY[finding.severity],
-  estimate: finding.size ? ESTIMATE[finding.size] : null
+  estimate: finding.size ? ESTIMATES[finding.size] : null
 });
 
 // A finding about to be filed, with the done issue it came back after, if any.
@@ -332,7 +329,7 @@ export const groupIssue = (items: FilingFinding[], context: Omit<FindingContext,
   }
   const findings = items.map(({ finding }) => finding);
   const worst = findings.reduce((a, b) => (SEVERITY_RANK[b.severity] > SEVERITY_RANK[a.severity] ? b : a));
-  const estimates = findings.flatMap(({ size }) => (size ? [ESTIMATE[size]] : []));
+  const estimates = findings.flatMap(({ size }) => (size ? [ESTIMATES[size]] : []));
   const [one, many] = KIND_NOUN[first.finding.kind];
   return {
     title: clip(

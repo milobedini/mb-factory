@@ -120,12 +120,10 @@ export const loadHomeInput = async (project: FactoryConfig, now: Date): Promise<
       .where(and(eq(workItems.project, project.name), notInArray(workItems.stage, TERMINAL_STAGES))),
     latestReadings(),
     currentPause(),
-    recentReadyList(project, now)
-      .then(({ ready: list }) => list)
-      .catch((error: unknown) => {
-        log('warn', 'ready list failed', { project: project.name, error: errorMessage(error) });
-        return null;
-      }),
+    recentReadyList(project, now).catch((error: unknown) => {
+      log('warn', 'ready list failed', { project: project.name, error: errorMessage(error) });
+      return null;
+    }),
     Promise.all(project.jobs.map((job) => loadCheck(project, job, now))),
     db
       .select({ count: sum(consoleProblems.count).mapWith(Number) })
@@ -146,7 +144,8 @@ export const loadHomeInput = async (project: FactoryConfig, now: Date): Promise<
     usage: summariseUsage({ policy: project.usage, readings, now }),
     paused: pause ? { by: pause.pausedBy, at: pause.pausedAt } : null,
     items: cards,
-    ready,
+    ready: ready?.ready ?? null,
+    needsSize: ready?.needsSize ?? [],
     checks,
     problems: problems?.count ?? 0,
     week

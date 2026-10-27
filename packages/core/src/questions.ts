@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import type { RunRequest } from './router';
+import type { Size } from './sizes';
+import { SIZES } from './sizes';
 import type { AgentRole } from './stages';
 
 // How an answer was given: an option tapped (or typed exactly), the human's own words, or the suggested default.
@@ -47,7 +49,8 @@ const questionSchema = z
       .object({
         option: z.string().trim().min(1),
         title: z.string().trim().min(1).max(200),
-        body: z.string().trim().min(1).max(2000)
+        body: z.string().trim().min(1).max(2000),
+        size: z.enum(SIZES).nullish().catch(null)
       })
       .nullish()
       .catch(null)
@@ -60,7 +63,7 @@ const questionSchema = z
   });
 
 // The issue a review question's option defers work to, filed in Triage when that option is the answer.
-export type FollowUp = { option: string; title: string; body: string };
+export type FollowUp = { option: string; title: string; body: string; size?: Size | null };
 
 // A question as the router asks it: the suggested option first. `keep` is the option, if any, that needs no change.
 export type Question = {

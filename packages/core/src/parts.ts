@@ -1,17 +1,16 @@
 import { z } from 'zod';
 
+import { ESTIMATES, SIZES } from './sizes';
+
 const MAX_PARTS = 5;
 const MAX_TITLE = 80;
 const MAX_SCOPE = 2000;
-
-// Linear's T-shirt estimates as stored.
-const ESTIMATES = { XS: 1, S: 2, M: 3, L: 5, XL: 8 } as const;
 
 const partSchema = z.looseObject({
   title: z.string().trim().min(1).max(MAX_TITLE),
   // What this part builds and how it's checked, from the spec; becomes the sub-issue's description.
   scope: z.string().trim().min(1).max(MAX_SCOPE),
-  size: z.enum(['XS', 'S', 'M', 'L', 'XL']).nullish().catch(null)
+  size: z.enum(SIZES).nullish().catch(null)
 });
 
 export type SpecPart = { title: string; scope: string; estimate: number | null };
