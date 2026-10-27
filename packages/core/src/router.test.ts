@@ -445,6 +445,15 @@ describe('nextStepAfterRun', () => {
     report: { stage: 'triage', outcome: 'done', summary: 'Size S.', next }
   });
 
+  it('settles a slicing issue once its slices are created, and only then', () => {
+    const sliced = (report: unknown) => ({ ...finished, agent: 'triage' as const, report });
+    expect(nextStepAfterRun(sliced({ next: 'human', created: ['TAS-38', 'TAS-39'] }), loop)).toEqual({ stage: 'done' });
+    expect(nextStepAfterRun(sliced({ next: 'human', created: [] }), loop)).toEqual({});
+    expect(nextStepAfterRun(sliced({ next: 'human', created: ['not an issue'] }), loop)).toEqual({});
+    expect(nextStepAfterRun({ ...sliced({ created: ['TAS-38'] }), outcome: 'needs_input' }, loop)).toEqual({});
+    expect(nextStepAfterRun(sliced({ next: 'spec', created: ['TAS-38'] }), loop)).toMatchObject({ stage: 'spec' });
+  });
+
   it('hands a reported gate to the router, unless the run also asked questions', () => {
     const gate = { body: 'Split into 16.', options: ['Create them', 'Change something', 'Keep as one'] };
     const waiting = { ...finished, outcome: 'needs_input' as const, agent: 'triage' as const };

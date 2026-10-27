@@ -433,7 +433,23 @@ export const conflictHandOverText = (branch: string, prUrl: string | null): stri
 export const ciHandOverText = (workflow: string, url: string | null): string =>
   `The ${workflow} workflow failed again after ${MAX_CI_FIXES} fixes, so I’ve stopped there; it needs a look${url ? `: ${url}` : '.'}`;
 
-const triageReportSchema = z.looseObject({ next: z.string().nullish() });
+const triageReportSchema = z.looseObject({
+  next: z.string().nullish(),
+  // Slicing's last run: the issues it created. Read alone, so a malformed list never hides `next`.
+  created: z.unknown().nullish()
+});
+
+const ISSUE_IDENTIFIER = /^[A-Z][A-Z0-9]*-\d+$/;
+
+// The issues a slicing run reports it created; once there are any, the slicing issue's work is done.
+export const slicedIssues = (report: unknown): string[] => {
+  const created = triageReportSchema.safeParse(report).data?.created;
+  return Array.isArray(created)
+    ? created.filter(
+        (identifier): identifier is string => typeof identifier === 'string' && ISSUE_IDENTIFIER.test(identifier)
+      )
+    : [];
+};
 
 // Triage's `next` picks the stage after it; the follow-on run is still `delegated`, as the agents expect.
 // No verify stage yet: a UI bug triage wants reproduced goes to implement, whose bug path starts with a failing test.
@@ -627,6 +643,10 @@ export const nextStepAfterRun = (
     return afterReview(run.report, loop);
   }
   const agent = run.agent === 'triage' ? agentAfterTriage(run.report) : undefined;
+  // A slicing issue is done once its slices exist: nothing else would ever move it.
+  if (run.agent === 'triage' && !agent && slicedIssues(run.report).length > 0) {
+    return { stage: 'done' };
+  }
   return agent
     ? {
         stage: stageForAgent(agent),

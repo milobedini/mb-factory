@@ -80,7 +80,7 @@ A project is the epic. Slicing turns its PRD into issues that are each one PR, s
    - Product: <issue>. Suggest: <fix>.
    ```
 
-   Issue bodies say what someone can do or see, never which files or components. Before creating, search for an issue with the same title in the project and skip it if one exists. Report each new issue as a link, then the stage report with `next: human`: delegating them is the human's call.
+   Issue bodies say what someone can do or see, never which files or components. Before creating, search for an issue with the same title in the project and skip it if one exists. Report each new issue as a link, then the stage report with `next: human` and the new issues' identifiers in `created` (`"created": ["TAS-38", "TAS-39"]`): the router then moves this slicing issue to Done. Delegating the slices is the human's call.
 
 ## Exit
 
