@@ -307,16 +307,35 @@ export const pullRequestInfo = async (repository: string, prNumber: number): Pro
   };
 };
 
-// A PR as Approve and merge checks it, with whether it merges into its base as GitHub works it out now.
-export const pullForMerge = async (repository: string, prNumber: number): Promise<PullForMerge> => {
-  const pull = await githubGet<{ state: 'open' | 'closed'; merged: boolean; draft: boolean; head: { sha: string } }>(
-    `/repos/${repository}/pulls/${prNumber}`,
-    'pull request'
-  );
-  const open = pull.state === 'open' && !pull.merged;
-  // A short wait at most: the person is waiting on the tap, and a second tap asks again.
-  const { mergeable } = open ? await pullMergeState(repository, prNumber, [2000, 3000]) : { mergeable: null };
-  return { state: pull.state, merged: pull.merged, draft: pull.draft, head: pull.head.sha, mergeable };
+type PullNow = {
+  state: 'open' | 'closed';
+  merged: boolean;
+  draft: boolean;
+  mergeable: boolean | null;
+  head: { sha: string };
+};
+
+// A PR as Approve and merge checks it. GitHub's own `mergeable` is taken as it stands, even when its test merge predates
+// the base's latest commit (which `pullMergeState` treats as unknown): the merge call checks again and refuses a
+// conflict. Unknown is asked again after a short pause or two, since the person is waiting on the tap.
+export const pullForMerge = async (
+  repository: string,
+  prNumber: number,
+  pauses: number[] = [2000, 3000]
+): Promise<PullForMerge> => {
+  const pull = await githubGet<PullNow>(`/repos/${repository}/pulls/${prNumber}`, 'pull request');
+  const [pause, ...rest] = pauses;
+  if (pull.state === 'open' && pull.mergeable === null && pause !== undefined) {
+    await sleep(pause);
+    return pullForMerge(repository, prNumber, rest);
+  }
+  return {
+    state: pull.state,
+    merged: pull.merged,
+    draft: pull.draft,
+    head: pull.head.sha,
+    mergeable: pull.mergeable
+  };
 };
 
 export type GitHubRefusal = { ok: false; message: string };
