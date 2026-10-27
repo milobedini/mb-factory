@@ -220,11 +220,16 @@ jobs:
           EVIDENCE_TOKEN: ${{ secrets.EVIDENCE_BLOB_READ_WRITE_TOKEN }}
           STORE: ${{ vars.EVIDENCE_BLOB_STORE_ID }}
         run: |
-          store=$(cut -d_ -f4 <<< "$EVIDENCE_TOKEN")
-          [[ -n "$store" && "$store" == "$STORE" ]] || { echo "::error::EVIDENCE_BLOB_READ_WRITE_TOKEN is missing or isn't for the store in EVIDENCE_BLOB_STORE_ID"; exit 1; }
           evidence="$RUNNER_TEMP/verify/evidence"
           mapfile -t files < <([[ -d "$evidence" ]] && find "$evidence" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
+          # A PR with nothing to show on screen gets no evidence, and nothing links to any.
+          (( ${#files[@]} > 0 )) || { echo "Verify recorded no evidence: nothing to upload."; exit 0; }
           (( ${#files[@]} <= 20 )) || { echo "::error::verify recorded ${#files[@]} files; at most 20 are uploaded"; exit 1; }
+          # Each failure says which: the store ID is public (it's in the evidence URLs), the rest of the token never shows.
+          [[ -n "$EVIDENCE_TOKEN" ]] || { echo "::error::EVIDENCE_BLOB_READ_WRITE_TOKEN is empty: add it to the project's factory environment"; exit 1; }
+          [[ "$EVIDENCE_TOKEN" =~ ^vercel_blob_rw_([A-Za-z0-9]+)_[^[:space:]\"\'=]+$ ]] || { echo "::error::EVIDENCE_BLOB_READ_WRITE_TOKEN isn't a bare Blob read-write token (vercel_blob_rw_<store>_<secret>, with nothing around it)"; exit 1; }
+          store=${BASH_REMATCH[1]}
+          [[ "$store" == "$STORE" ]] || { echo "::error::EVIDENCE_BLOB_READ_WRITE_TOKEN is for store $store, not $STORE (EVIDENCE_BLOB_STORE_ID)"; exit 1; }
           for name in "${files[@]}"; do
             file="$evidence/$name"
             [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,62}\.(png|webm|mp4)$ ]] || { echo "::error::$name is not a named image or video"; exit 1; }
