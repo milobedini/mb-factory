@@ -388,7 +388,7 @@ Linear has no "epic" type. A **project** plays that role.
 | Milestone              | A checkpoint inside a project                               | Slices are grouped under them                                  |
 | **Issue**              | One PR-sized slice (one ticket = one PR)                    | The work item the pipeline runs on                             |
 | Sub-issue              | Rare: only when a slice can't stand alone                   | Treated like an issue                                          |
-| Relations (blocked by) | Order between slices                                        | The router won't dispatch an issue until its blockers are Done |
+| Relations (blocked by) | Order between slices                                        | The Ready list offers an issue only once its blockers are Done; delegating early still starts it |
 | Triage inbox           | Incoming issues from Slack, scheduled loops and others      | You accept or decline before anything is delegated             |
 
 **Slicing a project:**
