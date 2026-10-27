@@ -420,6 +420,26 @@ export const decideCiFailure = (
   };
 };
 
+export type CommitRun = {
+  workflowId: number;
+  name: string | null;
+  event: string;
+  conclusion: string | null;
+  url: string;
+};
+
+const CHECK_EVENTS = ['pull_request', 'deployment_status'];
+const FAILED_CHECK_CONCLUSIONS = ['failure', 'timed_out'];
+
+// The checks failing on a PR's head, from its commit's Actions runs, newest first as GitHub lists them: the latest run
+// of each check workflow (a re-run that passed clears it). Stage runs and other events aren't checks.
+export const failedChecks = (commitRuns: CommitRun[]): { workflow: string; url: string }[] =>
+  commitRuns
+    .filter(({ event }) => CHECK_EVENTS.includes(event))
+    .filter((run, index, all) => all.findIndex(({ workflowId }) => workflowId === run.workflowId) === index)
+    .filter(({ conclusion }) => FAILED_CHECK_CONCLUSIONS.includes(conclusion ?? ''))
+    .map(({ name, url }) => ({ workflow: name ?? 'A check', url }));
+
 export type ConflictAction = { kind: 'fix'; request: RunRequest } | { kind: 'hand_over' } | { kind: 'ignore' };
 
 // Conflict fixes get one attempt for each state of the default branch: a later merge there can conflict afresh.

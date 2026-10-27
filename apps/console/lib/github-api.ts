@@ -2,6 +2,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type {
   ChangedFile,
   ChecksState,
+  CommitRun,
   DispatchPayload,
   PullForMerge,
   ReviewThread,
@@ -222,6 +223,41 @@ export const scheduledRuns = async (repository: string, since: Date): Promise<Sc
     createdAt: new Date(run.created_at),
     url: run.html_url
   }));
+};
+
+type CommitWorkflowRuns = {
+  workflow_runs: {
+    workflow_id: number;
+    name: string | null;
+    event: string;
+    conclusion: string | null;
+    html_url: string;
+  }[];
+};
+
+// Every Actions run on a commit, newest first: its checks, whichever event started them.
+export const commitRuns = async (repository: string, sha: string): Promise<CommitRun[]> => {
+  const query = new URLSearchParams({ head_sha: sha, per_page: '100' });
+  const { workflow_runs: workflowRuns } = await githubGet<CommitWorkflowRuns>(
+    `/repos/${repository}/actions/runs?${query}`,
+    'commit runs'
+  );
+  return workflowRuns.map((run) => ({
+    workflowId: run.workflow_id,
+    name: run.name,
+    event: run.event,
+    conclusion: run.conclusion,
+    url: run.html_url
+  }));
+};
+
+// The open PRs whose head is this commit: a deployment's checks name a commit, not a PR.
+export const openPullsWithHead = async (repository: string, sha: string): Promise<number[]> => {
+  const pulls = await githubGet<{ number: number; state: string; head: { sha: string } }[]>(
+    `/repos/${repository}/commits/${sha}/pulls`,
+    'pulls for commit'
+  );
+  return pulls.filter(({ state, head }) => state === 'open' && head.sha === sha).map(({ number }) => number);
 };
 
 // A PR's head commit and base branch now.

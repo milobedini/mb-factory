@@ -172,6 +172,30 @@ describe('parseGitHubEvent for workflow runs', () => {
     expect(parseGitHubEvent('workflow_run', workflowRun(overrides))).toBeUndefined();
   });
 
+  // TAS-43, 27 Oct: Preview checks failed on PR #44's preview, and nothing started a fix.
+  it('reads a failed check on a deployment by its commit, for the console to find the PR', () => {
+    const sha = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+    expect(
+      parseGitHubEvent(
+        'workflow_run',
+        workflowRun({ name: 'Preview checks', event: 'deployment_status', head_sha: sha, pull_requests: [] })
+      )
+    ).toEqual({
+      kind: 'ci_failed',
+      repository: 'milobedini/tastebook',
+      prNumbers: [],
+      headSha: sha,
+      workflow: 'Preview checks',
+      url: 'https://github.com/milobedini/tastebook/actions/runs/1'
+    });
+    expect(
+      parseGitHubEvent(
+        'workflow_run',
+        workflowRun({ event: 'deployment_status', conclusion: 'skipped', head_sha: sha })
+      )
+    ).toBeUndefined();
+  });
+
   it('ignores a run still in progress', () => {
     expect(
       parseGitHubEvent('workflow_run', { ...workflowRun({ conclusion: null }), action: 'in_progress' })

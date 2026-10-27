@@ -15,6 +15,7 @@ import {
   decideCiFailure,
   decideConflict,
   decideVerify,
+  failedChecks,
   findingsPrompt,
   formatReleaseAt,
   governDispatch,
@@ -1105,6 +1106,36 @@ describe('decideConflict', () => {
     });
     expect(conflictFixesSince([run('conflict', -5), run('conflict', 2), run('ci_failed', 3)], moved)).toBe(1);
     expect(conflictFixesSince([run('conflict', -5)], moved)).toBe(0);
+  });
+});
+
+describe('failedChecks', () => {
+  const run = (workflowId: number, name: string, conclusion: string | null, event = 'pull_request') => ({
+    workflowId,
+    name,
+    event,
+    conclusion,
+    url: `https://github.com/o/r/actions/runs/${workflowId}-${conclusion}`
+  });
+
+  it('names each check whose latest run on the commit failed, preview checks included', () => {
+    expect(
+      failedChecks([
+        run(1, 'CI', 'success'),
+        run(2, 'Preview checks', 'failure', 'deployment_status'),
+        run(1, 'CI', 'failure')
+      ])
+    ).toEqual([{ workflow: 'Preview checks', url: 'https://github.com/o/r/actions/runs/2-failure' }]);
+  });
+
+  it('ignores stage runs, unfinished checks and skipped ones', () => {
+    expect(
+      failedChecks([
+        run(3, 'Factory', 'failure', 'repository_dispatch'),
+        run(1, 'CI', null),
+        run(2, 'Preview checks', 'skipped', 'deployment_status')
+      ])
+    ).toEqual([]);
   });
 });
 

@@ -42,6 +42,10 @@ const workflowRunEventSchema = z.looseObject({
     event: z.string(),
     conclusion: z.string().nullish(),
     html_url: z.url({ protocol: /^https$/ }).nullish(),
+    head_sha: z
+      .string()
+      .regex(/^[0-9a-f]{40}$/)
+      .nullish(),
     head_repository: repositorySchema.nullish(),
     pull_requests: z.array(z.looseObject({ number: z.int().positive() }))
   })
@@ -61,29 +65,46 @@ export type GitHubEvent =
   | ({ kind: 'dependency_pr_opened' } & DependencyPr)
   | { kind: 'human_push'; repository: string; branch: string; login: string; commits: number }
   | { kind: 'default_branch_moved'; repository: string; branch: string }
-  | { kind: 'ci_failed'; repository: string; prNumbers: number[]; workflow: string; url: string | null };
+  | {
+      kind: 'ci_failed';
+      repository: string;
+      prNumbers: number[];
+      workflow: string;
+      url: string | null;
+      // A check run on a deployment (a PR's preview) names its commit, not its PR, so the console looks the PR up.
+      headSha?: string;
+    };
 
 const FAILED_CONCLUSIONS = ['failure', 'timed_out'];
 
-// A check workflow that failed on a pull request from this repository. A cancelled run was superseded, not failed.
+// A check workflow that failed on a pull request from this repository, or on a deployment of one of its commits (a
+// PR's preview checks), which GitHub doesn't tie to a PR. A cancelled run was superseded, not failed.
 const parseWorkflowRun = (payload: unknown): GitHubEvent | undefined => {
   const parsed = workflowRunEventSchema.safeParse(payload);
   if (!parsed.success) {
     return undefined;
   }
   const { action, repository, workflow_run: run } = parsed.data;
-  const failed =
-    action === 'completed' && run.event === 'pull_request' && FAILED_CONCLUSIONS.includes(run.conclusion ?? '');
-  if (!failed || run.head_repository?.full_name !== repository.full_name || run.pull_requests.length === 0) {
+  if (
+    action !== 'completed' ||
+    !FAILED_CONCLUSIONS.includes(run.conclusion ?? '') ||
+    run.head_repository?.full_name !== repository.full_name
+  ) {
     return undefined;
   }
-  return {
+  const failure = {
     kind: 'ci_failed',
     repository: repository.full_name,
-    prNumbers: run.pull_requests.map(({ number }) => number),
     workflow: run.name,
     url: run.html_url ?? null
   };
+  if (run.event === 'pull_request' && run.pull_requests.length > 0) {
+    return { ...failure, kind: 'ci_failed', prNumbers: run.pull_requests.map(({ number }) => number) };
+  }
+  if (run.event === 'deployment_status' && run.head_sha) {
+    return { ...failure, kind: 'ci_failed', prNumbers: [], headSha: run.head_sha };
+  }
+  return undefined;
 };
 
 const BRANCH_REF = 'refs/heads/';

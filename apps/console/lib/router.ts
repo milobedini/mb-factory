@@ -58,6 +58,7 @@ import {
   dispatchLapsesAt,
   emptyMentionText,
   escapeSlack,
+  failedChecks,
   filedChoiceMessage,
   filedForLaterMessage,
   filedIssueClosedText,
@@ -182,9 +183,11 @@ import {
   cancelActionsRun,
   commentOnPullRequest,
   commitParents,
+  commitRuns,
   compareFiles,
   defaultBranch,
   mergePull,
+  openPullsWithHead,
   pullFiles,
   pullForMerge,
   pullHead,
@@ -467,7 +470,10 @@ const resolveReviewThreads = (workItem: WorkItem) => {
 // the review's threads are resolved; a question's thread waits for its answer. While review asks questions, merging the
 // base waits for the answers (`keepReviewedPr`), since starting a run would close them unanswered.
 const enterMergeGate = async (project: FactoryConfig, workItem: WorkItem, asking: boolean): Promise<void> => {
-  if (!asking && (await checkConflict(project, workItem)) === 'fixing') {
+  if (
+    !asking &&
+    ((await checkConflict(project, workItem)) === 'fixing' || (await checkFailedChecks(project, workItem)) === 'fixing')
+  ) {
     return;
   }
   if (!(await openRound(workItem))) {
@@ -931,12 +937,16 @@ const keepReviewedPr = async (
   const { prNumber } = workItem;
   log('info', 'review decisions kept the PR', { issue: workItem.issueIdentifier });
   const merging = (await checkConflict(project, workItem)) === 'fixing';
+  // A failing check is only reported here: the answers may have been to merge with it.
+  const failing = merging ? undefined : await headFailure(workItem);
   const offering = !merging && review.findings.length > 0;
   const next = merging
     ? 'The PR no longer merges cleanly, so I’m merging its base branch in first; review looks again after.'
-    : offering
-      ? 'Choose which of the round’s findings to fix below, or merge as it is.'
-      : 'It’s ready for you to merge.';
+    : failing
+      ? `${escapeSlack(failing.workflow)} is failing on the PR (<${failing.url}|run>): reply here if you want it fixed.${offering ? ' Choose which of the round’s findings to fix below, or merge as it is.' : ''}`
+      : offering
+        ? 'Choose which of the round’s findings to fix below, or merge as it is.'
+        : 'It’s ready for you to merge.';
   await Promise.all([
     replyInThread(project, workItem, askingFor(project, workItem)(`${text}\n${next}`)),
     postActivity(workItem, { type: 'response', body: text }),
@@ -2851,41 +2861,93 @@ const findWorkItemForPr = async (event: Extract<GitHubEvent, { kind: 'pr_closed'
 };
 
 const handleCiFailure = async (event: Extract<GitHubEvent, { kind: 'ci_failed' }>): Promise<void> => {
+  // A deployment's checks name the commit; the PR is the open one whose head it still is.
+  const prNumbers =
+    event.prNumbers.length === 0 && event.headSha
+      ? await openPullsWithHead(event.repository, event.headSha).catch((error: unknown) => {
+          log('warn', 'pulls for commit failed', { sha: event.headSha, error: errorMessage(error) });
+          return [];
+        })
+      : event.prNumbers;
+  if (prNumbers.length === 0) {
+    return;
+  }
   const [workItem] = await getDb()
     .select()
     .from(workItems)
-    .where(and(eq(workItems.repository, event.repository), inArray(workItems.prNumber, event.prNumbers)))
+    .where(and(eq(workItems.repository, event.repository), inArray(workItems.prNumber, prNumbers)))
     .limit(1);
   if (!workItem) {
-    await takeOnFailedDependencyPr(event);
+    await takeOnFailedDependencyPr({ ...event, prNumbers });
     return;
   }
   const project = findProject(workItem.project);
   if (!project) {
     return;
   }
+  // Starting a fix would close a review's questions unanswered; the answers check the PR's head again.
+  if (await openRound(workItem)) {
+    log('info', 'ci failure held for questions', { issue: workItem.issueIdentifier, workflow: event.workflow });
+    return;
+  }
+  await startCiFix(project, workItem, event);
+};
+
+// A failed check on a delivered PR goes back to implement, within the rules of `decideCiFailure`.
+const startCiFix = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  failure: { workflow: string; url: string | null }
+): Promise<'fixing' | 'handed_over' | 'left'> => {
   const history = await getDb()
     .select({ agent: runs.agent, trigger: runs.trigger, status: runs.status })
     .from(runs)
     .where(eq(runs.workItemId, workItem.id))
     .orderBy(desc(runs.createdAt));
-  const action = decideCiFailure(event, {
+  const action = decideCiFailure(failure, {
     stage: workItem.stage,
     openRuns: history.filter(({ status }) => OPEN_STATUSES.includes(status)).length,
     ciFixes: consecutiveCiFixes(history)
   });
-  log('info', 'ci failure', { issue: workItem.issueIdentifier, workflow: event.workflow, action: action.kind });
+  log('info', 'ci failure', { issue: workItem.issueIdentifier, workflow: failure.workflow, action: action.kind });
   if (action.kind === 'fix') {
     await dispatchRun(project, await createRun(project, workItem, action.request));
-    return;
+    return 'fixing';
   }
   if (action.kind === 'hand_over') {
-    const text = ciHandOverText(event.workflow, event.url);
+    const text = ciHandOverText(failure.workflow, failure.url);
     await Promise.all([
       postActivity(workItem, { type: 'error', body: text }),
       replyInThread(project, workItem, askingFor(project, workItem)(text))
     ]);
+    return 'handed_over';
   }
+  return 'left';
+};
+
+// A check failing on the PR's head now, if any.
+const headFailure = async (workItem: WorkItem): Promise<{ workflow: string; url: string } | undefined> => {
+  const { prNumber, repository } = workItem;
+  if (!prNumber) {
+    return undefined;
+  }
+  try {
+    const { head } = await pullHead(repository, prNumber);
+    return failedChecks(await commitRuns(repository, head))[0];
+  } catch (error) {
+    log('warn', 'head checks failed to load', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return undefined;
+  }
+};
+
+// At the merge gate, a check that failed on the PR's head while a run was going (and so was left then) gets its fix.
+const checkFailedChecks = async (project: FactoryConfig, workItem: WorkItem): Promise<'fixing' | 'clean'> => {
+  const failed = await headFailure(workItem);
+  if (!failed) {
+    return 'clean';
+  }
+  const [current] = await getDb().select().from(workItems).where(eq(workItems.id, workItem.id));
+  return (await startCiFix(project, current ?? workItem, failed)) === 'fixing' ? 'fixing' : 'clean';
 };
 
 // A Dependabot PR that needs work becomes a work item on its branch, filed in Linear with what to do, and starts the
