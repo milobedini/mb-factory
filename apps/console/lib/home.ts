@@ -1,5 +1,6 @@
 import type { FactoryConfig, HomeCheck, HomeInput, Job } from '@mb-factory/core';
 import {
+  checkState,
   homeNotAllowedView,
   homeView,
   isAllowedSlackUser,
@@ -7,10 +8,11 @@ import {
   nextSlot,
   OPEN_RUN_STATUSES,
   parseAppHomeOpened,
+  readJobReport,
   summariseUsage,
   TERMINAL_STAGES
 } from '@mb-factory/core';
-import { and, count, countDistinct, desc, eq, gte, notInArray, sql, sum } from 'drizzle-orm';
+import { and, count, countDistinct, desc, eq, gte, inArray, notInArray, sql, sum } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
 import { consoleProblems, jobFindings, runs, stageChanges, workItems } from '@/db/schema';
@@ -30,6 +32,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+// A check's latest run, read as its message in the channel was: issues filed, findings Linear refused (unless another run
+// has filed them since), and what it couldn't check.
 const loadCheck = async (project: FactoryConfig, job: Job, now: Date): Promise<HomeCheck> => {
   const db = getDb();
   const [latest] = await db
@@ -38,23 +42,36 @@ const loadCheck = async (project: FactoryConfig, job: Job, now: Date): Promise<H
     .where(and(eq(runs.project, project.name), eq(runs.job, job.name)))
     .orderBy(desc(runs.createdAt))
     .limit(1);
-  const [filed] = latest
-    ? await db.select({ count: count() }).from(jobFindings).where(eq(jobFindings.runId, latest.id))
-    : [];
-  const filedCount = filed?.count ?? 0;
-  const state: HomeCheck['state'] = !latest
-    ? 'none'
-    : OPEN_RUN_STATUSES.includes(latest.status)
-      ? 'running'
-      : latest.status === 'finished' && latest.outcome === 'done'
-        ? filedCount > 0
-          ? 'filed'
-          : 'clean'
-        : 'failed';
+  const report = latest ? readJobReport(latest.report, job.agent) : undefined;
+  const fingerprints = report?.findings.map(({ fingerprint }) => fingerprint) ?? [];
+  // Any job's filing counts, as when filing: the weekly pass and the daily check find the same things.
+  const [onLinear, [filed]] = await Promise.all([
+    fingerprints.length === 0
+      ? []
+      : db
+          .selectDistinct({ fingerprint: jobFindings.fingerprint })
+          .from(jobFindings)
+          .where(and(eq(jobFindings.project, project.name), inArray(jobFindings.fingerprint, fingerprints))),
+    latest
+      ? db
+          .select({ count: countDistinct(jobFindings.issueIdentifier) })
+          .from(jobFindings)
+          .where(eq(jobFindings.runId, latest.id))
+      : []
+  ]);
+  const reached = new Set(onLinear.map(({ fingerprint }) => fingerprint));
+  const counts = {
+    filed: filed?.count ?? 0,
+    unfiled: new Set(fingerprints.filter((fingerprint) => !reached.has(fingerprint))).size
+  };
   return {
     title: jobTitle(job),
-    state,
-    filed: filedCount,
+    state: checkState(
+      latest && { status: latest.status, outcome: latest.outcome, open: OPEN_RUN_STATUSES.includes(latest.status) },
+      counts
+    ),
+    ...counts,
+    gaps: report?.gaps.length ?? 0,
     lastAt: latest ? (latest.finishedAt ?? latest.createdAt) : null,
     nextAt: nextSlot(job, now, project.timeZone),
     runUrl: latest?.actionsRunUrl ?? null

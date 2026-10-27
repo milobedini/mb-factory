@@ -11,12 +11,36 @@ import type { UsageSummary, WindowSummary } from './usage';
 
 export type HomeCheck = {
   title: string;
-  state: 'clean' | 'filed' | 'failed' | 'running' | 'none';
+  state: CheckState;
+  // Issues the latest run filed.
   filed: number;
+  // Its findings that never reached Linear, so a check whose filing failed doesn't read as clean.
+  unfiled: number;
+  // What it couldn't check, such as an audit tool that failed.
+  gaps: number;
   lastAt: Date | null;
   nextAt: Date | null;
   runUrl: string | null;
 };
+
+export type CheckState = 'clean' | 'filed' | 'unfiled' | 'failed' | 'running' | 'none';
+
+// A check's latest run, as the Home tab shows it: findings Linear refused outweigh the ones it filed.
+export const checkState = (
+  run: { status: string; outcome: string | null; open: boolean } | undefined,
+  { filed, unfiled }: { filed: number; unfiled: number }
+): CheckState =>
+  !run
+    ? 'none'
+    : run.open
+      ? 'running'
+      : run.status !== 'finished' || run.outcome !== 'done'
+        ? 'failed'
+        : unfiled > 0
+          ? 'unfiled'
+          : filed > 0
+            ? 'filed'
+            : 'clean';
 
 export type HomeInput = {
   alias: string;
@@ -126,9 +150,10 @@ const readyRow = (issue: ReadyIssue, emojiPrefix: string): SlackBlock =>
     button('delegate', 'Delegate', { d: [issue.identifier] })
   );
 
-const CHECK_EMOJI: Record<HomeCheck['state'], string> = {
+const CHECK_EMOJI: Record<CheckState, string> = {
   clean: 'done',
   filed: 'needs-you',
+  unfiled: 'warning',
   failed: 'blocked',
   running: 'running',
   none: 'todo'
@@ -136,16 +161,21 @@ const CHECK_EMOJI: Record<HomeCheck['state'], string> = {
 
 const checkRow = (check: HomeCheck, { now, timeZone, emojiPrefix }: HomeInput): SlackBlock => {
   const at = check.lastAt ? formatReleaseAt(check.lastAt, now, timeZone) : '';
+  const alsoFiled = check.filed > 0 ? `; filed ${plural(check.filed, 'issue')} in Triage` : '';
   const last = {
-    clean: `Clean at ${at}`,
+    clean: check.gaps > 0 ? `Nothing to file at ${at}` : `Clean at ${at}`,
     filed: `Filed ${plural(check.filed, 'issue')} in Triage at ${at}`,
+    unfiled: `Couldn’t file ${plural(check.unfiled, 'finding')} in Linear at ${at}${alsoFiled}`,
     failed: `Failed at ${at}`,
     running: 'Running now',
     none: 'Not run yet'
   }[check.state];
+  const finished = check.state === 'clean' || check.state === 'filed' || check.state === 'unfiled';
+  const gaps = finished && check.gaps > 0 ? ', but not everything was checked' : '';
+  const emoji = check.state === 'clean' && check.gaps > 0 ? 'warning' : CHECK_EMOJI[check.state];
   const next = check.nextAt ? ` · next ${formatReleaseAt(check.nextAt, now, timeZone)}` : '';
   return section(
-    `${slackEmoji(emojiPrefix, CHECK_EMOJI[check.state])} *${escapeSlack(check.title)}*\n${last}${next}`,
+    `${slackEmoji(emojiPrefix, emoji)} *${escapeSlack(check.title)}*\n${last}${gaps}${next}`,
     check.runUrl ? linkButton('check_log', 'Run log', check.runUrl) : undefined
   );
 };

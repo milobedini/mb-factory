@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CardInput, CardRun } from './card';
-import type { HomeInput } from './home';
-import { homeNotAllowedView, homeView, MAX_HOME_ROWS, slackStatusMessage, usageBar } from './home';
+import type { HomeCheck, HomeInput } from './home';
+import { checkState, homeNotAllowedView, homeView, MAX_HOME_ROWS, slackStatusMessage, usageBar } from './home';
 import type { SlackBlock } from './slack';
 import type { UsageSummary } from './usage';
 
@@ -101,6 +101,18 @@ const input = (overrides: Partial<HomeInput> = {}): HomeInput => ({
   ...overrides
 });
 
+const check = (overrides: Partial<HomeCheck> = {}): HomeCheck => ({
+  title: 'Security, daily',
+  state: 'clean',
+  filed: 0,
+  unfiled: 0,
+  gaps: 0,
+  lastAt: at(-240),
+  nextAt: null,
+  runUrl: null,
+  ...overrides
+});
+
 const texts = (blocks: SlackBlock[]): string[] =>
   blocks.flatMap((block) => {
     const text = (block.text as { text?: string } | undefined)?.text;
@@ -191,8 +203,8 @@ describe('homeView', () => {
       input({
         problems: 6,
         checks: [
-          { title: 'Security, daily', state: 'clean', filed: 0, lastAt: at(-240), nextAt: at(1200), runUrl: null },
-          { title: 'Docs, daily', state: 'filed', filed: 1, lastAt: at(-210), nextAt: null, runUrl: 'https://gh/1' }
+          check({ title: 'Security, daily', nextAt: at(1200) }),
+          check({ title: 'Docs, daily', state: 'filed', filed: 1, lastAt: at(-210), runUrl: 'https://gh/1' })
         ]
       })
     );
@@ -200,6 +212,23 @@ describe('homeView', () => {
       ':tb-done: *Security, daily*\nClean at 06:00 · next Wed 28 Oct, 06:00',
       ':tb-needs-you: *Docs, daily*\nFiled 1 issue in Triage at 06:30',
       ':tb-warning: *Factory health*\n6 warnings and errors in the last day; the 07:00 check lists them.'
+    ]);
+  });
+
+  it('warns when findings never reached Linear, or not everything was checked', () => {
+    const view = homeView(
+      input({
+        checks: [
+          check({ title: 'Security, daily', state: 'unfiled', unfiled: 5 }),
+          check({ title: 'Docs, daily', state: 'unfiled', unfiled: 1, filed: 2, gaps: 1 }),
+          check({ title: 'Security, weekly', gaps: 1 })
+        ]
+      })
+    );
+    expect(rowsUnder(view.blocks, 'Checks')).toEqual([
+      ':tb-warning: *Security, daily*\nCouldn’t file 5 findings in Linear at 06:00',
+      ':tb-warning: *Docs, daily*\nCouldn’t file 1 finding in Linear at 06:00; filed 2 issues in Triage, but not everything was checked',
+      ':tb-warning: *Security, weekly*\nNothing to file at 06:00, but not everything was checked'
     ]);
   });
 
@@ -268,5 +297,22 @@ describe('slackStatusMessage', () => {
       item(`TAS-${index}`, 'spec_review', [run(), run({ agent: 'spec' })])
     );
     expect(texts(slackStatusMessage(input({ items: waiting }), hub).blocks).at(-1)).toMatch(/^3 more on the hub\. /);
+  });
+});
+
+describe('checkState', () => {
+  const done = { status: 'finished', outcome: 'done', open: false };
+
+  it('reads a finished run by what reached Linear', () => {
+    expect(checkState(done, { filed: 0, unfiled: 0 })).toBe('clean');
+    expect(checkState(done, { filed: 2, unfiled: 0 })).toBe('filed');
+    expect(checkState(done, { filed: 2, unfiled: 1 })).toBe('unfiled');
+  });
+
+  it('says when it never ran, is running or failed', () => {
+    expect(checkState(undefined, { filed: 0, unfiled: 0 })).toBe('none');
+    expect(checkState({ status: 'running', outcome: null, open: true }, { filed: 0, unfiled: 0 })).toBe('running');
+    expect(checkState({ status: 'finished', outcome: 'failed', open: false }, { filed: 0, unfiled: 3 })).toBe('failed');
+    expect(checkState({ status: 'limit_hit', outcome: null, open: false }, { filed: 0, unfiled: 0 })).toBe('failed');
   });
 });

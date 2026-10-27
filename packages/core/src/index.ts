@@ -97,8 +97,8 @@ export {
   PROBLEM_RETENTION_DAYS,
   problemHour
 } from './health';
-export type { HomeCheck, HomeInput, HomeView } from './home';
-export { homeNotAllowedView, homeView, MAX_HOME_ROWS, slackStatusMessage } from './home';
+export type { CheckState, HomeCheck, HomeInput, HomeView } from './home';
+export { checkState, homeNotAllowedView, homeView, MAX_HOME_ROWS, slackStatusMessage } from './home';
 export type { ChecksState, InboxEntry, InboxKind, InboxQuestion, InboxRun } from './inbox';
 export { checksState, INBOX_KINDS, inboxEntry } from './inbox';
 export type {
