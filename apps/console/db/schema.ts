@@ -16,6 +16,7 @@ import {
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
+  boolean,
   check,
   doublePrecision,
   index,
@@ -121,7 +122,8 @@ export const runs = pgTable(
   'runs',
   {
     id: uuid().primaryKey().defaultRandom(),
-    // Empty for a scheduled job's run, which belongs to `project` and `job` instead.
+    // Empty for a scheduled job's run, which belongs to `project` and `job` instead, and for a question's (`ask`), which
+    // belongs to `project` and its row in `asks`.
     workItemId: uuid().references(() => workItems.id, { onDelete: 'cascade' }),
     project: text(),
     job: text(),
@@ -158,8 +160,11 @@ export const runs = pgTable(
     index('runs_work_item_idx').on(table.workItemId, table.createdAt),
     index('runs_active_idx').on(table.status).where(sql`${table.status} in ('dispatched', 'running')`),
     index('runs_job_idx').on(table.project, table.job, table.createdAt).where(sql`${table.job} is not null`),
-    check('runs_work_item_or_job', sql`(${table.workItemId} is null) = (${table.job} is not null)`),
-    check('runs_job_has_project', sql`${table.job} is null or ${table.project} is not null`)
+    check(
+      'runs_work_item_job_or_question',
+      sql`(${table.workItemId} is not null)::int + (${table.job} is not null)::int + (${table.agent} = 'ask')::int = 1`
+    ),
+    check('runs_without_work_item_have_project', sql`${table.workItemId} is not null or ${table.project} is not null`)
   ]
 );
 
@@ -309,4 +314,29 @@ export const consoleProblems = pgTable(
     uniqueIndex('console_problems_hour_idx').on(table.hour, table.level, table.message),
     index('console_problems_last_idx').on(table.lastAt)
   ]
+);
+
+// A question asked with the slash command. The app posts it in the project's channel as a card (`slackTs`), its `ask`
+// run answers in the card's thread, and a ticket filed from the answer is kept here so it's filed once.
+export const asks = pgTable(
+  'asks',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    project: text().notNull(),
+    runId: uuid().references(() => runs.id, { onDelete: 'set null' }),
+    askerSlackId: text().notNull(),
+    question: text().notNull(),
+    slackChannelId: text().notNull(),
+    slackTs: text(),
+    answerSlackTs: text(),
+    // Set when someone taps File and start or File for later, before Linear is asked, so a second tap files nothing.
+    ticketFiledBy: text(),
+    ticketFiledAt: timestamp({ withTimezone: true }),
+    ticketStarted: boolean(),
+    ticketIssueId: text(),
+    ticketIdentifier: text(),
+    ticketUrl: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [index('asks_thread_idx').on(table.slackChannelId, table.slackTs), index('asks_run_idx').on(table.runId)]
 );

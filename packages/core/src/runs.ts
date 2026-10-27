@@ -14,7 +14,9 @@ export const RUN_TRIGGERS = [
   'rerun',
   'console',
   'answered',
-  'scheduled'
+  'scheduled',
+  // A question asked from Slack.
+  'asked'
 ] as const;
 
 export type RunTrigger = (typeof RUN_TRIGGERS)[number];

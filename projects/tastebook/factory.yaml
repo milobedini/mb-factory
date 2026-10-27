@@ -49,6 +49,8 @@ models:
   implement: opus
   verify: sonnet
   review: opus
+  # Answers `/tastebook ask`.
+  ask: sonnet
 
 # A PR that changes anything here is verified in the app (Playwright in the runner) before review.
 verify:

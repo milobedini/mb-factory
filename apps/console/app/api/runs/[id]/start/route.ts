@@ -1,8 +1,12 @@
 import { checkStageRunClaims } from '@mb-factory/core';
+import { after } from 'next/server';
 
+import { findAskByRun, refreshAskCard } from '@/lib/ask-runs';
+import { requireEnv } from '@/lib/env';
 import { verifyGitHubOidc } from '@/lib/github-oidc';
 import { getLinearAccessToken } from '@/lib/linear-api';
 import { log } from '@/lib/log';
+import { findProject } from '@/lib/projects';
 import { findAnyRun, markRunStarted, runRepository } from '@/lib/runs';
 
 // Long enough to outlast the stage workflow's 60-minute timeout.
@@ -32,6 +36,21 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
   }
   if (!(await markRunStarted(id, check.claims, new Date()))) {
     return new Response(`run is ${found.run.status}, not dispatched`, { status: 409 });
+  }
+  if (!workItem && found.run.agent === 'ask') {
+    // A question reads Linear but has no session to report to; its card now says how long it's been looking.
+    after(async () => {
+      const ask = await findAskByRun(id);
+      const project = ask && findProject(ask.project);
+      if (ask && project) {
+        await refreshAskCard(project, ask);
+      }
+    });
+    log('info', 'run started', { runId: id, actionsRunId: check.claims.run_id, agent: 'ask' });
+    const linearAccessToken = await getLinearAccessToken(requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID'), {
+      minValidityMs: RUN_TOKEN_VALIDITY_MS
+    });
+    return Response.json({ agent: found.run.agent, linearAccessToken, agentSessionId: null });
   }
   if (!workItem) {
     // A job reports only to the console, so its run gets no Linear token.

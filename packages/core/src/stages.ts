@@ -11,8 +11,8 @@ export const STAGES = [
 
 export type Stage = (typeof STAGES)[number];
 
-// `security` and `docs` run as scheduled jobs, not on a work item.
-export const AGENT_ROLES = ['triage', 'spec', 'implement', 'verify', 'review', 'security', 'docs'] as const;
+// `security` and `docs` run as scheduled jobs, and `ask` answers a question from Slack: none of them on a work item.
+export const AGENT_ROLES = ['triage', 'spec', 'implement', 'verify', 'review', 'security', 'docs', 'ask'] as const;
 
 export type AgentRole = (typeof AGENT_ROLES)[number];
 

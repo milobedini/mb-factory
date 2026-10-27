@@ -260,7 +260,8 @@ const RUNNING: Record<AgentRole, string> = {
   verify: 'Checking it on screen',
   review: 'Reviewing',
   security: 'Checking security',
-  docs: 'Checking the docs'
+  docs: 'Checking the docs',
+  ask: 'Looking into it'
 };
 
 const IMPLEMENTING_BECAUSE: Partial<Record<RunTrigger, string>> = {

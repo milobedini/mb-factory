@@ -263,7 +263,11 @@ export const modelFor = (
     throw new Error(`factory.yaml has no model for the ${agent} stage`);
   }
   const key = agent === 'triage' && isSlicingTitle(title) ? 'slicing' : agent;
-  const model = (downshift ? config.usage.downshift[key] : undefined) ?? config.models[key] ?? config.models[agent];
+  // Questions are never downshifted: the governor's throttle doesn't hold them either.
+  const model =
+    (downshift && key !== 'ask' ? config.usage.downshift[key] : undefined) ??
+    config.models[key] ??
+    config.models[agent];
   if (!model) {
     throw new Error(`factory.yaml has no model for the ${agent} stage`);
   }

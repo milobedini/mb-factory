@@ -33,7 +33,7 @@ export const healthSlotOf = (project: FactoryConfig): Slot | undefined =>
 
 // A run belongs to the project through its work item, or directly when it's a job's.
 const runProject = sql`coalesce(${runs.project}, ${workItems.project})`;
-const runLabel = sql<string>`coalesce(${workItems.issueIdentifier}, ${runs.job}, 'unknown')`;
+const runLabel = sql<string>`coalesce(${workItems.issueIdentifier}, ${runs.job}, ${runs.agent})`;
 
 const loadProblems = async (since: Date): Promise<Pick<HealthInput, 'problems' | 'knownMessages'>> => {
   const [problems, known] = await Promise.all([

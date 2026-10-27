@@ -88,10 +88,6 @@ jobs:
       - name: Fetch the factory plugin
         run: git clone --quiet --depth 1 --branch "$FACTORY_REF" https://github.com/milobedini/mb-factory.git "$RUNNER_TEMP/mb-factory"
 
-      - name: Set up the project
-        if: hashFiles('.github/actions/factory-setup/action.yml') != ''
-        uses: ./.github/actions/factory-setup
-
       - name: Start the run
         id: start
         run: |
@@ -100,7 +96,8 @@ jobs:
           echo "::add-mask::$oidc"
           response=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" "$CONSOLE_URL/api/runs/$RUN_ID/start")
           echo "agent=$(jq -r '.agent // empty' <<< "$response")" >> "$GITHUB_OUTPUT"
-          # A scheduled job's run reports only to the console, so it gets no Linear token or session.
+          # A scheduled job's run reports only to the console, so it gets no Linear token or session; a question gets a
+          # token to read Linear with, and no session.
           linear_token=$(jq -r '.linearAccessToken // empty' <<< "$response")
           if [[ -n "$linear_token" ]]; then
             echo "::add-mask::$linear_token"
@@ -109,6 +106,11 @@ jobs:
               echo "LINEAR_AGENT_SESSION_ID=$(jq -r '.agentSessionId // empty' <<< "$response")"
             } >> "$GITHUB_ENV"
           fi
+
+      - name: Set up the project
+        # A question only reads the code, so it skips installing the toolchains and starting Postgres.
+        if: hashFiles('.github/actions/factory-setup/action.yml') != '' && steps.start.outputs.agent != 'ask'
+        uses: ./.github/actions/factory-setup
 
       - name: Get the factory app's token
         id: app-token

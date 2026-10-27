@@ -17,6 +17,7 @@ import {
   unknownRequestText
 } from '@mb-factory/core';
 
+import { startAsk } from './asks';
 import { requireEnv } from './env';
 import { loadHomeInput } from './home';
 import { log } from './log';
@@ -60,6 +61,8 @@ const answer = async (project: FactoryConfig, request: CommandRequest, command: 
     }
     case 'resume':
       return { text: (await resumeFromSlack(command.userId)) ? RESUMED_TEXT : NOT_PAUSED_TEXT };
+    case 'ask':
+      return startAsk(project, command, request.question);
     case 'help':
       return { text: commandHelpText(command.command, project.alias) };
     case 'unknown':

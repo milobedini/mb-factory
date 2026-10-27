@@ -31,17 +31,20 @@ export const postSlackMessage = async ({
   channel,
   text,
   threadTs,
-  blocks
+  blocks,
+  attachments
 }: {
   channel: string;
   text: string;
   threadTs?: string | null;
   blocks?: SlackBlock[];
+  attachments?: { color: string; blocks: SlackBlock[] }[];
 }): Promise<string> => {
   const { ts } = await callSlack('chat.postMessage', {
     channel,
     text,
     blocks,
+    attachments,
     thread_ts: threadTs ?? undefined,
     unfurl_links: false
   });

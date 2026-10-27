@@ -61,6 +61,26 @@ describe('readCommandRequest', () => {
     expect(readCommandRequest('help')).toEqual({ kind: 'help' });
   });
 
+  it('takes the rest after ask as the question, even when there is none', () => {
+    expect(readCommandRequest('ask  What is our full tech stack')).toEqual({
+      kind: 'ask',
+      question: 'What is our full tech stack'
+    });
+    expect(readCommandRequest('Ask')).toEqual({ kind: 'ask', question: '' });
+  });
+
+  it('asks anything that ends in a question mark, unless it is a request on its own', () => {
+    expect(readCommandRequest('do we always filter server side?')).toEqual({
+      kind: 'ask',
+      question: 'do we always filter server side?'
+    });
+    expect(readCommandRequest('help with what we cache?')).toEqual({
+      kind: 'ask',
+      question: 'help with what we cache?'
+    });
+    expect(readCommandRequest('ready?')).toEqual({ kind: 'ready' });
+  });
+
   it('says what it didn’t recognise', () => {
     expect(readCommandRequest('merge TAS-38')).toEqual({ kind: 'unknown', word: 'merge' });
     expect(unknownRequestText('/tastebook', 'me<rge')).toBe('I don’t know `me&lt;rge`. Try `/tastebook help`.');
@@ -71,7 +91,7 @@ describe('commandHelpText', () => {
   it('lists every request under the command as typed', () => {
     const help = commandHelpText('/tastebook', 'Tastebook');
     expect(help).toMatch(/^\*\/tastebook\* shows Tastebook’s factory/);
-    expect(help.match(/^• `\/tastebook/gm)).toHaveLength(5);
+    expect(help.match(/^• `\/tastebook/gm)).toHaveLength(6);
   });
 });
 

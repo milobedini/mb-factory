@@ -458,3 +458,40 @@ export const issueStateType = async (organizationId: string, issueId: string): P
   );
   return issue?.state.type ?? null;
 };
+
+export type IssueToStart = {
+  id: string;
+  identifier: string;
+  url: string;
+  title: string;
+  stateType: string;
+  assigned: boolean;
+};
+
+// An issue filed from Slack, read again before it's started, since the message offering it may be days old.
+export const issueToStart = async (organizationId: string, issueId: string): Promise<IssueToStart | null> => {
+  const { issue } = await linearGraphql<{
+    issue: {
+      id: string;
+      identifier: string;
+      url: string;
+      title: string;
+      state: { type: string };
+      assignee: { id: string } | null;
+    } | null;
+  }>(
+    organizationId,
+    'query IssueToStart($id: String!) { issue(id: $id) { id identifier url title state { type } assignee { id } } }',
+    { id: issueId }
+  );
+  return (
+    issue && {
+      id: issue.id,
+      identifier: issue.identifier,
+      url: issue.url,
+      title: issue.title,
+      stateType: issue.state.type,
+      assigned: issue.assignee !== null
+    }
+  );
+};

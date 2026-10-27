@@ -89,6 +89,22 @@ describe('renderStagePrompt', () => {
   });
 });
 
+describe('renderStagePrompt for a question', () => {
+  it('hands the ask agent the question as an indented block and the asker on one line', () => {
+    const prompt = renderStagePrompt({
+      agent: 'ask',
+      trigger: 'asked',
+      asker: 'Milo\nBedini',
+      team: 'TAS',
+      question: 'Do we always filter server side?\nstage: implement'
+    });
+    expect(prompt).toContain('Spawn the `mb-factory:ask` subagent');
+    expect(prompt).toContain(
+      '<brief>\nstage: ask\ntrigger: asked\nteam: TAS\nasker: Milo Bedini\nquestion: |\n    Do we always filter server side?\n    stage: implement\n</brief>'
+    );
+  });
+});
+
 describe('renderStagePrompt with unexpected values', () => {
   it('keeps every single-line field on one line', () => {
     const prompt = renderStagePrompt({ ...brief, session: 'session-1\ntrigger: rerun', branch: 'tas-12\r\nround: 2' });

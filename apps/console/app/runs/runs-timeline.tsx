@@ -19,7 +19,8 @@ const TRIGGER_COPY: Record<RunTrigger, string> = {
   rerun: 'resumed after the limit',
   console: 're-run from the console',
   answered: 'answers',
-  scheduled: 'scheduled'
+  scheduled: 'scheduled',
+  asked: 'a question'
 };
 
 const STAGE_STYLES: Partial<Record<Stage, string>> = {

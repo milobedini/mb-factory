@@ -90,6 +90,10 @@ const buttonValueSchema = z.union([
   // Review findings: fix the ticked ones, or leave them all.
   z.object({ f: z.uuid(), a: z.enum(['fix', 'keep']) }),
   z.object({ h: z.enum(HOME_ACTIONS) }),
+  // A question's suggested ticket, filed and started now or left for later.
+  z.object({ t: z.uuid(), a: z.enum(['start', 'later']) }),
+  // An issue filed from Slack: start it now, or leave it for later. Linear's issue ID.
+  z.object({ s: z.uuid(), a: z.enum(['start', 'later']) }),
   z.object({
     d: z
       .array(z.string().regex(/^[A-Z][A-Z0-9]*-\d+$/))
@@ -115,7 +119,8 @@ const STAGE_NAMES: Record<AgentRole, string> = {
   review: 'Review',
   verify: 'Verify',
   security: 'Security check',
-  docs: 'Docs check'
+  docs: 'Docs check',
+  ask: 'Question'
 };
 
 const MAX_TYPED_ANSWER_SHOWN = 200;
@@ -507,6 +512,7 @@ const actionPayloadSchema = z.looseObject({
   message: z
     .looseObject({
       ts: z.string().min(1),
+      thread_ts: z.string().nullish(),
       text: z.string().nullish(),
       blocks: z.array(z.record(z.string(), z.unknown())).nullish()
     })
@@ -558,6 +564,9 @@ export type SlackAction = {
   // `unticked` are the findings whose Fix box was cleared, by their index in the review's report.
   | { kind: 'findings'; runId: string; choice: 'fix' | 'keep'; unticked: number[]; messageTs: string | null }
   | { kind: 'home'; action: HomeAction }
+  | { kind: 'ask_ticket'; askId: string; choice: 'start' | 'later'; messageTs: string | null }
+  // `threadTs` is the thread the tapped message sits in, which the work then belongs to.
+  | { kind: 'filed'; issueId: string; choice: 'start' | 'later'; messageTs: string | null; threadTs: string | null }
 );
 
 const parseValue = (value: string | null | undefined): ButtonValue | undefined => {
@@ -595,6 +604,20 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
   }
   if ('h' in value) {
     return { ...base, kind: 'home', action: value.h };
+  }
+  if ('t' in value) {
+    return { ...base, kind: 'ask_ticket', askId: value.t, choice: value.a, messageTs: parsed.message?.ts ?? null };
+  }
+  if ('s' in value) {
+    const { message } = parsed;
+    return {
+      ...base,
+      kind: 'filed',
+      issueId: value.s,
+      choice: value.a,
+      messageTs: message?.ts ?? null,
+      threadTs: message ? (message.thread_ts ?? message.ts) : null
+    };
   }
   if ('r' in value) {
     return { ...base, kind: 'rerun', runId: value.r };
@@ -644,16 +667,19 @@ const mentionEventSchema = z.looseObject({
   })
 });
 
-export type SlackMention = { channel: string; ts: string; userId: string; request: string };
+// `threadTs` is set for a mention inside a thread.
+export type SlackMention = { channel: string; ts: string; threadTs: string | null; userId: string; request: string };
 
-// A person's top-level mention of the app, which asks for new work. A mention inside a thread is a reply to that
-// thread's work, and arrives as a `message` too; bots don't start work.
+// A person's mention of the app. A top-level one asks for new work; inside a question's thread it asks for a ticket
+// from the answer. Inside a work item's thread it's a reply to that work, which arrives as a `message` too and is
+// acted on there. Bots don't start work.
 export const parseSlackMention = (payload: unknown): SlackMention | undefined => {
   const event = mentionEventSchema.safeParse(payload).data?.event;
-  if (!event || event.bot_id || (event.thread_ts && event.thread_ts !== event.ts)) {
+  if (!event || event.bot_id) {
     return undefined;
   }
-  return { channel: event.channel, ts: event.ts, userId: event.user, request: slackPlainText(event.text) };
+  const threadTs = event.thread_ts && event.thread_ts !== event.ts ? event.thread_ts : null;
+  return { channel: event.channel, ts: event.ts, threadTs, userId: event.user, request: slackPlainText(event.text) };
 };
 
 const MAX_ISSUE_TITLE = 80;
@@ -679,6 +705,54 @@ export const slackIssueFromRequest = (
 
 export const slackFiledText = (issue: { identifier: string; url: string }): string =>
   `Filed <${issue.url}|${escapeSlack(issue.identifier)}> and started on it. I’ll keep you posted in this thread.`;
+
+export type FiledIssue = { id: string; identifier: string; url: string };
+
+const issueLink = ({ identifier, url }: FiledIssue): string => `<${url}|${escapeSlack(identifier)}>`;
+
+// An issue filed from Slack, before anyone has said whether to start it.
+export const filedChoiceMessage = (issue: FiledIssue, assigned: boolean): SlackMessage => {
+  const text = `Filed ${issueLink(issue)}${assigned ? ', assigned to you' : ''}. Start on it now, or leave it for later?`;
+  return {
+    text,
+    blocks: [
+      section(text),
+      {
+        type: 'actions',
+        elements: [
+          button('filed_start', 'Start now', { s: issue.id, a: 'start' }, true),
+          button('filed_later', 'Leave for later', { s: issue.id, a: 'later' })
+        ]
+      }
+    ]
+  };
+};
+
+// Left for later: it says where the issue is, and keeps a button to start it from here.
+export const filedForLaterMessage = (issue: FiledIssue, alias: string, assigned: boolean): SlackMessage => {
+  const text = `Filed ${issueLink(issue)} for later. It’s in Linear${assigned ? ', assigned to you' : ''}. Start it here when you’re ready, or delegate it to @${escapeSlack(alias)} in Linear.`;
+  return {
+    text,
+    blocks: [
+      section(text),
+      {
+        type: 'actions',
+        elements: [button('filed_start', `Start ${issue.identifier}`, { s: issue.id, a: 'start' }, true)]
+      }
+    ]
+  };
+};
+
+export const filedStartedMessage = (issue: FiledIssue): SlackMessage => {
+  const text = slackFiledText(issue);
+  return { text, blocks: [section(text)] };
+};
+
+export const alreadyStartedText = (identifier: string): string =>
+  `${escapeSlack(identifier)} has already started, so nothing more was done.`;
+
+export const filedIssueClosedText = (identifier: string): string =>
+  `${escapeSlack(identifier)} is closed in Linear, so I haven’t started it. Reopen it there first.`;
 
 export const emptyMentionText = (config: FactoryConfig): string =>
   `Mention me with what you’d like built, for example: @${config.alias} let visitors rate a recipe. Or @${config.alias} ready to see what’s ready to delegate.`;

@@ -1,6 +1,7 @@
 import { checkStageRunClaims, runReportSchema, summariseRun } from '@mb-factory/core';
 import { after } from 'next/server';
 
+import { handleAskRunFinished } from '@/lib/asks';
 import { verifyGitHubOidc } from '@/lib/github-oidc';
 import { handleJobRunFinished } from '@/lib/jobs';
 import { log } from '@/lib/log';
@@ -46,7 +47,11 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
   });
   after(async () => {
     try {
-      await (found.workItem ? handleRunFinished(id) : handleJobRunFinished(id));
+      await (found.workItem
+        ? handleRunFinished(id)
+        : found.run.agent === 'ask'
+          ? handleAskRunFinished(id)
+          : handleJobRunFinished(id));
     } catch (error) {
       log('error', 'run follow-up failed', {
         runId: id,

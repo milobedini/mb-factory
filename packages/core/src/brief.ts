@@ -29,6 +29,16 @@ export type JobBrief = {
   since?: string;
 };
 
+// A question asked from Slack: no issue, session or job, just the question and who asked it.
+export type AskBrief = {
+  agent: 'ask';
+  trigger: RunTrigger;
+  question: string;
+  asker: string;
+  // The project's Linear team key, where its plan lives.
+  team: string;
+};
+
 // The `client_payload` of the repository_dispatch; the caller workflow passes each field to stage.yml.
 export type DispatchPayload = {
   run_id: string;
@@ -72,10 +82,28 @@ const renderJobBrief = ({ agent, job, trigger, slot, scope, since }: JobBrief): 
     .filter((line) => line !== undefined)
     .join('\n');
 
-const isJobBrief = (brief: Brief | JobBrief): brief is JobBrief => 'job' in brief;
+const renderAskBrief = ({ agent, trigger, question, asker, team }: AskBrief): string =>
+  [
+    `stage: ${agent}`,
+    `trigger: ${trigger}`,
+    `team: ${oneLine(team)}`,
+    `asker: ${oneLine(asker)}`,
+    `question: |\n${indent(question)}`
+  ].join('\n');
+
+const isJobBrief = (brief: Brief | JobBrief | AskBrief): brief is JobBrief => 'job' in brief;
+
+const isAskBrief = (brief: Brief | JobBrief | AskBrief): brief is AskBrief => 'question' in brief;
+
+const renderAnyBrief = (brief: Brief | JobBrief | AskBrief): string => {
+  if (isAskBrief(brief)) {
+    return renderAskBrief(brief);
+  }
+  return isJobBrief(brief) ? renderJobBrief(brief) : renderBrief(brief);
+};
 
 // Skills in an agent's `skills:` are only preloaded when it runs as a subagent, so the main thread just hands over.
-export const renderStagePrompt = (brief: Brief | JobBrief): string =>
+export const renderStagePrompt = (brief: Brief | JobBrief | AskBrief): string =>
   [
     'You are the dispatcher for one mb-factory stage run. Do not do the stage work yourself.',
     '',
@@ -83,7 +111,7 @@ export const renderStagePrompt = (brief: Brief | JobBrief): string =>
     'Then check that the file at the path in FACTORY_REPORT_PATH holds a JSON stage report. If it does not, write one with outcome "failed" and a summary saying the stage agent ended without a report. Then stop.',
     '',
     '<brief>',
-    isJobBrief(brief) ? renderJobBrief(brief) : renderBrief(brief),
+    renderAnyBrief(brief),
     '</brief>'
   ].join('\n');
 
@@ -94,5 +122,5 @@ export const buildDispatchPayload = ({
 }: {
   runId: string;
   model: string;
-  brief: Brief | JobBrief;
+  brief: Brief | JobBrief | AskBrief;
 }): DispatchPayload => ({ run_id: runId, model, prompt: renderStagePrompt(brief) });

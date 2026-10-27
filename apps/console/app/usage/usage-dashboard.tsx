@@ -131,7 +131,7 @@ const HeldRow = ({ run, now }: { run: HeldRun; now: Date }) => (
             {run.issueIdentifier}
           </a>
         ) : (
-          <span className="font-medium">{run.job} job</span>
+          <span className="font-medium">{run.job ? `${run.job} job` : 'A question'}</span>
         )}{' '}
         <span className="text-foreground/70 text-sm">
           {run.agent} · {run.trigger} · {run.priority.replace('_', '-')}

@@ -47,16 +47,34 @@ export const parseSlashCommand = (form: URLSearchParams): SlashCommand | undefin
 
 export const COMMAND_REQUESTS = ['status', 'ready', 'pause', 'resume', 'help'] as const;
 
-export type CommandRequest = { kind: (typeof COMMAND_REQUESTS)[number] } | { kind: 'unknown'; word: string };
+export type CommandRequest =
+  | { kind: (typeof COMMAND_REQUESTS)[number] }
+  // An empty question is still an ask, so the reply can say how to ask one.
+  | { kind: 'ask'; question: string }
+  | { kind: 'unknown'; word: string };
 
-// The first word says what's wanted; on its own, the command shows the status.
+// The first word says what's wanted; on its own, the command shows the status. `ask` takes the rest as a question,
+// and so does any text that ends in a question mark.
 export const readCommandRequest = (text: string): CommandRequest => {
-  const word = text.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
-  if (word === '') {
+  const trimmed = text.trim();
+  const first = trimmed.split(/\s+/)[0] ?? '';
+  // "ready?" on its own is the ready list, not a question.
+  const word = first.toLowerCase().replace(/[?!.]+$/, '');
+  const rest = trimmed.slice(first.length).trim();
+  if (trimmed === '') {
     return { kind: 'status' };
   }
+  if (word === 'ask') {
+    return { kind: 'ask', question: rest };
+  }
   const known = COMMAND_REQUESTS.find((request) => request === word);
-  return known ? { kind: known } : { kind: 'unknown', word };
+  if (known && rest === '') {
+    return { kind: known };
+  }
+  if (trimmed.endsWith('?')) {
+    return { kind: 'ask', question: trimmed };
+  }
+  return known ? { kind: known } : { kind: 'unknown', word: first.toLowerCase() };
 };
 
 // A link that opens the app's Home tab in Slack.
@@ -65,8 +83,9 @@ export const slackHubUrl = (teamId: string, appId: string): string =>
 
 export const commandHelpText = (command: string, alias: string): string =>
   [
-    `*${command}* shows ${escapeSlack(alias)}’s factory from any channel. Only you see the replies.`,
+    `*${command}* shows ${escapeSlack(alias)}’s factory from any channel. Only you see the replies, apart from answers to questions.`,
     `• \`${command}\` or \`${command} status\`: what’s running and what needs you`,
+    `• \`${command} ask <question>\`: an answer from the code and Linear, in a thread in the factory’s channel (\`ask\` is optional when it ends in “?”)`,
     `• \`${command} ready\`: issues ready to delegate, with a Delegate button each`,
     `• \`${command} pause\`: nothing new starts until it’s resumed; running stages finish`,
     `• \`${command} resume\`: start again, and release anything queued`,

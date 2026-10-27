@@ -15,6 +15,7 @@ import { and, desc, eq, isNull, lt } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import { jobFindings, jobSlots, queue, runs } from '@/db/schema';
 
+import { handleAskRunFinished } from './asks';
 import { requireEnv } from './env';
 import { fireHealthCheck } from './health';
 import { findJob, jobTitleOf, postJobMessage, slotOf } from './job-runs';
@@ -260,12 +261,16 @@ export const endLapsedDispatches = async (now: Date): Promise<void> => {
       finishedAt: now
     })
     .where(and(eq(runs.status, 'dispatched'), lt(runs.dispatchedAt, dispatchLapsedBefore(now))))
-    .returning({ id: runs.id, workItemId: runs.workItemId });
+    .returning({ id: runs.id, workItemId: runs.workItemId, agent: runs.agent });
   await Promise.all(
-    lapsed.map(async ({ id, workItemId }) => {
+    lapsed.map(async ({ id, workItemId, agent }) => {
       log('warn', 'dispatched run never started', { runId: id });
       try {
-        await (workItemId ? handleRunFinished(id) : handleJobRunFinished(id));
+        await (workItemId
+          ? handleRunFinished(id)
+          : agent === 'ask'
+            ? handleAskRunFinished(id)
+            : handleJobRunFinished(id));
       } catch (error) {
         log('error', 'run follow-up failed', { runId: id, error: errorMessage(error) });
       }

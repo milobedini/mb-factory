@@ -398,14 +398,18 @@ describe('parseSlackMention', () => {
     expect(parseSlackMention(delivery())).toEqual({
       channel: 'C0CBSE2Q6FQ',
       ts: '1792950000.000100',
+      threadTs: null,
       userId: 'U0CBS3FN806',
       request: 'Let visitors rate a recipe\nOut of five stars'
     });
-    expect(parseSlackMention(delivery({ thread_ts: event.ts }))?.ts).toBe(event.ts);
+    expect(parseSlackMention(delivery({ thread_ts: event.ts }))?.threadTs).toBeNull();
   });
 
-  it('ignores mentions in a thread, from bots, and other events', () => {
-    expect(parseSlackMention(delivery({ thread_ts: '1792947014.572229' }))).toBeUndefined();
+  it('says which thread a mention inside one sits in', () => {
+    expect(parseSlackMention(delivery({ thread_ts: '1792947014.572229' }))?.threadTs).toBe('1792947014.572229');
+  });
+
+  it('ignores mentions from bots, and other events', () => {
     expect(parseSlackMention(delivery({ bot_id: 'B1' }))).toBeUndefined();
     expect(parseSlackMention(delivery({ type: 'message' }))).toBeUndefined();
   });

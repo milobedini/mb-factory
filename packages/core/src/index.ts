@@ -1,4 +1,28 @@
-export type { Brief, DispatchPayload, JobBrief } from './brief';
+export type {
+  AnswerInput,
+  AskCardInput,
+  AskCardState,
+  AskContext,
+  AskReport,
+  AskTicket,
+  AskTicketChoice,
+  FiledTicket
+} from './ask';
+export {
+  ASK_TICKET_GONE,
+  askAckText,
+  askAnswerMessage,
+  askCard,
+  askFailedText,
+  askNotAllowedText,
+  askTicketIssue,
+  emptyQuestionText,
+  filedLine,
+  MAX_QUESTION,
+  readAskReport,
+  slackToMarkdown
+} from './ask';
+export type { AskBrief, Brief, DispatchPayload, JobBrief } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
 export type { CardInput, CardRun, CardStatus, NextIssue, SlackCard } from './card';
 export { CARD_COLOURS, cardStatus, readNextIssues, workItemCard } from './card';
@@ -282,6 +306,7 @@ export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
 export type {
   CardQuestion,
+  FiledIssue,
   FindingsPlace,
   HomeAction,
   ReadyOutcome,
@@ -293,9 +318,14 @@ export type {
   TappedMessage
 } from './slack';
 export {
+  alreadyStartedText,
   delegateFailedText,
   emptyMentionText,
   escapeSlack,
+  filedChoiceMessage,
+  filedForLaterMessage,
+  filedIssueClosedText,
+  filedStartedMessage,
   HOME_ACTIONS,
   isAllowedSlackUser,
   isReadyRequest,

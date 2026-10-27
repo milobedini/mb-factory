@@ -120,7 +120,9 @@ export const factoryConfigSchema = z
       // Triage when it slices a project into issues; the triage model when unset.
       slicing: z.string().min(1).optional(),
       // Needed when `verify` is set.
-      verify: z.string().min(1).optional()
+      verify: z.string().min(1).optional(),
+      // Answers questions asked with the slash command.
+      ask: z.string().min(1).default('sonnet')
     }),
     // Paths whose changes show on screen. A delivered PR that touches any of them is verified in the app before review;
     // without this, PRs go straight to review.

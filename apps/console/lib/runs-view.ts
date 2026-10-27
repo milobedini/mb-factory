@@ -22,7 +22,7 @@ export type WorkItemRuns = {
   rerunnableId: string | null;
 };
 
-// A scheduled job's latest runs, newest first.
+// A scheduled job's latest runs, or a project's latest questions, newest first.
 export type JobRuns = { key: string; title: string; runs: RunRow[] };
 
 export type RunsView = { user: ConsoleUser; now: Date; workItems: WorkItemRuns[]; jobs: JobRuns[] };
@@ -32,8 +32,8 @@ const JOB_RUN_LIMIT = 7;
 
 const loadJobRuns = (): Promise<JobRuns[]> =>
   Promise.all(
-    allProjects().flatMap((project) =>
-      project.jobs.map(async (job) => ({
+    allProjects().flatMap((project) => [
+      ...project.jobs.map(async (job) => ({
         key: `${project.name}:${job.name}`,
         title: `${jobTitle(job)} (${project.alias})`,
         runs: await getDb()
@@ -42,8 +42,18 @@ const loadJobRuns = (): Promise<JobRuns[]> =>
           .where(and(eq(runs.project, project.name), eq(runs.job, job.name)))
           .orderBy(desc(runs.createdAt))
           .limit(JOB_RUN_LIMIT)
-      }))
-    )
+      })),
+      (async () => ({
+        key: `${project.name}:ask`,
+        title: `Questions from Slack (${project.alias})`,
+        runs: await getDb()
+          .select()
+          .from(runs)
+          .where(and(eq(runs.project, project.name), eq(runs.agent, 'ask')))
+          .orderBy(desc(runs.createdAt))
+          .limit(JOB_RUN_LIMIT)
+      }))()
+    ])
   );
 
 // The Runs page's data: the most recently active work items, each with its runs oldest first. Checks the session first.
