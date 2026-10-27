@@ -37,6 +37,7 @@ import {
   buildDispatchPayload,
   CHANGES_QUESTION,
   canRerun,
+  chosenFollowUps,
   ciHandOverText,
   clock,
   closedLine,
@@ -60,6 +61,7 @@ import {
   escapeSlack,
   failedChecks,
   filedChoiceMessage,
+  filedFollowUpsText,
   filedForLaterMessage,
   filedIssueClosedText,
   filedStartedMessage,
@@ -176,6 +178,7 @@ import {
   runOf
 } from './ask-runs';
 import { requireEnv } from './env';
+import { fileFollowUps } from './follow-ups';
 import {
   approvePull,
   branchChecks,
@@ -1013,6 +1016,15 @@ const answerQuestion = async (
   const after = afterAnswers(open.agent, answered, readQuestions(asking?.report));
   // The round's fixable findings were held back while its questions were open.
   const findings = open.agent === 'review' ? readFixableFindings(asking?.report) : [];
+  // Answers that defer work to a follow-up file it, whatever else they decide.
+  const followUps = open.agent === 'review' ? chosenFollowUps(answered, readQuestions(asking?.report)) : [];
+  const filed = await fileFollowUps(project, workItem, followUps);
+  if (filed.length > 0) {
+    await Promise.all([
+      replyInThread(project, workItem, filedFollowUpsText(filed)),
+      postActivity(workItem, { type: 'thought', body: filedFollowUpsText(filed, 'markdown') })
+    ]);
+  }
   if (after.kind === 'keep') {
     await keepReviewedPr(project, workItem, answered, from, { id: open.runId, findings });
     return true;

@@ -41,7 +41,16 @@ const questionSchema = z
     options: z.array(z.string().trim().min(1).max(MAX_OPTION_LENGTH)).min(2).max(MAX_OPTIONS),
     suggested: z.string().trim().nullish(),
     // A review's question only: the option that leaves the PR as it is.
-    keep: z.string().trim().nullish()
+    keep: z.string().trim().nullish(),
+    // A review's question only: the issue to file when the answer is `option`, which defers work to it.
+    followUp: z
+      .object({
+        option: z.string().trim().min(1),
+        title: z.string().trim().min(1).max(200),
+        body: z.string().trim().min(1).max(2000)
+      })
+      .nullish()
+      .catch(null)
   })
   .refine(({ options }) => new Set(options.map(normalise)).size === options.length, {
     message: 'options must be distinct'
@@ -50,6 +59,9 @@ const questionSchema = z
     message: 'an option reads as the defaults shortcut'
   });
 
+// The issue a review question's option defers work to, filed in Triage when that option is the answer.
+export type FollowUp = { option: string; title: string; body: string };
+
 // A question as the router asks it: the suggested option first. `keep` is the option, if any, that needs no change.
 export type Question = {
   prompt: string;
@@ -57,9 +69,19 @@ export type Question = {
   why: string | null;
   options: string[];
   keep: string | null;
+  followUp?: FollowUp;
 };
 
 const reportQuestionsSchema = z.looseObject({ questions: z.array(z.unknown()).nullish() });
+
+// A follow-up counts only when its option is one of the question's.
+const followUpFor = (
+  followUp: FollowUp | null | undefined,
+  named: (wanted: string) => string | undefined
+): { followUp?: FollowUp } => {
+  const option = followUp && named(followUp.option);
+  return followUp && option ? { followUp: { ...followUp, option } } : {};
+};
 
 // The questions a stage reported, each read on its own: one malformed question doesn't hide the rest. A suggestion
 // that names no option falls back to the first.
@@ -70,7 +92,7 @@ export const readQuestions = (report: unknown): Question[] =>
       if (!read.success) {
         return [];
       }
-      const { prompt, topic, why, options, suggested, keep } = read.data;
+      const { prompt, topic, why, options, suggested, keep, followUp } = read.data;
       const named = (wanted: string | null | undefined) =>
         options.find((option) => wanted && normalise(option) === normalise(wanted));
       const first = named(suggested) ?? options[0];
@@ -81,15 +103,16 @@ export const readQuestions = (report: unknown): Question[] =>
               topic: topic ?? null,
               why: why ?? null,
               options: [first, ...options.filter((option) => option !== first)],
-              keep: named(keep) ?? null
+              keep: named(keep) ?? null,
+              ...followUpFor(followUp, named)
             }
           ]
         : [];
     })
     .slice(0, MAX_QUESTIONS);
 
-// As asked and stored: `keep` stays in the review's report, read back when the round is answered.
-export type PositionedQuestion = Omit<Question, 'keep'> & { position: number };
+// As asked and stored: `keep` and `followUp` stay in the review's report, read back when the round is answered.
+export type PositionedQuestion = Omit<Question, 'keep' | 'followUp'> & { position: number };
 
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
@@ -227,6 +250,17 @@ export const afterAnswers = (agent: AgentRole, round: AskedQuestion[], reported:
         }
       };
 };
+
+export type ChosenFollowUp = FollowUp & { prompt: string };
+
+// The follow-ups a review round's answers chose: each question whose answer is the option that defers work.
+export const chosenFollowUps = (round: AskedQuestion[], reported: Question[]): ChosenFollowUp[] =>
+  byPosition(round).flatMap(({ position, prompt, answer }) => {
+    const followUp = reported[position - 1]?.followUp;
+    return followUp && answer !== null && normalise(answer) === normalise(followUp.option)
+      ? [{ ...followUp, prompt }]
+      : [];
+  });
 
 // The decisions as a PR comment and a thread reply, when every answer kept the PR as it is.
 export const keptText = (round: AskedQuestion[], by: string): string =>
