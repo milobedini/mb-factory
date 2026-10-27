@@ -710,9 +710,9 @@ export type FiledIssue = { id: string; identifier: string; url: string };
 
 const issueLink = ({ identifier, url }: FiledIssue): string => `<${url}|${escapeSlack(identifier)}>`;
 
-// An issue filed from Slack, before anyone has said whether to start it.
-export const filedChoiceMessage = (issue: FiledIssue, assigned: boolean): SlackMessage => {
-  const text = `Filed ${issueLink(issue)}${assigned ? ', assigned to you' : ''}. Start on it now, or leave it for later?`;
+// An issue filed from Slack, before anyone has said whether to start it. It's nobody's until someone starts it.
+export const filedChoiceMessage = (issue: FiledIssue): SlackMessage => {
+  const text = `Filed ${issueLink(issue)}. Start on it now, or leave it for later?`;
   return {
     text,
     blocks: [
@@ -728,9 +728,10 @@ export const filedChoiceMessage = (issue: FiledIssue, assigned: boolean): SlackM
   };
 };
 
-// Left for later: it says where the issue is, and keeps a button to start it from here.
-export const filedForLaterMessage = (issue: FiledIssue, alias: string, assigned: boolean): SlackMessage => {
-  const text = `Filed ${issueLink(issue)} for later. It’s in Linear${assigned ? ', assigned to you' : ''}. Start it here when you’re ready, or delegate it to @${escapeSlack(alias)} in Linear.`;
+// Left for later: it says where the issue is, and keeps a button to start it from here. Unassigned, it shows in the
+// Ready list once someone accepts it out of Triage.
+export const filedForLaterMessage = (issue: FiledIssue, alias: string): SlackMessage => {
+  const text = `Filed ${issueLink(issue)} for later. It’s in Linear, unassigned until someone starts it. Start it here when you’re ready, or delegate it to @${escapeSlack(alias)} in Linear.`;
   return {
     text,
     blocks: [

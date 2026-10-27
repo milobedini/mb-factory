@@ -83,7 +83,8 @@ const ReadyRow = ({ issue }: { issue: ReadyIssue }) => (
       <span className="font-medium">{issue.identifier}</span> {issue.title}
     </a>
     <span className="text-foreground/70 text-sm">
-      {issue.project} · {issue.size}
+      {issue.project ? `${issue.project} · ` : ''}
+      {issue.size}
       {issue.waitingOn.length > 0 ? ` · waiting on ${issue.waitingOn.join(', ')}` : ''}
     </span>
   </li>
@@ -125,7 +126,7 @@ const ReadySections = ({ ready }: { ready: ProjectReady[] }) => {
       {unread.length > 0 && <p className="text-warn text-sm">Couldn’t read Linear for {unread.join(', ')}.</p>}
       <ReadyGroup
         title="Ready to delegate"
-        note="Unstarted issues in open projects, unassigned, with nothing left blocking them; in your project order, then by priority."
+        note="Unstarted issues out of Triage, unassigned, with nothing left blocking them; in your project order (no project last), then by priority."
         empty="Nothing is ready to delegate."
         issues={readyNow}
       />

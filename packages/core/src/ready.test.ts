@@ -85,6 +85,17 @@ describe('readyList', () => {
     expect(identifiers(list.ready)).toEqual(['TAS-25', 'TAS-26', 'TAS-9', 'TAS-27', 'TAS-50']);
   });
 
+  // TAS-58, 27 Oct: a ticket filed from a Slack question has no project, and accepted work like it never showed.
+  it('offers accepted issues with no project too, after every project’s', () => {
+    const list = readyList([
+      issue('TAS-58', { project: null, priority: 1 }),
+      issue('TAS-56', { project: null }),
+      issue('TAS-50', { project: recipes })
+    ]);
+    expect(identifiers(list.ready)).toEqual(['TAS-50', 'TAS-58', 'TAS-56']);
+    expect(list.ready[1]).toMatchObject({ project: null, projectUrl: null, milestone: null });
+  });
+
   it('shows the size, unsized until triage sets one', () => {
     const [sized, unsized] = readyList([issue('TAS-23', { estimate: 2 }), issue('TAS-26')]).ready;
     expect([sized?.size, unsized?.size]).toEqual(['S', 'unsized']);

@@ -465,7 +465,6 @@ export type IssueToStart = {
   url: string;
   title: string;
   stateType: string;
-  assigned: boolean;
 };
 
 // An issue filed from Slack, read again before it's started, since the message offering it may be days old.
@@ -477,21 +476,17 @@ export const issueToStart = async (organizationId: string, issueId: string): Pro
       url: string;
       title: string;
       state: { type: string };
-      assignee: { id: string } | null;
     } | null;
-  }>(
-    organizationId,
-    'query IssueToStart($id: String!) { issue(id: $id) { id identifier url title state { type } assignee { id } } }',
-    { id: issueId }
-  );
+  }>(organizationId, 'query IssueToStart($id: String!) { issue(id: $id) { id identifier url title state { type } } }', {
+    id: issueId
+  });
   return (
     issue && {
       id: issue.id,
       identifier: issue.identifier,
       url: issue.url,
       title: issue.title,
-      stateType: issue.state.type,
-      assigned: issue.assignee !== null
+      stateType: issue.state.type
     }
   );
 };

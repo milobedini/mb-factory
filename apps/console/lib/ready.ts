@@ -27,10 +27,10 @@ type CandidateNode = {
   inverseRelations: { nodes: Relation[] };
 };
 
-// Issues nobody has started, in any of the team's projects. A hundred is far more than a team keeps unstarted in its
-// projects, and keeps the query inside Linear's complexity limit; a fuller page is logged rather than paged through.
+// Issues accepted out of Triage that nobody has started, in a project or not. A hundred is far more than a team keeps
+// unstarted, and keeps the query inside Linear's complexity limit; a fuller page is logged rather than paged through.
 const CANDIDATES_QUERY = `query ReadyCandidates($key: String!) {
-  issues(first: 100, filter: { team: { key: { eq: $key } }, project: { null: false }, state: { type: { in: ["backlog", "unstarted"] } } }) {
+  issues(first: 100, filter: { team: { key: { eq: $key } }, state: { type: { in: ["backlog", "unstarted"] } } }) {
     nodes {
       id identifier title url priority estimate
       assignee { name }
@@ -54,29 +54,26 @@ const blockersOf = (node: CandidateNode): CandidateIssue['blockers'] =>
     .map(({ issue }) => ({ identifier: issue.identifier, finished: FINISHED_STATES.includes(issue.state.type) }))
     .filter((blocker, index, all) => all.findIndex(({ identifier }) => identifier === blocker.identifier) === index);
 
-const toCandidate = (node: CandidateNode): CandidateIssue[] =>
-  node.project
-    ? [
-        {
-          id: node.id,
-          identifier: node.identifier,
-          title: node.title,
-          url: node.url,
-          priority: node.priority,
-          estimate: node.estimate,
-          assignee: node.assignee?.name ?? null,
-          delegated: node.delegate !== null,
-          project: {
-            name: node.project.name,
-            url: node.project.url,
-            sortOrder: node.project.sortOrder,
-            statusType: node.project.status.type
-          },
-          milestone: node.projectMilestone?.name ?? null,
-          blockers: blockersOf(node)
-        }
-      ]
-    : [];
+const toCandidate = (node: CandidateNode): CandidateIssue => ({
+  id: node.id,
+  identifier: node.identifier,
+  title: node.title,
+  url: node.url,
+  priority: node.priority,
+  estimate: node.estimate,
+  assignee: node.assignee?.name ?? null,
+  delegated: node.delegate !== null,
+  project: node.project
+    ? {
+        name: node.project.name,
+        url: node.project.url,
+        sortOrder: node.project.sortOrder,
+        statusType: node.project.status.type
+      }
+    : null,
+  milestone: node.projectMilestone?.name ?? null,
+  blockers: blockersOf(node)
+});
 
 export const loadReadyList = async (project: FactoryConfig): Promise<ReadyList> => {
   const { issues } = await linearGraphql<{ issues: { nodes: CandidateNode[]; pageInfo: { hasNextPage: boolean } } }>(
@@ -87,7 +84,7 @@ export const loadReadyList = async (project: FactoryConfig): Promise<ReadyList> 
   if (issues.pageInfo.hasNextPage) {
     log('warn', 'ready list cut short', { project: project.name, read: issues.nodes.length });
   }
-  return readyList(issues.nodes.flatMap(toCandidate));
+  return readyList(issues.nodes.map(toCandidate));
 };
 
 const CACHE_MS = 60_000;

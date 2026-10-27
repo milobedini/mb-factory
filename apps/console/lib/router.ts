@@ -1528,11 +1528,11 @@ const answerReadyRequest = async (
 
 type SlackThread = { channel: string; threadTs: string };
 
-// Files a request made in Slack, owned by whoever made it, and asks in its thread whether to start it now or leave it
-// for later. Nothing starts without a tap.
+// Files a request made in Slack, unassigned, and asks in its thread whether to start it now or leave it for later.
+// Nothing starts without a tap; whoever taps Start owns it. Left unassigned, it can show in the Ready list.
 const fileAndOffer = async (
   project: FactoryConfig,
-  requester: { userId: string; email: string | null },
+  requesterId: string,
   filing: { title: string; description: string },
   thread: SlackThread
 ): Promise<void> => {
@@ -1545,34 +1545,36 @@ const fileAndOffer = async (
       })
     );
   const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
-  // Whoever asked owns the issue, as a person delegating in Linear would; the app becomes its delegate once started.
-  const assigneeId = await linearUserFor(organizationId, requester.userId, requester.email);
-  const issue = await createIssue(organizationId, { teamKey: project.linear.teamKey, ...filing, assigneeId }).catch(
-    (error: unknown) => {
-      log('error', 'linear issue for a slack request failed', { project: project.name, error: errorMessage(error) });
-      return undefined;
-    }
-  );
+  const issue = await createIssue(organizationId, {
+    teamKey: project.linear.teamKey,
+    ...filing,
+    assigneeId: null
+  }).catch((error: unknown) => {
+    log('error', 'linear issue for a slack request failed', { project: project.name, error: errorMessage(error) });
+    return undefined;
+  });
   if (!issue) {
     await say('I couldn’t file this in Linear, so nothing has started. The details are in the console log.');
     return;
   }
-  log('info', 'slack request filed', { issue: issue.identifier, user: requester.userId });
-  await say(filedChoiceMessage(issue, assigneeId !== null));
+  log('info', 'slack request filed', { issue: issue.identifier, user: requesterId });
+  await say(filedChoiceMessage(issue));
 };
 
 type StartFiled = 'started' | 'already' | 'failed';
 
 // Starts an issue filed from Slack in the thread it was filed in, as a mention used to straight away: the work item
 // exists, with that thread, before the session opens, so every message about the work lands there. `announce` says
-// so before the session's own events can. An issue that already has a work item has started elsewhere.
+// so before the session's own events can. An issue that already has a work item has started elsewhere. Whoever starts
+// it owns it, as Delegate makes the tapper the assignee.
 const startFiledIssue = async (
   project: FactoryConfig,
   issue: FiledIssue & { title: string },
   thread: SlackThread,
-  requester: string,
+  starter: { name: string; assigneeId: string | null },
   announce: () => Promise<void>
 ): Promise<StartFiled> => {
+  const requester = starter.name;
   const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
   const [claimed] = await getDb()
     .insert(workItems)
@@ -1629,7 +1631,7 @@ const startFiledIssue = async (
   }
   // Shows in Linear who's working on it, and lets undelegating stop the work as it does for any other issue.
   await attempt('linear delegate', { issue: issue.identifier }, async () =>
-    delegateIssue(organizationId, issue.id, await findAppUserId(organizationId))
+    delegateIssue(organizationId, issue.id, await findAppUserId(organizationId), starter.assigneeId)
   );
   await getDb().update(asks).set({ ticketStarted: true }).where(eq(asks.ticketIssueId, issue.id));
   return 'started';
@@ -1645,8 +1647,8 @@ const fileFromQuestionThread = async (
   if (!ask) {
     return;
   }
-  const [{ name, email }, context] = await Promise.all([
-    slackUser(mention.userId).catch(() => ({ name: mention.userId, email: null })),
+  const [name, context] = await Promise.all([
+    slackUserName(mention.userId).catch(() => mention.userId),
     askContextFor(ask, await runOf(ask))
   ]);
   const titled = slackIssueFromRequest(mention.request, { name, permalink: context.permalink });
@@ -1657,7 +1659,7 @@ const fileFromQuestionThread = async (
   const filing = askTicketIssue({ title: titled.title, request: mention.request }, context);
   await fileAndOffer(
     project,
-    { userId: mention.userId, email },
+    mention.userId,
     { title: filing.title, description: `${filing.description}\n\n---\n\nAsked for by ${name} in Slack.` },
     { channel: mention.channel, threadTs: mention.threadTs }
   );
@@ -1707,8 +1709,8 @@ export const handleSlackMention = withCards(async (payload: unknown): Promise<vo
     await answerReadyRequest(project, channel, ts, sayInThread);
     return;
   }
-  const [{ name, email }, permalink] = await Promise.all([
-    slackUser(userId).catch(() => ({ name: userId, email: null })),
+  const [name, permalink] = await Promise.all([
+    slackUserName(userId).catch(() => userId),
     slackPermalink(channel, ts).catch((error: unknown) => {
       log('warn', 'slack permalink failed', { channel, ts, error: errorMessage(error) });
       return null;
@@ -1719,7 +1721,7 @@ export const handleSlackMention = withCards(async (payload: unknown): Promise<vo
     await tellThem(emptyMentionText(project));
     return;
   }
-  await fileAndOffer(project, { userId, email }, filing, { channel, threadTs: ts });
+  await fileAndOffer(project, userId, filing, { channel, threadTs: ts });
 });
 
 type Tapper = { name: string; assigneeId: string | null };
@@ -2243,15 +2245,19 @@ const handleFiledTap = async (
       updateSlackMessage({ channel: channelId, ts: messageTs, ...message })
     );
   if (action.choice === 'later') {
-    await edit(filedForLaterMessage(issue, project.alias, issue.assigned));
+    await edit(filedForLaterMessage(issue, project.alias));
     return;
   }
   if (FINISHED_STATE_TYPES.includes(issue.stateType)) {
     await tellTapper(filedIssueClosedText(issue.identifier));
     return;
   }
-  const name = await slackUserName(action.userId).catch(() => action.userId);
-  const result = await startFiledIssue(project, issue, { channel: channelId, threadTs }, name, () =>
+  const { name, email } = await slackUser(action.userId).catch(() => ({ name: action.userId, email: null }));
+  const starter = {
+    name,
+    assigneeId: await linearUserFor(requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID'), action.userId, email)
+  };
+  const result = await startFiledIssue(project, issue, { channel: channelId, threadTs }, starter, () =>
     edit(filedStartedMessage(issue))
   );
   if (result === 'already') {
@@ -2290,18 +2296,20 @@ const handleAskTicketTap = async (
     return;
   }
   const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
-  const assigneeId = await linearUserFor(organizationId, action.userId, email);
   // The agent wrote the request from public repo and Linear text, so it's made inert like a job's findings.
   const filing = askTicketIssue(
     { title: ticket.title, request: neutraliseMarkdown(ticket.request) },
     await askContextFor(ask, run)
   );
-  const issue = await createIssue(organizationId, { teamKey: project.linear.teamKey, ...filing, assigneeId }).catch(
-    (error: unknown) => {
-      log('error', 'linear issue for a question failed', { askId: ask.id, error: errorMessage(error) });
-      return undefined;
-    }
-  );
+  // Unassigned like any Slack request: whoever starts it owns it.
+  const issue = await createIssue(organizationId, {
+    teamKey: project.linear.teamKey,
+    ...filing,
+    assigneeId: null
+  }).catch((error: unknown) => {
+    log('error', 'linear issue for a question failed', { askId: ask.id, error: errorMessage(error) });
+    return undefined;
+  });
   if (!issue) {
     await getDb()
       .update(asks)
@@ -2333,11 +2341,12 @@ const handleAskTicketTap = async (
   const say = (message: SlackMessage) =>
     attempt('slack reply', { askId: ask.id }, () => postSlackMessage({ ...thread, ...message }));
   if (!started) {
-    await say(filedForLaterMessage(issue, project.alias, assigneeId !== null));
+    await say(filedForLaterMessage(issue, project.alias));
     await refreshAskCard(project, filed);
     return;
   }
-  await startFiledIssue(project, issue, thread, name, () => say(filedStartedMessage(issue)));
+  const starter = { name, assigneeId: await linearUserFor(organizationId, action.userId, email) };
+  await startFiledIssue(project, issue, thread, starter, () => say(filedStartedMessage(issue)));
 };
 
 const handleTap = async (

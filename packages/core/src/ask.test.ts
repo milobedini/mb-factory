@@ -232,13 +232,13 @@ describe('filed issue messages', () => {
   const issue = { id: ISSUE_ID, identifier: 'TAS-58', url: 'https://linear.app/t/TAS-58' };
 
   it('offers to start it now or leave it, and keeps Start once left', () => {
-    const choice = filedChoiceMessage(issue, true);
-    expect(choice.text).toBe(
-      'Filed <https://linear.app/t/TAS-58|TAS-58>, assigned to you. Start on it now, or leave it for later?'
-    );
+    const choice = filedChoiceMessage(issue);
+    expect(choice.text).toBe('Filed <https://linear.app/t/TAS-58|TAS-58>. Start on it now, or leave it for later?');
     expect(elements(choice.blocks[1]).map(({ text }) => text.text)).toEqual(['Start now', 'Leave for later']);
-    const later = filedForLaterMessage(issue, 'Tastebook', false);
-    expect(later.text).toMatch(/^Filed <https:\/\/linear.app\/t\/TAS-58\|TAS-58> for later\. It’s in Linear\. /);
+    const later = filedForLaterMessage(issue, 'Tastebook');
+    expect(later.text).toMatch(
+      /^Filed <https:\/\/linear.app\/t\/TAS-58\|TAS-58> for later\. It’s in Linear, unassigned until someone starts it\. /
+    );
     expect(elements(later.blocks[1]).map(({ text, value }) => [text.text, value])).toEqual([
       ['Start TAS-58', JSON.stringify({ s: ISSUE_ID, a: 'start' })]
     ]);
