@@ -88,6 +88,8 @@ export const workItems = pgTable(
     projectName: text(),
     projectUrl: text(),
     milestoneName: text(),
+    // The Linear assignee's email when a stage last started, for the card's name and the Slack mention.
+    assigneeEmail: text(),
     // Issues this one's finishing made ready, offered on its Slack card (core `NextIssue`).
     nextReady: jsonb(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

@@ -22,11 +22,13 @@ linear:
 
 timeZone: Europe/London
 
-# Credited as co-author on the factory's commits for issues assigned to them. `git` is GitHub's noreply address,
-# so the commits count on their profile without publishing an email.
+# Credited as co-author on the factory's commits for issues assigned to them, and mentioned in Slack when one waits
+# on them. `git` is GitHub's noreply address, so the commits count on their profile without publishing an email;
+# `slack` is their member ID (profile → ⋮ → Copy member ID).
 people:
   - linear: milobedini64@gmail.com
     git: Milo Bedini <89992629+milobedini@users.noreply.github.com>
+    slack: U0CBS3FN806
 
 slack:
   channel: "#tastebook-factory"

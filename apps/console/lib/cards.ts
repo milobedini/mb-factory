@@ -1,5 +1,13 @@
 import type { CardInput, FactoryConfig } from '@mb-factory/core';
-import { canRerun, readGate, readNextIssues, slackMessageUrl, workItemCard } from '@mb-factory/core';
+import {
+  canRerun,
+  personFor,
+  personName,
+  readGate,
+  readNextIssues,
+  slackMessageUrl,
+  workItemCard
+} from '@mb-factory/core';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
@@ -15,6 +23,11 @@ import { slackWorkspaceUrl, updateSlackMessage } from './slack-api';
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 type WorkItem = typeof workItems.$inferSelect;
+
+const assigneeName = (project: FactoryConfig, email: string | null): string | null => {
+  const person = personFor(project, email);
+  return person ? personName(person) : null;
+};
 
 // Everything a work item's card is drawn from. `channel` is where its thread is, for the questions' link.
 export const loadCardInput = async (
@@ -67,7 +80,8 @@ export const loadCardInput = async (
       reviewRounds: workItem.reviewRounds,
       updatedAt: workItem.updatedAt,
       project: workItem.projectName ? { name: workItem.projectName, url: workItem.projectUrl } : null,
-      milestone: workItem.milestoneName
+      milestone: workItem.milestoneName,
+      assignee: assigneeName(project, workItem.assigneeEmail)
     },
     runs: itemRuns,
     round,

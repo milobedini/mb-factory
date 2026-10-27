@@ -254,6 +254,30 @@ export const slackGateSettled = (gate: Gate, answer: string, by: string): SlackM
   blocks: [...gateSections(gate), context(`✓ ${escapeSlack(clip(oneLine(answer), 200))}, ${escapeSlack(by)}.`)]
 });
 
+// A thread message that waits on someone, with them mentioned first, so Slack notifies them: the bot starts each
+// thread, so the person isn't in it unless they've replied. The notification shows `text`; the message, its first
+// section.
+export const mentioning = <M extends string | SlackMessage>(message: M, mention: string | undefined): M => {
+  if (!mention) {
+    return message;
+  }
+  if (typeof message === 'string') {
+    return `${mention} ${message}` as M;
+  }
+  const { text: fallback, blocks } = message as SlackMessage;
+  const first = blocks.findIndex((block) => block.type === 'section');
+  return {
+    ...(message as SlackMessage),
+    text: `${mention} ${fallback}`,
+    blocks: blocks.map((block, index) => {
+      const text = block.text as { type?: unknown; text?: unknown } | undefined;
+      return index === first && text?.type === 'mrkdwn' && typeof text.text === 'string'
+        ? { ...block, text: { ...text, text: `${mention} ${text.text}` } }
+        : block;
+    })
+  } as M;
+};
+
 export const QUESTION_GONE = 'That question was already answered, or the work moved on.';
 
 export const notAllowedText = (config: FactoryConfig): string =>

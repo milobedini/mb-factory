@@ -59,6 +59,7 @@ import {
   linearSlackReplyText,
   linearStatusFor,
   MAX_READY_ROWS,
+  mentioning,
   modelFor,
   nextStepAfterRun,
   notAllowedText,
@@ -105,6 +106,7 @@ import {
   slackGateMessage,
   slackGateSettled,
   slackIssueFromRequest,
+  slackMentionFor,
   slackQuestionCard,
   slackReplyText,
   slackSpecGateMessage,
@@ -253,6 +255,13 @@ const replyInThread = async (
   }
 };
 
+// The person a work item waits on, mentioned so Slack notifies them: its Linear assignee, when the project lists their
+// Slack ID.
+const askingFor =
+  (project: FactoryConfig, workItem: WorkItem) =>
+  <M extends string | SlackMessage>(message: M): M =>
+    mentioning(message, slackMentionFor(project, workItem.assigneeEmail));
+
 const editInThread = (project: FactoryConfig, workItem: WorkItem, ts: string, message: SlackMessage) => {
   touchCard(workItem.id);
   const channel = workItem.slackChannelId ?? project.slack?.channelId;
@@ -381,7 +390,10 @@ const checkConflict = async (project: FactoryConfig, workItem: WorkItem): Promis
   if (action.kind === 'hand_over') {
     const prUrl = `https://github.com/${workItem.repository}/pull/${prNumber}`;
     const text = conflictHandOverText(state.base, prUrl);
-    await Promise.all([postActivity(workItem, { type: 'error', body: text }), replyInThread(project, workItem, text)]);
+    await Promise.all([
+      postActivity(workItem, { type: 'error', body: text }),
+      replyInThread(project, workItem, askingFor(project, workItem)(text))
+    ]);
     return 'handed_over';
   }
   return 'left';
@@ -501,20 +513,23 @@ const startRun = async (
     .set({ releasedAt: now })
     .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)));
 
-  // Credits the person the work is for on its commits; a lookup that fails only loses the credit.
-  const coAuthor =
+  // Credits the person the work is for on its commits, and keeps who that is for the card and the Slack mention; a
+  // lookup that fails only loses the credit, and keeps the last known assignee.
+  const assigneeEmail =
     project.people.length > 0
-      ? coAuthorFor(
-          project,
-          await issueAssigneeEmail(workItem.linearOrganizationId, workItem.linearIssueId).catch((error: unknown) => {
-            log('warn', 'linear assignee lookup failed', {
-              issue: workItem.issueIdentifier,
-              error: errorMessage(error)
-            });
-            return null;
-          })
-        )
+      ? await issueAssigneeEmail(workItem.linearOrganizationId, workItem.linearIssueId).catch((error: unknown) => {
+          log('warn', 'linear assignee lookup failed', {
+            issue: workItem.issueIdentifier,
+            error: errorMessage(error)
+          });
+          return undefined;
+        })
       : undefined;
+  const coAuthor = coAuthorFor(project, assigneeEmail ?? workItem.assigneeEmail);
+  if (assigneeEmail !== undefined && assigneeEmail !== workItem.assigneeEmail) {
+    await db.update(workItems).set({ assigneeEmail }).where(eq(workItems.id, workItem.id));
+    touchCard(workItem.id);
+  }
   const payload = buildDispatchPayload({
     runId: run.id,
     model,
@@ -668,7 +683,12 @@ const refreshQuestionCard = async (project: FactoryConfig, workItem: WorkItem, r
     return;
   }
   const round = rows.map((row) => ({ ...toAsked(row), closed: row.closedAt !== null }));
-  await editInThread(project, workItem, ts, slackQuestionCard(asking.agent, round, workItem.issueUrl));
+  await editInThread(
+    project,
+    workItem,
+    ts,
+    askingFor(project, workItem)(slackQuestionCard(asking.agent, round, workItem.issueUrl))
+  );
 };
 
 const closeOpenQuestions = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
@@ -740,7 +760,7 @@ const startQuestions = async (
     round.map((question) => ({ ...question, closed: false })),
     workItem.issueUrl
   );
-  const ts = await replyInThread(project, workItem, card);
+  const ts = await replyInThread(project, workItem, askingFor(project, workItem)(card));
   if (ts) {
     await getDb().update(questions).set({ slackTs: ts }).where(eq(questions.runId, run.id));
   }
@@ -782,7 +802,7 @@ const keepReviewedPr = async (
   const { prNumber } = workItem;
   log('info', 'review decisions kept the PR', { issue: workItem.issueIdentifier });
   await Promise.all([
-    replyInThread(project, workItem, `${text}\nIt’s ready for you to merge.`),
+    replyInThread(project, workItem, askingFor(project, workItem)(`${text}\nIt’s ready for you to merge.`)),
     postActivity(workItem, { type: 'response', body: text }),
     prNumber
       ? attempt('pr comment', { issue: workItem.issueIdentifier }, () =>
@@ -2019,6 +2039,10 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       maxReviewRounds: project.review.maxRounds
     });
   const waitsOnPerson = run.status === 'finished' && BLOCKING_OUTCOMES.includes(run.outcome) && !retrying;
+  // Questions and gates mention the person in their own messages, which follow this one.
+  const mentionFinished = waitsOnPerson || (next.stage === 'awaiting_merge' && !next.questions && !next.gate);
+  const asking = askingFor(project, workItem);
+  const mentionIf = <M extends string | SlackMessage>(message: M): M => (mentionFinished ? asking(message) : message);
   if (next.reviewRounds !== undefined) {
     // Recorded before the revision dispatches, so its brief names the round it's fixing.
     await getDb()
@@ -2035,8 +2059,8 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       retrying
         ? retryText(run.agent, run.actionsRunUrl)
         : rerunnable
-          ? withRerunButton(finishedText, run.id)
-          : finishedText
+          ? mentionIf(withRerunButton(finishedText, run.id))
+          : mentionIf(finishedText)
     ),
     waitsOnPerson
       ? attempt('linear blocked label', { issue: workItem.issueIdentifier }, () =>
@@ -2054,14 +2078,18 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       prUrl,
       issueUrl: workItem.issueUrl
     });
-    const ts = await replyInThread(project, workItem, gate);
+    const ts = await replyInThread(project, workItem, asking(gate));
     await getDb()
       .update(workItems)
       .set({ gateSlackTs: ts ?? null })
       .where(eq(workItems.id, workItem.id));
   }
   if (next.gate) {
-    const ts = await replyInThread(project, workItem, slackGateMessage(workItem.id, next.gate, workItem.issueUrl));
+    const ts = await replyInThread(
+      project,
+      workItem,
+      asking(slackGateMessage(workItem.id, next.gate, workItem.issueUrl))
+    );
     await getDb()
       .update(workItems)
       .set({ gateSlackTs: ts ?? null })
@@ -2173,7 +2201,10 @@ const handleCiFailure = async (event: Extract<GitHubEvent, { kind: 'ci_failed' }
   }
   if (action.kind === 'hand_over') {
     const text = ciHandOverText(event.workflow, event.url);
-    await Promise.all([postActivity(workItem, { type: 'error', body: text }), replyInThread(project, workItem, text)]);
+    await Promise.all([
+      postActivity(workItem, { type: 'error', body: text }),
+      replyInThread(project, workItem, askingFor(project, workItem)(text))
+    ]);
   }
 };
 

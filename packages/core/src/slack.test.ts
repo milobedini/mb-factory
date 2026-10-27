@@ -12,6 +12,7 @@ import {
   isAllowedSlackUser,
   isReadyRequest,
   linearSlackReplyText,
+  mentioning,
   nothingReadyText,
   notReadyText,
   parseAppHomeOpened,
@@ -596,5 +597,22 @@ describe('parseAppHomeOpened', () => {
     expect(parseAppHomeOpened(opened('home'))).toEqual({ userId: 'U0CBS3FN806' });
     expect(parseAppHomeOpened(opened('messages'))).toBeUndefined();
     expect(parseAppHomeOpened({ type: 'event_callback', event: { type: 'message' } })).toBeUndefined();
+  });
+});
+
+describe('mentioning', () => {
+  it('puts the mention first in the notification and the first section', () => {
+    const plain = slackSpecGateMessage(workItemId, { specUrl: null, prUrl: null, issueUrl });
+    const gate = mentioning(plain, '<@U1>');
+    expect(gate.text).toBe('<@U1> The spec is ready for review.');
+    expect(gate.blocks[0]).toMatchObject({
+      text: { text: expect.stringMatching(/^<@U1> The spec is ready for review/) }
+    });
+    expect(gate.blocks.slice(1)).toEqual(plain.blocks.slice(1));
+  });
+
+  it('mentions in plain text, and leaves a message alone with nobody to mention', () => {
+    expect(mentioning('Ready to merge.', '<@U1>')).toBe('<@U1> Ready to merge.');
+    expect(mentioning('Ready to merge.', undefined)).toBe('Ready to merge.');
   });
 });

@@ -38,6 +38,7 @@ const input = (overrides: Partial<CardInput> = {}, workItem: Partial<CardInput['
     updatedAt: at(30),
     project: { name: 'Real recipes', url: 'https://linear.app/tastebook/project/real-recipes' },
     milestone: 'Structured recipes',
+    assignee: 'Milo Bedini',
     ...workItem
   },
   runs: [run()],
@@ -102,15 +103,17 @@ describe('workItemCard', () => {
     ]);
   });
 
-  it('gives the size as its emoji and word, the project and milestone, and the runs’ totals', () => {
+  it('gives the size as its emoji and word, the project and milestone, who it’s for, and the runs’ totals', () => {
     const card = workItemCard(input({ runs: [run(), run({ agent: 'implement', status: 'running', costUsd: null })] }));
     expect(texts(attachment(card).blocks)).toContain(
-      ':tb-size-m: Medium · <https://linear.app/tastebook/project/real-recipes|Real recipes> › Structured recipes · 2 runs · 2 min · $0.25'
+      ':tb-size-m: Medium · <https://linear.app/tastebook/project/real-recipes|Real recipes> › Structured recipes · Milo Bedini · 2 runs · 2 min · $0.25'
     );
   });
 
   it('leaves out what isn’t known', () => {
-    const card = workItemCard(input({ runs: [] }, { estimate: null, project: null, stage: 'researching' }));
+    const card = workItemCard(
+      input({ runs: [] }, { estimate: null, project: null, assignee: null, stage: 'researching' })
+    );
     expect(attachment(card).blocks.filter((block) => block.type === 'context')).toHaveLength(1);
   });
 
@@ -281,7 +284,7 @@ describe('workItemCard', () => {
     const card = workItemCard(input({ emojiPrefix: 'mbf' }));
     expect(track(card)).toMatch(/^:mbf-needs-you: \*Triage\*/);
     expect(texts(attachment(card).blocks)).toContain(
-      ':mbf-size-m: Medium · <https://linear.app/tastebook/project/real-recipes|Real recipes> › Structured recipes · 1 run · 1 min · $0.25'
+      ':mbf-size-m: Medium · <https://linear.app/tastebook/project/real-recipes|Real recipes> › Structured recipes · Milo Bedini · 1 run · 1 min · $0.25'
     );
   });
 

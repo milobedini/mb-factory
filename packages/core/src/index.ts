@@ -18,13 +18,16 @@ export {
   slackHubUrl,
   unknownRequestText
 } from './command';
-export type { FactoryConfig, Job, JobScope, UsagePolicy } from './config';
+export type { FactoryConfig, Job, JobScope, Person, UsagePolicy } from './config';
 export {
   coAuthorFor,
   factoryConfigSchema,
   jobSchema,
   parseFactoryConfig,
+  personFor,
+  personName,
   reviewersFor,
+  slackMentionFor,
   usagePolicySchema
 } from './config';
 export type {
@@ -277,6 +280,7 @@ export {
   isReadyRequest,
   linearSlackReplyText,
   MAX_READY_ROWS,
+  mentioning,
   notAllowedText,
   notAllowedToStartText,
   nothingReadyText,

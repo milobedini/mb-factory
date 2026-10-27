@@ -99,6 +99,13 @@
       "when": 1793101092436,
       "tag": "0013_slack_card",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793109477521,
+      "tag": "0014_assignee_email",
+      "breakpoints": true
     }
   ]
 }

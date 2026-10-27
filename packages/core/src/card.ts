@@ -66,6 +66,8 @@ export type CardInput = {
     updatedAt: Date;
     project: { name: string; url: string | null } | null;
     milestone: string | null;
+    // Who it's for: the Linear assignee's name, when the project lists them.
+    assignee: string | null;
   };
   // Oldest first.
   runs: CardRun[];
@@ -332,6 +334,7 @@ const metaText = (input: CardInput): string | undefined => {
   const parts = [
     sizeText(sizeLabel(workItem.estimate), input.emojiPrefix),
     projectText,
+    workItem.assignee ? escapeSlack(workItem.assignee) : undefined,
     totals.runs > 0 ? plural(totals.runs, 'run') : undefined,
     totals.durationMs > 0 ? formatRunTime(totals.durationMs) : undefined,
     totals.costUsd !== null ? `$${totals.costUsd.toFixed(2)}` : undefined

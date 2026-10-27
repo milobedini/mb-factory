@@ -78,13 +78,18 @@ export const factoryConfigSchema = z
         canceled: z.string().min(1)
       })
     }),
-    // The people the factory credits as co-author on its commits: a Linear member (by email) and their git identity,
-    // with the noreply address GitHub links to their account. Someone not listed is credited nowhere.
+    // The people the factory works for: a Linear member (by email), their git identity, with the noreply address
+    // GitHub links to their account, credited as co-author on the commits of issues assigned to them, and their Slack
+    // member ID, mentioned when one of those issues waits on them. Someone not listed is credited and mentioned nowhere.
     people: z
       .array(
         z.object({
           linear: z.email(),
-          git: z.string().regex(/^[^<>\n]+ <[^<>\s]+@[^<>\s]+>$/, { message: 'not "Name <email>"' })
+          git: z.string().regex(/^[^<>\n]+ <[^<>\s]+@[^<>\s]+>$/, { message: 'not "Name <email>"' }),
+          slack: z
+            .string()
+            .regex(/^[UW][A-Z0-9]+$/)
+            .optional()
         })
       )
       .default([]),
@@ -161,6 +166,21 @@ export const reviewersFor = ({ repositories }: FactoryConfig, repository: string
   repositories.find(({ owner, name }) => `${owner}/${name}`.toLowerCase() === repository.toLowerCase())?.reviewers ??
   [];
 
-// The git identity to credit on a work item's commits: the person it's assigned to, when the project lists them.
+export type Person = FactoryConfig['people'][number];
+
+// The person a work item is assigned to, when the project lists them.
+export const personFor = (config: Pick<FactoryConfig, 'people'>, email: string | null): Person | undefined =>
+  email ? config.people.find(({ linear }) => linear.toLowerCase() === email.toLowerCase()) : undefined;
+
+// The git identity to credit on a work item's commits.
 export const coAuthorFor = (config: Pick<FactoryConfig, 'people'>, email: string | null): string | undefined =>
-  email ? config.people.find(({ linear }) => linear.toLowerCase() === email.toLowerCase())?.git : undefined;
+  personFor(config, email)?.git;
+
+// The person's name, as their git identity gives it.
+export const personName = (person: Person): string => person.git.replace(/\s*<[^>]*>$/, '');
+
+// A mention that notifies the person in Slack, for messages that wait on them.
+export const slackMentionFor = (config: Pick<FactoryConfig, 'people'>, email: string | null): string | undefined => {
+  const slack = personFor(config, email)?.slack;
+  return slack ? `<@${slack}>` : undefined;
+};

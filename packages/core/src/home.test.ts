@@ -39,7 +39,8 @@ const item = (identifier: string, stage: CardInput['workItem']['stage'], runs: C
     reviewRounds: 0,
     updatedAt: at(5),
     project: null,
-    milestone: null
+    milestone: null,
+    assignee: null
   },
   runs,
   round: [],
