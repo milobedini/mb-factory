@@ -6,7 +6,7 @@ Demo project: **Tastebook** (recipe hub). The project itself is defined later; t
 
 ## Status
 
-_Last updated 2026-10-27, 00:45._ **Current phase: 4 (Dashboard and scheduled loops); everything built and seen live; waiting on its exit criteria (a well-formed issue from a daily check, the two-week baseline around 8 Nov). Platform project nearly done: everything merged but TAS-35 (Backlog). The verify stage was built overnight (in the runner, evidence in Vercel Blob) and waits on the console's deploy, which Vercel's daily deployment limit blocks until about 11:20 on 27 Oct. Start at "Resume here".** Phase 0 closed 2026-10-24, Phases 1 and 2 closed 2026-10-25, Phase 3 closed 2026-10-26.
+_Last updated 2026-10-27, 00:45._ **Current phase: 4 (Dashboard and scheduled loops); everything built and seen live; waiting on its exit criteria (a well-formed issue from a daily check, the two-week baseline around 8 Nov). Platform project nearly done: everything merged but TAS-35 (Backlog). The verify stage was built overnight (in the runner, evidence in Vercel Blob) and is deployed (console `3438431`, 00:30 on 27 Oct) and waits for its first frontend PR. Start at "Resume here".** Phase 0 closed 2026-10-24, Phases 1 and 2 closed 2026-10-25, Phase 3 closed 2026-10-26.
 
 ### Done
 
@@ -54,12 +54,10 @@ Exit criterion (from [Phases](#phases)): the dashboard shows a two-week baseline
 
 - **Resume here (2026-10-27, about 00:45; the user cleared the context here). Read this first; the steps above hold the detail.**
   - **State of the work (00:45):** nothing is running and nothing is open: no factory work item is in flight and tastebook has no open PRs. **Platform project merged so far:** TAS-23, TAS-24, TAS-25, TAS-26, TAS-27, TAS-29, TAS-30, TAS-31 (Enamel done), TAS-32, TAS-33, TAS-34. **Left in Platform:** TAS-35 (Backlog, XS, ready to delegate: Tastebook's Ignored Build Step). Not yet filed, offered: an issue for the backup script to refuse a malformed URL or token with a clear message.
-  - **Blocked until about 11:20 London: Vercel deployments** (Hobby, 100 a day, rolling; 134 in the 24 h to 00:06). Both the console's and tastebook's pushes show "Deployment rate limited — retry in 24 hours". Production console runs `06661ea` (lapsed-dispatch sweep, longer merge-state wait, console ignore step); `main` is ahead with the verify stage. Tastebook production is at 23:44 on 26 Oct.
-  - **First thing on 27 Oct (after about 11:20 London, when Vercel's rolling 24 h window drops under 100 deployments):**
-    1. **Deploy the console** from the repo root: `vercel deploy --prod` (builds `main` as it is). The push of `e698bc8` (verify) was rate limited, so production runs `06661ea`: no verify yet; frontend PRs go straight to review meanwhile. Check the deploy's commit is `e698bc8` or later.
-    2. **Deploy Tastebook's production**: nothing has deployed since 23:44 on 26 Oct, so TAS-31's pages, TAS-32, TAS-26's checks and the restore notes are on `main` but not live. Redeploy `main` from the Vercel dashboard (Deployments → latest `main` commit → Redeploy), or push the next merge.
-    3. **Check the split report step** on the first stage run since `e698bc8` (stage runs fetch `stage.yml` from `main`, so it's already live): "Write the run's report" then "Report the run" both succeed, and the console logs `run reported` for it.
-    4. **Then watch verify's first live run** on the next implement round touching `frontend/` (what to look for is under the verify stage below).
+  - **Deploys caught up (checked 00:35 GMT, 27 Oct):** slots in Vercel's rolling window freed sooner than expected. Console production runs `3438431` (deployed 00:30; includes the verify stage, `e698bc8`); `fc4c969` was rate limited but only touches the plan. Tastebook production runs `10f3214` (TAS-33's merge, 00:16), so TAS-31's pages, TAS-32, TAS-26's checks, TAS-33 and the restore notes are live. Still on Hobby's 100 a day: a busy evening can hit it again.
+  - **Next checks:**
+    1. **Check the split report step** on the first stage run since `e698bc8` (stage runs fetch `stage.yml` from `main`, so it's already live): "Write the run's report" then "Report the run" both succeed, and the console logs `run reported` for it.
+    2. **Then watch verify's first live run** on the next implement round touching `frontend/` (what to look for is under the verify stage below).
   - **Next, in order (after the morning list):**
     1. Delegate TAS-35. Then step 5's second half, **Sentry into the health check** (console only; can be built before the deploy and ship with it). Then step 6, **slice Real recipes**.
     2. Follow-ups noted, not urgent: the weekly evidence clean-up (Open follow-ups); lockfile conflicts without an agent ("Merge conflicts, done smarter", idea 1; the user said leave it for now, 27 Oct); a re-check when a PR's merge state stays unknown; the stage job's own secrets on the agent's runner (verify stage note); the platform baseline for onboarding.
