@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { ChecksState } from './inbox';
 import type { SlackBlock, SlackMessage } from './slack';
 import { button, escapeSlack } from './slack';
+import type { AgentRole } from './stages';
 
 // Approve and merge from Slack: a PR review accepted is approved on GitHub as the person who tapped, with their own
 // GitHub connection, and merged with a merge commit. Never without a tap, and only the commit review accepted.
@@ -108,6 +109,10 @@ export const mergedLine = ({
 };
 
 export const closedLine = (prNumber: number): string => `PR #${prNumber} was closed without merging.`;
+
+// An accepted message whose PR went back to work: its buttons would approve a head no review has accepted yet.
+export const movedOnLine = (agent: AgentRole): string =>
+  `Moved on: the PR went back to ${agent}, so this review no longer covers it. The next accepted review brings Approve and merge.`;
 
 const connectButton = (connectUrl: string, primary: boolean): SlackBlock => ({
   type: 'button',

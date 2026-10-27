@@ -7,6 +7,7 @@ import {
   mergedLine,
   mergeRefusal,
   mergeRefusedText,
+  movedOnLine,
   readBeforeMerging,
   slackAcceptedMessage,
   slackMergeSettled,
@@ -124,6 +125,13 @@ describe('slackMergeSettled', () => {
 
   it('says less when it doesn’t know who merged or the commit', () => {
     expect(mergedLine({ by: null, time: '16:52', repository: 'o/r', sha: null })).toBe('✓ Merged at 16:52');
+  });
+
+  // TAS-40, 27 Oct: rounds 1, 3 and 4 each left Approve and merge in the thread.
+  it('says why when the PR moved on to another run', () => {
+    expect(movedOnLine('implement')).toBe(
+      'Moved on: the PR went back to implement, so this review no longer covers it. The next accepted review brings Approve and merge.'
+    );
   });
 });
 

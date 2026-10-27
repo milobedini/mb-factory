@@ -447,6 +447,11 @@ export const decideConflict = (
   };
 };
 
+// Two runs that finish close together (a conflict fix and an answer's revision) can each hand on to the same stage. A
+// verify or review already queued works on the PR's head when it starts, so a second would only repeat it.
+export const queuedAlready = (request: RunRequest, queued: { agent: AgentRole }[]): boolean =>
+  request.trigger === 'delivered' && queued.some(({ agent }) => agent === request.agent);
+
 export type ReviewThread = { id: string; isResolved: boolean; author: string | null };
 
 // The GitHub login the review stage posts its findings as (the Claude app).

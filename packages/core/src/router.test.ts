@@ -26,6 +26,7 @@ import {
   onlyLockfilesChanged,
   orderQueue,
   parseSessionEvent,
+  queuedAlready,
   queuedThought,
   readSpecReply,
   retryText,
@@ -1067,5 +1068,29 @@ describe('decideConflict', () => {
     });
     expect(conflictFixesSince([run('conflict', -5), run('conflict', 2), run('ci_failed', 3)], moved)).toBe(1);
     expect(conflictFixesSince([run('conflict', -5)], moved)).toBe(0);
+  });
+});
+
+describe('queuedAlready', () => {
+  const verify = { agent: 'verify', trigger: 'delivered', priority: 'in_flight', prompt: null } as const;
+
+  // TAS-40, 27 Oct: a conflict fix and an answer's revision each handed on to verify, so two verify and review rounds
+  // ran on the same commit.
+  it('drops a verify or review when one is already queued for the work item', () => {
+    expect(queuedAlready(verify, [{ agent: 'verify' }])).toBe(true);
+    expect(queuedAlready({ ...verify, agent: 'review' }, [{ agent: 'review' }])).toBe(true);
+  });
+
+  it('keeps it when only other stages are queued', () => {
+    expect(queuedAlready(verify, [])).toBe(false);
+    expect(queuedAlready(verify, [{ agent: 'review' }])).toBe(false);
+  });
+
+  it('keeps any other kind of run, which carries its own request', () => {
+    expect(
+      queuedAlready({ agent: 'implement', trigger: 'review_findings', priority: 'in_flight', prompt: 'Fix' }, [
+        { agent: 'implement' }
+      ])
+    ).toBe(false);
   });
 });

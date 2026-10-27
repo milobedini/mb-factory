@@ -81,6 +81,7 @@ import {
   mergeRefusedText,
   metEveryCriterion,
   modelFor,
+  movedOnLine,
   neutraliseMarkdown,
   nextStepAfterRun,
   notAllowedText,
@@ -105,6 +106,7 @@ import {
   prClosedText,
   QUESTION_GONE,
   questionElicitation,
+  queuedAlready,
   queuedThought,
   READY_HEADING,
   READY_UNREADABLE,
@@ -534,6 +536,23 @@ const claimRun = async (project: FactoryConfig, run: Run, model: string, now: Da
   ]);
   return claimed.length > 0;
 };
+
+// Read fresh: the work item passed around may predate the accepted message.
+const settleMovedOn = async (project: FactoryConfig, workItem: WorkItem, agent: AgentRole): Promise<void> => {
+  const [current] = await getDb()
+    .select({ mergeSlackTs: workItems.mergeSlackTs })
+    .from(workItems)
+    .where(eq(workItems.id, workItem.id));
+  if (current?.mergeSlackTs) {
+    await settleAcceptedMessage(project, { ...workItem, mergeSlackTs: current.mergeSlackTs }, movedOnLine(agent));
+  }
+};
+
+const queuedRuns = (workItem: WorkItem) =>
+  getDb()
+    .select({ agent: runs.agent })
+    .from(runs)
+    .where(and(eq(runs.workItemId, workItem.id), eq(runs.status, 'queued')));
 
 type StartResult = 'started' | 'not_claimed' | 'skipped';
 
@@ -982,8 +1001,13 @@ const createRun = async (
   parentRunId: string | null = null
 ): Promise<string> => {
   touchCard(workItem.id);
-  // New work on the item makes any questions still open moot, and ends any wait on a person.
-  await Promise.all([closeOpenQuestions(project, workItem), clearBlocked(workItem)]);
+  // New work on the item makes any questions still open moot, ends any wait on a person, and takes the PR away from an
+  // earlier accepted review's Approve and merge.
+  await Promise.all([
+    closeOpenQuestions(project, workItem),
+    clearBlocked(workItem),
+    settleMovedOn(project, workItem, request.agent)
+  ]);
   const [run] = await getDb()
     .insert(runs)
     .values({
@@ -2691,7 +2715,9 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       )
     );
   }
-  if (next.request) {
+  if (next.request && queuedAlready(next.request, await queuedRuns(workItem))) {
+    log('info', 'next run already queued', { runId, issue: workItem.issueIdentifier, agent: next.request.agent });
+  } else if (next.request) {
     await dispatchRun(project, await createRun(project, workItem, next.request, run.id));
   }
   if (resuming) {
@@ -2988,6 +3014,20 @@ const settleMergeMessage = async (
   workItem: WorkItem,
   event: Extract<GitHubEvent, { kind: 'pr_closed' }>
 ): Promise<boolean> => {
+  const person = event.mergedBy ? personForGitHub(project, event.mergedBy.id) : undefined;
+  const line = event.merged
+    ? mergedLine({
+        by: person ? personName(person) : (event.mergedBy?.login ?? null),
+        time: clock(new Date(), project.timeZone),
+        repository: workItem.repository,
+        sha: event.mergeCommitSha
+      })
+    : closedLine(event.number);
+  return settleAcceptedMessage(project, workItem, line);
+};
+
+// The buttons come off review's accepted message, and a line says why. Its `ts` is forgotten once settled.
+const settleAcceptedMessage = async (project: FactoryConfig, workItem: WorkItem, line: string): Promise<boolean> => {
   const channel = workItem.slackChannelId ?? project.slack?.channelId;
   const { mergeSlackTs: ts, slackThreadTs: threadTs } = workItem;
   if (!channel || !ts || !threadTs) {
@@ -2998,15 +3038,6 @@ const settleMergeMessage = async (
     if (!message) {
       return false;
     }
-    const person = event.mergedBy ? personForGitHub(project, event.mergedBy.id) : undefined;
-    const line = event.merged
-      ? mergedLine({
-          by: person ? personName(person) : (event.mergedBy?.login ?? null),
-          time: clock(new Date(), project.timeZone),
-          repository: workItem.repository,
-          sha: event.mergeCommitSha
-        })
-      : closedLine(event.number);
     await updateSlackMessage({
       channel,
       ts,
