@@ -699,7 +699,7 @@ export const formatReleaseAt = (at: Date, now: Date, timeZone: string): string =
 export const startedThought = (agent: AgentRole): string => `Working on it: ${agent} run started.`;
 
 export const queuedThought = (
-  { reason, releaseAt }: Extract<GovernedDecision, { kind: 'hold' }>,
+  { reason, releaseAt }: { reason: HoldReason; releaseAt?: Date | null },
   now: Date,
   timeZone: string
 ): string =>

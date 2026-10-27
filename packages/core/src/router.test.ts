@@ -410,7 +410,7 @@ describe('queuedThought', () => {
   });
 
   it('says what it is waiting for when there is no release time', () => {
-    expect(queuedThought({ kind: 'hold', state: 'open', reason: 'concurrency' }, now, 'Europe/London')).toBe(
+    expect(queuedThought({ reason: 'concurrency' }, now, 'Europe/London')).toBe(
       'Queued: the factory is already running as many stages as it allows. It starts as soon as that clears.'
     );
   });

@@ -1,5 +1,7 @@
 export type { Brief, DispatchPayload, JobBrief } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
+export type { CardInput, CardRun, CardStatus, NextIssue, SlackCard } from './card';
+export { CARD_COLOURS, cardStatus, readNextIssues, workItemCard } from './card';
 export type { FactoryConfig, Job, JobScope, UsagePolicy } from './config';
 export {
   coAuthorFor,

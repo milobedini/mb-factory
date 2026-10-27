@@ -7,6 +7,7 @@ import type {
   Gate,
   GitHubEvent,
   GovernedDecision,
+  NextIssue,
   Question,
   ReadyIssue,
   ReadyOutcome,
@@ -57,6 +58,7 @@ import {
   keptText,
   linearSlackReplyText,
   linearStatusFor,
+  MAX_READY_ROWS,
   modelFor,
   nextStepAfterRun,
   notAllowedText,
@@ -83,6 +85,7 @@ import {
   RERUN_GONE,
   readBump,
   readGate,
+  readNextIssues,
   readQuestions,
   readSpecParts,
   resumeRequestFor,
@@ -125,6 +128,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-
 import { getDb } from '@/db/client';
 import { events, questions, queue, runs, stageChanges, workItems } from '@/db/schema';
 
+import { touchCard, withCards } from './cards';
 import { requireEnv } from './env';
 import {
   branchContains,
@@ -234,6 +238,8 @@ const replyInThread = async (
   const channel = workItem.slackChannelId ?? project.slack?.channelId;
   const threadTs = workItem.slackThreadTs;
   const content = typeof message === 'string' ? { text: message } : message;
+  // Anything worth saying in the thread changes what the card shows.
+  touchCard(workItem.id);
   if (!channel || !threadTs) {
     return undefined;
   }
@@ -246,6 +252,7 @@ const replyInThread = async (
 };
 
 const editInThread = (project: FactoryConfig, workItem: WorkItem, ts: string, message: SlackMessage) => {
+  touchCard(workItem.id);
   const channel = workItem.slackChannelId ?? project.slack?.channelId;
   return channel
     ? attempt('slack edit', { issue: workItem.issueIdentifier }, () => updateSlackMessage({ channel, ts, ...message }))
@@ -266,6 +273,7 @@ const openSlackThread = async (project: FactoryConfig, workItem: WorkItem, title
       .update(workItems)
       .set({ slackChannelId: channel, slackThreadTs: ts, updatedAt: new Date() })
       .where(and(eq(workItems.id, workItem.id), isNull(workItems.slackThreadTs)));
+    touchCard(workItem.id);
   });
 };
 
@@ -276,6 +284,7 @@ const holdRun = async (
   decision: Extract<GovernedDecision, { kind: 'hold' }>,
   tell: () => Promise<unknown>
 ): Promise<void> => {
+  touchCard(run.workItemId);
   const db = getDb();
   const held = await db
     .insert(queue)
@@ -411,6 +420,7 @@ const moveWorkItem = async (project: FactoryConfig, workItem: WorkItem, stage: S
 };
 
 const moveTo = async (project: FactoryConfig, workItem: WorkItem, stage: Stage): Promise<void> => {
+  touchCard(workItem.id);
   await Promise.all([
     getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id)),
     recordStageChange(workItem, stage, 'factory'),
@@ -428,6 +438,7 @@ const moveTo = async (project: FactoryConfig, workItem: WorkItem, stage: Stage):
 
 const failDispatch = async ({ run, workItem }: RunWithWorkItem, error: unknown, now: Date): Promise<void> => {
   log('error', 'run dispatch failed', { runId: run.id, issue: workItem.issueIdentifier, error: errorMessage(error) });
+  touchCard(workItem.id);
   await getDb()
     .update(runs)
     .set({ status: 'finished', outcome: 'failed', summary: 'GitHub rejected the stage dispatch.', finishedAt: now })
@@ -443,6 +454,7 @@ const DISPATCH_LOCK = sql`select pg_advisory_xact_lock(hashtext('mb-factory:disp
 
 // Claims the run only if, under the lock, the cap and the one-run-per-issue rule still hold.
 const claimRun = async (project: FactoryConfig, run: Run, model: string, now: Date): Promise<boolean> => {
+  touchCard(run.workItemId);
   const db = getDb();
   const active = sql.raw(ACTIVE_STATUSES.map((status) => `'${status}'`).join(', '));
   const [, claimed] = await db.batch([
@@ -569,7 +581,7 @@ const startJobRun = async (project: FactoryConfig, run: Run, now: Date): Promise
 };
 
 // Runs the governor for one queued run, then dispatches it or holds it in the queue.
-export const dispatchRun = async (project: FactoryConfig, runId: string, retried = false): Promise<void> => {
+export const dispatchRun = withCards(async (project: FactoryConfig, runId: string, retried = false): Promise<void> => {
   const found = await findAnyRun(runId);
   if (found?.run.status !== 'queued') {
     return;
@@ -630,7 +642,7 @@ export const dispatchRun = async (project: FactoryConfig, runId: string, retried
     return;
   }
   await hold({ kind: 'hold', state: decision.state, reason: 'concurrency' });
-};
+});
 
 const toAsked = ({ id, position, prompt, topic, why, options, answer, answerSource }: QuestionRow): AskedQuestion => ({
   id,
@@ -848,6 +860,7 @@ const createRun = async (
   request: RunRequest,
   parentRunId: string | null = null
 ): Promise<string> => {
+  touchCard(workItem.id);
   // New work on the item makes any questions still open moot, and ends any wait on a person.
   await Promise.all([closeOpenQuestions(project, workItem), clearBlocked(workItem)]);
   const [run] = await getDb()
@@ -877,7 +890,7 @@ const createRun = async (
 };
 
 // Cancel from the Runs page: the run and its Actions run, then a final word in Linear and Slack.
-export const cancelRunFromConsole = async (runId: string, login: string): Promise<boolean> => {
+export const cancelRunFromConsole = withCards(async (runId: string, login: string): Promise<boolean> => {
   const found = await findAnyRun(runId);
   const projectName = found?.workItem?.project ?? found?.run.project;
   const project = projectName ? findProject(projectName) : undefined;
@@ -900,11 +913,11 @@ export const cancelRunFromConsole = async (runId: string, login: string): Promis
   }
   await releaseQueue();
   return true;
-};
+});
 
 // Re-run from the Runs page: only a work item's latest run, and only when it ended badly (`canRerun`), so two stages
 // never race and settled work isn't repeated.
-export const rerunFromConsole = async (runId: string, login: string): Promise<boolean> => {
+export const rerunFromConsole = withCards(async (runId: string, login: string): Promise<boolean> => {
   const found = await findRun(runId);
   const project = found && findProject(found.workItem.project);
   if (!found || !project || isOpenRun(found.run.status)) {
@@ -928,10 +941,10 @@ export const rerunFromConsole = async (runId: string, login: string): Promise<bo
   log('info', 'run re-run from the console', { runId, login, issue: found.workItem.issueIdentifier });
   await dispatchRun(project, await createRun(project, found.workItem, consoleRerunRequest(found.run.agent), runId));
   return true;
-};
+});
 
 // "Allow once" from the console: the run skips usage holds and the pause from now on, even if the run caps hold it first.
-export const allowRunOnce = async (runId: string, login: string): Promise<boolean> => {
+export const allowRunOnce = withCards(async (runId: string, login: string): Promise<boolean> => {
   const [allowed] = await getDb()
     .update(runs)
     .set({ usageOverrideBy: login })
@@ -940,6 +953,7 @@ export const allowRunOnce = async (runId: string, login: string): Promise<boolea
   if (!allowed) {
     return false;
   }
+  touchCard(allowed.workItemId);
   const [workItem] = allowed.workItemId
     ? await getDb().select().from(workItems).where(eq(workItems.id, allowed.workItemId)).limit(1)
     : [];
@@ -950,10 +964,10 @@ export const allowRunOnce = async (runId: string, login: string): Promise<boolea
     await dispatchRun(project, runId);
   }
   return true;
-};
+});
 
 // Releases held runs, highest priority first, for as long as the governor allows.
-export const releaseQueue = async (): Promise<void> => {
+export const releaseQueue = withCards(async (): Promise<void> => {
   const waiting = await getDb()
     .select({
       runId: queue.runId,
@@ -973,18 +987,18 @@ export const releaseQueue = async (): Promise<void> => {
       await dispatchRun(project, entry.runId);
     }
   }, Promise.resolve());
-};
+});
 
 // Held work whose reason may have cleared, released on any sign of activity: a webhook, a usage reading, a console
 // page. A usage hold then lifts soon after its window resets whenever anything is going on, without a timer; quiet
 // spells still wait for the governor job. Cheap when nothing is held, and never fails the request it rides on.
-export const releaseQueueOnActivity = async (cause: string): Promise<void> => {
+export const releaseQueueOnActivity = withCards(async (cause: string): Promise<void> => {
   try {
     await releaseQueue();
   } catch (error) {
     log('error', 'queue release on activity failed', { cause, error: errorMessage(error) });
   }
-};
+});
 
 const upsertWorkItem = async (
   project: FactoryConfig,
@@ -1074,6 +1088,7 @@ const cancelRun = async (
   if (canceled.length === 0) {
     return false;
   }
+  touchCard(workItem?.id);
   await db
     .update(queue)
     .set({ releasedAt: now })
@@ -1128,6 +1143,7 @@ const stopForCause = async (project: FactoryConfig, workItem: WorkItem, cause: S
 
 // Records the stage without moving the Linear issue: the event came from Linear or GitHub, which already show it.
 const recordStage = async (workItem: WorkItem, stage: Stage, cause: string): Promise<void> => {
+  touchCard(workItem.id);
   await Promise.all([
     getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id)),
     recordStageChange(workItem, stage, cause)
@@ -1147,7 +1163,7 @@ const recordStage = async (workItem: WorkItem, stage: Stage, cause: string): Pro
   }
 };
 
-export const handleAgentSessionEvent = async (payload: unknown): Promise<void> => {
+export const handleAgentSessionEvent = withCards(async (payload: unknown): Promise<void> => {
   const event = parseSessionEvent(payload);
   if (!event) {
     return;
@@ -1176,7 +1192,7 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
     return;
   }
   await handleReply(project, workItem, event.body, { via: 'linear' });
-};
+});
 
 type ReplyFrom = { via: 'linear' } | { via: 'slack'; name: string };
 
@@ -1199,6 +1215,7 @@ const settleGate = async (
   request: RunRequest | undefined,
   from: ReplyFrom
 ): Promise<void> => {
+  touchCard(workItem.id);
   const ts = workItem.gateSlackTs;
   if (!ts) {
     return;
@@ -1280,7 +1297,7 @@ const fileSpecParts = async (project: FactoryConfig, workItem: WorkItem): Promis
 };
 
 // A person's reply in a work item's thread steers the work like a reply in Linear, if they're on the allow-list.
-export const handleSlackMessage = async (payload: unknown): Promise<void> => {
+export const handleSlackMessage = withCards(async (payload: unknown): Promise<void> => {
   const reply = parseSlackThreadReply(payload);
   if (!reply) {
     return;
@@ -1309,7 +1326,7 @@ export const handleSlackMessage = async (payload: unknown): Promise<void> => {
   const name = await slackUserName(reply.userId).catch(() => reply.userId);
   log('info', 'slack reply', { issue: workItem.issueIdentifier, user: reply.userId });
   await handleReply(project, workItem, reply.body, { via: 'slack', name });
-};
+});
 
 // A top-level mention is a request: it's filed in Linear and worked on in the mention's thread. The work item exists,
 // with that thread, before the session opens, so every message about the work lands there.
@@ -1350,7 +1367,7 @@ const answerReadyRequest = async (
   await attempt('slack ready message', { channel }, () => postReadyMessage(project, READY_HEADING, list.ready, ts));
 };
 
-export const handleSlackMention = async (payload: unknown): Promise<void> => {
+export const handleSlackMention = withCards(async (payload: unknown): Promise<void> => {
   const mention = parseSlackMention(payload);
   if (!mention) {
     return;
@@ -1441,7 +1458,7 @@ export const handleSlackMention = async (payload: unknown): Promise<void> => {
   await attempt('linear delegate', { issue: issue.identifier }, async () =>
     delegateIssue(organizationId, issue.id, await findAppUserId(organizationId))
   );
-};
+});
 
 type Tapper = { name: string; assigneeId: string | null };
 
@@ -1592,8 +1609,16 @@ const handleDelegateTap = async (
     results.filter(({ result }) => result === wanted).map(({ identifier }) => identifier);
   const [notReady, failed] = [withResult('not_ready'), withResult('failed')];
   const { message, channelId } = action;
+  const [card] = message
+    ? await getDb()
+        .select({ id: workItems.id, nextReady: workItems.nextReady })
+        .from(workItems)
+        .where(and(eq(workItems.slackChannelId, channelId), eq(workItems.slackThreadTs, message.ts)))
+        .limit(1)
+    : [];
   await Promise.all([
-    message && outcomes.length > 0
+    card && outcomes.length > 0 ? settleNextOnCard(card, outcomes) : undefined,
+    !card && message && outcomes.length > 0
       ? attempt('slack edit', { issues: action.identifiers }, () =>
           updateSlackMessage({
             channel: channelId,
@@ -1608,8 +1633,24 @@ const handleDelegateTap = async (
   ]);
 };
 
-// An issue finishing (done or canceled) can unblock others: they're posted with a Delegate button each, so the news
-// arrives when it happens rather than with the next morning's list.
+// The Next rows a Delegate tap settled on a work item's card: who delegated each, or that it wasn't ready any more.
+const settleNextOnCard = async (card: { id: string; nextReady: unknown }, outcomes: ReadyOutcome[]): Promise<void> => {
+  const next = readNextIssues(card.nextReady).map((issue): NextIssue => {
+    const outcome = outcomes.find(({ identifier }) => identifier === issue.identifier);
+    if (!outcome) {
+      return issue;
+    }
+    return outcome.kind === 'delegated'
+      ? { ...issue, delegatedBy: outcome.by, delegatedAt: outcome.at.toISOString() }
+      : { ...issue, notReady: true };
+  });
+  await getDb().update(workItems).set({ nextReady: next }).where(eq(workItems.id, card.id));
+  touchCard(card.id);
+};
+
+// An issue finishing (done or canceled) can unblock others, each offered with a Delegate button so the news arrives
+// when it happens rather than with the next morning's list: on the finished work item's card when it has one,
+// otherwise in a message of their own.
 const announceUnblocked = async (teamKey: string, identifier: string, canceled: boolean): Promise<void> => {
   const project = findProjectByTeamKey(teamKey);
   if (!project?.slack) {
@@ -1619,8 +1660,29 @@ const announceUnblocked = async (teamKey: string, identifier: string, canceled: 
   if (unblocked.length === 0) {
     return;
   }
+  const issues = unblocked.map((issue) => issue.identifier);
+  const [finished] = await getDb()
+    .select({ id: workItems.id })
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.project, project.name),
+        eq(workItems.issueIdentifier, identifier),
+        isNotNull(workItems.slackThreadTs)
+      )
+    )
+    .limit(1);
+  if (finished) {
+    const next = unblocked
+      .slice(0, MAX_READY_ROWS)
+      .map(({ identifier: id, title, url, size }): NextIssue => ({ identifier: id, title, url, size }));
+    await getDb().update(workItems).set({ nextReady: next }).where(eq(workItems.id, finished.id));
+    touchCard(finished.id);
+    log('info', 'ready issues offered on the card', { after: identifier, issues });
+    return;
+  }
   await postReadyMessage(project, unblockedHeading(identifier, canceled, unblocked.length), unblocked);
-  log('info', 'ready issues announced', { after: identifier, issues: unblocked.map((issue) => issue.identifier) });
+  log('info', 'ready issues announced', { after: identifier, issues });
 };
 
 const findQuestionWithWorkItem = async (questionId: string) => {
@@ -1663,7 +1725,7 @@ const handleRerunTap = async (
 
 // A tap on a question's or the spec gate's button, or a ready message's. Only the current question and a spec still in
 // review take an answer; the messages themselves are redrawn by the answer, wherever it came from.
-export const handleSlackAction = async (payload: unknown): Promise<void> => {
+export const handleSlackAction = withCards(async (payload: unknown): Promise<void> => {
   const action = parseSlackAction(payload);
   if (!action) {
     return;
@@ -1710,7 +1772,7 @@ export const handleSlackAction = async (payload: unknown): Promise<void> => {
   }
   const name = await slackUserName(action.userId).catch(() => action.userId);
   await handleReply(project, workItem, action.body, { via: 'slack', name });
-};
+});
 
 // After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a
 // limit-hit run, free its slot.
@@ -1813,13 +1875,14 @@ const needsVerify = async (
   }
 };
 
-export const handleRunFinished = async (runId: string): Promise<void> => {
+export const handleRunFinished = withCards(async (runId: string): Promise<void> => {
   const found = await findRun(runId);
   const project = found && findProject(found.workItem.project);
   if (!found || !project) {
     return;
   }
   const { run, workItem } = found;
+  touchCard(workItem.id);
   const resuming = shouldResume(run);
   const [parent] = run.parentRunId
     ? await getDb()
@@ -1942,11 +2005,11 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   }
   await fileGuards(project, found);
   await releaseQueue();
-};
+});
 
 // A human's status change or undelegation in Linear, and what an issue finishing unblocks. Issues the factory never
 // worked on have no work item.
-export const handleIssueUpdate = async (payload: unknown): Promise<void> => {
+export const handleIssueUpdate = withCards(async (payload: unknown): Promise<void> => {
   const update = parseIssueUpdate(payload);
   if (!update || update.organizationId !== requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID')) {
     return;
@@ -1966,8 +2029,15 @@ export const handleIssueUpdate = async (payload: unknown): Promise<void> => {
   if (!workItem || !project) {
     return;
   }
-  if (update.estimate !== workItem.estimate) {
-    await getDb().update(workItems).set({ estimate: update.estimate }).where(eq(workItems.id, workItem.id));
+  const linearFields = {
+    estimate: update.estimate,
+    projectName: update.project?.name ?? null,
+    projectUrl: update.project?.url ?? null,
+    milestoneName: update.milestone
+  };
+  if (Object.entries(linearFields).some(([field, value]) => workItem[field as keyof typeof linearFields] !== value)) {
+    await getDb().update(workItems).set(linearFields).where(eq(workItems.id, workItem.id));
+    touchCard(workItem.id);
   }
   const actions = decideIssueUpdate(update, {
     config: project,
@@ -1980,7 +2050,7 @@ export const handleIssueUpdate = async (payload: unknown): Promise<void> => {
   if (actions.stop) {
     await stopForCause(project, workItem, actions.stop);
   }
-};
+});
 
 const findWorkItemForPr = async (event: Extract<GitHubEvent, { kind: 'pr_closed' }>): Promise<WorkItem | undefined> => {
   const [workItem] = await getDb()
@@ -2158,7 +2228,7 @@ const handleDefaultBranchMoved = async (event: Extract<GitHubEvent, { kind: 'def
 
 // A factory PR merged or closed settles its work item; a person pushing to its branch counts against autonomy; a
 // failed check on a delivered PR, or one that stops merging, goes back to implement.
-export const handleGitHubEvent = async (eventName: string, payload: unknown): Promise<void> => {
+export const handleGitHubEvent = withCards(async (eventName: string, payload: unknown): Promise<void> => {
   const event = parseGitHubEvent(eventName, payload);
   if (!event) {
     return;
@@ -2205,4 +2275,4 @@ export const handleGitHubEvent = async (eventName: string, payload: unknown): Pr
   }
   await replyInThread(project, workItem, prClosedText(event.number, event.merged));
   await stopForCause(project, workItem, { kind: 'pr_closed', number: event.number, merged: event.merged });
-};
+});

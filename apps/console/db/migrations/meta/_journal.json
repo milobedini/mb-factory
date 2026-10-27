@@ -92,6 +92,13 @@
       "when": 1793012918548,
       "tag": "0012_stage_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793101092436,
+      "tag": "0013_slack_card",
+      "breakpoints": true
     }
   ]
 }

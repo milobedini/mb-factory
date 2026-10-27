@@ -47,9 +47,9 @@ const buttonValueSchema = z.union([
   })
 ]);
 
-type ButtonValue = z.infer<typeof buttonValueSchema>;
+export type ButtonValue = z.infer<typeof buttonValueSchema>;
 
-const button = (actionId: string, text: string, value: ButtonValue, primary = false): SlackBlock => ({
+export const button = (actionId: string, text: string, value: ButtonValue, primary = false): SlackBlock => ({
   type: 'button',
   action_id: actionId,
   text: { type: 'plain_text', text: clip(text, BUTTON_TEXT_LIMIT) },

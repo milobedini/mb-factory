@@ -165,6 +165,8 @@ const issueUpdateSchema = z.looseObject({
     identifier: z.string().min(1),
     delegateId: z.string().nullish(),
     estimate: z.number().nullish(),
+    project: z.looseObject({ name: z.string().min(1), url: z.string().nullish() }).nullish(),
+    projectMilestone: z.looseObject({ name: z.string().min(1) }).nullish(),
     state: z.looseObject({ name: z.string().min(1), type: z.string().min(1) }),
     team: z.looseObject({ key: z.string().min(1) }).nullish()
   }),
@@ -179,8 +181,10 @@ export type IssueUpdate = {
   identifier: string;
   teamKey: string | null;
   actorId: string | null;
-  // The issue's current estimate, whether or not this update changed it.
+  // The issue's current estimate, project and milestone, whether or not this update changed them.
   estimate: number | null;
+  project: { name: string; url: string | null } | null;
+  milestone: string | null;
   // Set only when this update changed the field.
   state?: LinearState;
   delegate?: { from: string | null; to: string | null };
@@ -201,6 +205,8 @@ export const parseIssueUpdate = (payload: unknown): IssueUpdate | undefined => {
     teamKey: data.team?.key ?? null,
     actorId: actor?.id ?? null,
     estimate: data.estimate ?? null,
+    project: data.project ? { name: data.project.name, url: data.project.url ?? null } : null,
+    milestone: data.projectMilestone?.name ?? null,
     ...(changed('stateId') ? { state: { name: data.state.name, type: data.state.type } } : {}),
     ...(changed('delegateId')
       ? { delegate: { from: updatedFrom?.delegateId ?? null, to: data.delegateId ?? null } }

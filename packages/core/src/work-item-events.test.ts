@@ -216,7 +216,20 @@ describe('parseIssueUpdate', () => {
       teamKey: 'TAS',
       actorId: HUMAN,
       estimate: null,
+      project: null,
+      milestone: null,
       state: { name: 'Awaiting Merge', type: 'started' }
+    });
+  });
+
+  it('reads the project and milestone whatever changed', () => {
+    const data = {
+      project: { id: 'p-1', name: 'Real recipes', url: 'https://linear.app/t/project/real-recipes' },
+      projectMilestone: { id: 'm-1', name: 'Structured recipes' }
+    };
+    expect(parseIssueUpdate(issueUpdate({ data, updatedFrom: { labelIds: [] } }))).toMatchObject({
+      project: { name: 'Real recipes', url: 'https://linear.app/t/project/real-recipes' },
+      milestone: 'Structured recipes'
     });
   });
 

@@ -46,14 +46,19 @@ export const postSlackMessage = async ({
   return ts;
 };
 
-// Edits one of the app's own messages in place.
+// Edits one of the app's own messages in place. Attachments are left as they were unless given.
 export const updateSlackMessage = async ({
   channel,
   ts,
   text,
-  blocks
-}: SlackMessage & { channel: string; ts: string }): Promise<void> => {
-  await callSlack('chat.update', { channel, ts, text, blocks });
+  blocks,
+  attachments
+}: SlackMessage & {
+  channel: string;
+  ts: string;
+  attachments?: { color: string; blocks: SlackBlock[] }[];
+}): Promise<void> => {
+  await callSlack('chat.update', { channel, ts, text, blocks, attachments });
 };
 
 // A message only one person sees, such as why their reply wasn't taken.

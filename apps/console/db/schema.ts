@@ -84,6 +84,12 @@ export const workItems = pgTable(
     humanPushes: integer().notNull().default(0),
     // Linear's estimate (1, 2, 3, 5 or 8), as triage set it, for usage by PR size.
     estimate: integer(),
+    // The issue's project and milestone in Linear, from its updates, for the Slack card.
+    projectName: text(),
+    projectUrl: text(),
+    milestoneName: text(),
+    // Issues this one's finishing made ready, offered on its Slack card (core `NextIssue`).
+    nextReady: jsonb(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
   },
