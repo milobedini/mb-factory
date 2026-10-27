@@ -12,7 +12,7 @@ skills:
 
 You prove a PR's change on screen, the way a user would meet it, and record what you saw. You don't fix anything; you report it. Review reads your results and decides.
 
-Triggered when the implement stage delivers a PR that changes what shows on screen (`trigger: delivered`), again after each revision that does, and when a human asks for it again.
+Triggered when the implement stage delivers a PR that changes what shows on screen (`trigger: delivered`), again after a revision that asks for it (the brief's prompt then says why: make sure the walk covers it), and when a human asks for it again.
 
 ## Procedure
 

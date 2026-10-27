@@ -29,8 +29,7 @@ on:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: false
       # The project's own GitHub App, which can push workflow files (Anthropic's Claude app can't). Only implement runs
-      # use it, and verify's evidence job to attach the walkthrough; other runs, and every run without both, use the
-      # Claude app through the action's OIDC exchange.
+      # use it; other runs, and every run without both, use the Claude app through the action's OIDC exchange.
       FACTORY_APP_CLIENT_ID:
         required: false
       FACTORY_APP_PRIVATE_KEY:
@@ -38,6 +37,11 @@ on:
       # A read-write token for the project's public Blob store of verify evidence. Only the evidence job reads it: the
       # stage job, where the agent runs with sudo, never references it.
       EVIDENCE_BLOB_READ_WRITE_TOKEN:
+        required: false
+      # A person's fine-grained token (contents and pull requests: read and write, on the project's repo only), which
+      # attaches the walkthrough to the PR so it plays there. GitHub refuses attachments from an app's token. Only the
+      # evidence job reads it; without it the walkthrough stays a link.
+      EVIDENCE_ATTACH_TOKEN:
         required: false
 
 permissions:
@@ -224,7 +228,6 @@ jobs:
     env:
       RUN_ID: ${{ inputs.run_id }}
       CONSOLE_URL: ${{ inputs.console_url }}
-      HAS_FACTORY_APP: ${{ secrets.FACTORY_APP_CLIENT_ID != '' && secrets.FACTORY_APP_PRIVATE_KEY != '' }}
     steps:
       - name: Get the report and evidence
         id: download
@@ -265,31 +268,17 @@ jobs:
           done
           if [[ -f "$evidence/walkthrough.webm" ]]; then echo "walkthrough=true" >> "$GITHUB_OUTPUT"; fi
 
-      - name: Get the factory app's token
-        id: app-token
-        # Only to attach the walkthrough: this runner never ran the agent, so the key stays out of its reach.
-        if: steps.upload.outputs.walkthrough == 'true' && env.HAS_FACTORY_APP == 'true'
-        continue-on-error: true
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ secrets.FACTORY_APP_CLIENT_ID }}
-          private-key: ${{ secrets.FACTORY_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          # Attaching a file needs push access.
-          permission-contents: write
-          permission-pull-requests: write
-
       - name: Attach the walkthrough
         # GitHub plays only videos stored with it, so the PR's link to the Blob copy becomes a player. Whatever goes
         # wrong, the PR keeps the link, which works.
-        if: steps.app-token.outcome == 'success'
+        if: steps.upload.outputs.walkthrough == 'true'
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.EVIDENCE_ATTACH_TOKEN }}
           STORE: ${{ vars.EVIDENCE_BLOB_STORE_ID }}
         run: |
           evidence="$RUNNER_TEMP/verify/evidence"
+          [[ -n "$GH_TOKEN" ]] || { echo "::notice::EVIDENCE_ATTACH_TOKEN isn't set: the walkthrough stays a link"; exit 0; }
           [[ "$STORE" =~ ^[A-Za-z0-9]+$ ]] || { echo "::warning::EVIDENCE_BLOB_STORE_ID is not set: the walkthrough stays a link"; exit 0; }
           pr=$(jq -r '.report.pr // empty' "$RUNNER_TEMP/verify/run-report.json")
           [[ "$pr" =~ ^[0-9]+$ ]] || { echo "::warning::The report names no PR: the walkthrough stays a link"; exit 0; }

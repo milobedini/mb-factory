@@ -278,8 +278,10 @@ export const showsOnScreen = (paths: string[], changedFiles: string[]): boolean 
 };
 
 const notOnScreenSchema = z.looseObject({ notOnScreen: z.string().trim().min(1).max(300).nullish().catch(null) });
+const verifyAgainSchema = z.looseObject({ verifyAgain: z.string().trim().min(1).max(300).nullish().catch(null) });
 
-export type VerifyDecision = { verify: boolean; skipped?: string };
+// `again` is the implement run's reason for asking, passed on to the verify run.
+export type VerifyDecision = { verify: boolean; skipped?: string; again?: string };
 
 const criteriaSchema = z.looseObject({ criteria: z.array(z.looseObject({ result: z.string() })) });
 
@@ -295,15 +297,20 @@ export const metEveryCriterion = (report: unknown): boolean => {
   return results.includes('met') && !results.includes('not met');
 };
 
-// Whether a delivered PR is verified in the app: when it touches a path that shows on screen, unless the implement
-// run said why nothing a person sees changed, or an earlier verify run on the work item already met every criterion
-// (`verifiedAt`, as the thread shows it): a revision for review findings doesn't redo that work.
+// Whether a delivered PR is verified in the app: when the implement run asks for it again, with why; otherwise when it
+// touches a path that shows on screen, unless the implement run said why nothing a person sees changed, or an earlier
+// verify run on the work item already met every criterion (`verifiedAt`, as the thread shows it): a revision for
+// review findings doesn't redo that work.
 export const decideVerify = (
   paths: string[],
   changedFiles: string[],
   report: unknown,
   verifiedAt?: string
 ): VerifyDecision => {
+  const again = verifyAgainSchema.safeParse(report).data?.verifyAgain?.replace(/\s+/g, ' ');
+  if (again) {
+    return { verify: true, again };
+  }
   if (!showsOnScreen(paths, changedFiles)) {
     return { verify: false };
   }
@@ -651,8 +658,9 @@ export const nextStepAfterRun = (
     hasPr,
     lockfileOnlyMerge = false,
     verify = false,
+    verifyPrompt = null,
     ...loop
-  }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean; verify?: boolean }
+  }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean; verify?: boolean; verifyPrompt?: string | null }
 ): NextStep => {
   const waiting = run.status === 'finished' && run.outcome === 'needs_input';
   const questions = waiting ? readQuestions(run.report) : [];
@@ -674,7 +682,12 @@ export const nextStepAfterRun = (
     return hasPr
       ? {
           stage: 'in_review',
-          request: { agent: verify ? 'verify' : 'review', trigger: 'delivered', priority: 'in_flight', prompt: null }
+          request: {
+            agent: verify ? 'verify' : 'review',
+            trigger: 'delivered',
+            priority: 'in_flight',
+            prompt: verify ? verifyPrompt : null
+          }
         }
       : {};
   }

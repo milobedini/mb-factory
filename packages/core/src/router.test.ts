@@ -359,6 +359,15 @@ describe('decideVerify', () => {
     });
   });
 
+  it('verifies when the implement run asks again, whatever else holds, passing on why', () => {
+    const asked = { verifyAgain: ' The admin criterion needs a screenshot\n' };
+    expect(decideVerify(screen, ['backend/admin.py'], asked, '15:24')).toEqual({
+      verify: true,
+      again: 'The admin criterion needs a screenshot'
+    });
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], { verifyAgain: '  ' }, '15:24').verify).toBe(false);
+  });
+
   it('gives the implement run’s reason over the earlier verify', () => {
     expect(decideVerify(screen, ['frontend/src/app.tsx'], { notOnScreen: reason }, '15:24')).toEqual({
       verify: false,

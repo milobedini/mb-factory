@@ -2116,6 +2116,7 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
     hasPr: workItem.prNumber !== null,
     lockfileOnlyMerge: await lockfileOnlyMerge(run, workItem),
     verify: verifying.verify,
+    verifyPrompt: verifying.again ? `Verify again, as the implement run asked: ${verifying.again}` : null,
     reviewRounds: workItem.reviewRounds,
     maxReviewRounds: project.review.maxRounds
   });
@@ -2144,7 +2145,8 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
     ),
     ...(skippedReview ? [LOCKFILE_GATE_TEXT] : []),
     // Said where people look, so a wrong call can be challenged: review sees the same reason in the PR's Evidence.
-    ...(verifying.skipped ? [`Skipped verify: ${escapeSlack(verifying.skipped)}`] : [])
+    ...(verifying.skipped ? [`Skipped verify: ${escapeSlack(verifying.skipped)}`] : []),
+    ...(verifying.again ? [`Verifying again: ${escapeSlack(verifying.again)}`] : [])
   ].join('\n');
   const rerunnable =
     run.status === 'finished' &&
