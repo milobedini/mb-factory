@@ -134,7 +134,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/evidence"
           {
             echo "EVIDENCE_DIR=$RUNNER_TEMP/evidence"
-            echo "EVIDENCE_URL_PREFIX=https://$STORE.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/"
+            echo "EVIDENCE_URL_PREFIX=https://${STORE,,}.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/"
           } >> "$GITHUB_ENV"
 
       - name: Run the stage
@@ -236,7 +236,7 @@ jobs:
               -H "authorization: Bearer $EVIDENCE_TOKEN" -H 'x-api-version: 13' -H "x-vercel-blob-store-id: $store" \
               -H 'x-vercel-blob-access: public' -H 'x-add-random-suffix: 0' -H 'x-allow-overwrite: 1' \
               -H "x-content-type: $type" "https://vercel.com/api/blob/?pathname=$pathname"
-            echo "Uploaded https://$store.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/$name"
+            echo "Uploaded https://${store,,}.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/$name"
           done
 
       - name: Report the run
