@@ -22,6 +22,8 @@ import {
   READY_HEADING,
   settleReadyMessage,
   slackFiledText,
+  slackFindingsMessage,
+  slackFindingsSettled,
   slackGateMessage,
   slackGateSettled,
   slackIssueFromRequest,
@@ -239,6 +241,7 @@ describe('parseSlackThreadReply', () => {
     expect(parseSlackThreadReply(delivery())).toEqual({
       channel: 'C0CBSE2Q6FQ',
       threadTs: '1792947014.572229',
+      ts: '1792947100.000200',
       userId: 'U0CBS3FN806',
       body: 'A readable slug'
     });
@@ -276,6 +279,37 @@ describe('parseSlackAction', () => {
       fromHome: false,
       ephemeral: false
     });
+  });
+
+  it('reads Fix ticked with the findings whose box was cleared, taking a box with no state as ticked', () => {
+    const tap = {
+      ...payload(JSON.stringify({ f: questionId, a: 'fix' })),
+      state: {
+        values: {
+          finding_0: { tick_0: { type: 'checkboxes', selected_options: [{ value: 'fix' }] } },
+          finding_2: { tick_2: { type: 'checkboxes', selected_options: [] } },
+          other: { x: { type: 'checkboxes', selected_options: [] } }
+        }
+      }
+    };
+    expect(parseSlackAction(tap)).toMatchObject({
+      kind: 'findings',
+      runId: questionId,
+      choice: 'fix',
+      unticked: [2],
+      messageTs: '1792947100.000300'
+    });
+    expect(parseSlackAction(payload(JSON.stringify({ f: questionId, a: 'keep' })))).toMatchObject({
+      kind: 'findings',
+      choice: 'keep',
+      unticked: []
+    });
+  });
+
+  it('ignores ticking a box, which carries no value', () => {
+    expect(
+      parseSlackAction({ ...payload('x'), actions: [{ action_id: 'tick_0', type: 'checkboxes', action_ts: '1.2' }] })
+    ).toBeUndefined();
   });
 
   it('reads a tap in the App Home, which has no channel or response URL', () => {
@@ -543,6 +577,51 @@ describe('ready messages', () => {
     expect(delegateFailedText(['TAS-25', 'TAS-26', 'TAS-27'], 'Tastebook')).toBe(
       'I couldn’t start TAS-25, TAS-26 and TAS-27, so they’re still listed. Try again, or delegate to @Tastebook in Linear. The details are in the console log.'
     );
+  });
+});
+
+describe('slackFindingsMessage', () => {
+  const runId = '33333333-3333-4333-8333-333333333333';
+  const place = { repository: 'milobedini/tastebook', branch: 'tas-38-recipe-details' };
+  const findings = [
+    { tier: 'nit', path: 'frontend/src/Recipe.tsx', line: 40, summary: 'Courses join with <b>', fix: 'Use formatList' },
+    { tier: 'could_cut', summary: 'An unused export' }
+  ];
+  const sectionTexts = (blocks: SlackBlock[]) =>
+    blocks.filter((block) => block.type === 'section').map((block) => (block.text as { text: string }).text);
+
+  it('lists each finding with its tier, a link to its line, the summary and the fix, each with a ticked Fix box', () => {
+    const { blocks } = slackFindingsMessage({ id: runId, round: 1 }, findings, place, true);
+    expect(sectionTexts(blocks)).toEqual([
+      '*Review round 1* left 2 findings for you. Untick any to leave as they are.',
+      '*Nit* <https://github.com/milobedini/tastebook/blob/tas-38-recipe-details/frontend/src/Recipe.tsx#L40|frontend/src/Recipe.tsx:40>\nCourses join with &lt;b&gt;\n_Fix:_ Use formatList',
+      '*Could cut*\nAn unused export'
+    ]);
+    const box = blocks[1]?.accessory as { type: string; initial_options: unknown[] };
+    expect(box.type).toBe('checkboxes');
+    expect(box.initial_options).toHaveLength(1);
+    expect(blocks.at(-1)).toMatchObject({
+      type: 'actions',
+      elements: [
+        { text: { text: 'Fix ticked' }, value: JSON.stringify({ f: runId, a: 'fix' }), style: 'primary' },
+        { text: { text: 'Merge as it is' }, value: JSON.stringify({ f: runId, a: 'keep' }) }
+      ]
+    });
+  });
+
+  it('lists a revision round’s findings without boxes or buttons', () => {
+    const { blocks } = slackFindingsMessage({ id: runId, round: 1 }, findings, place, false);
+    expect(blocks.some((block) => 'accessory' in block || block.type === 'actions')).toBe(false);
+    expect(sectionTexts(blocks)[0]).toBe('*Review round 1* found 2 things to fix. The next round fixes them.');
+  });
+
+  it('settles with the findings left as they are marked, or all of them left', () => {
+    const fixing = slackFindingsSettled({ round: 1 }, findings, place, [0], 'Milo Bedini');
+    expect(sectionTexts(fixing.blocks)[2]).toBe('*Could cut*\nAn unused export\n_Left as it is._');
+    expect(JSON.stringify(fixing.blocks.at(-1))).toContain('Fixing 1 of 2 findings, chosen by Milo Bedini.');
+    const kept = slackFindingsSettled({ round: 1 }, findings, place, null, 'Milo Bedini');
+    expect(JSON.stringify(kept.blocks.at(-1))).toContain('Left as they are, by Milo Bedini. Ready for you to merge.');
+    expect(kept.blocks.some((block) => block.type === 'actions')).toBe(false);
   });
 });
 

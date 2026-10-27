@@ -281,14 +281,39 @@ const notOnScreenSchema = z.looseObject({ notOnScreen: z.string().trim().min(1).
 
 export type VerifyDecision = { verify: boolean; skipped?: string };
 
+const criteriaSchema = z.looseObject({ criteria: z.array(z.looseObject({ result: z.string() })) });
+
+// Whether a verify run showed the whole change working: at least one criterion met and none not met. Anything less,
+// and a revision has to be shown on screen again.
+export const metEveryCriterion = (report: unknown): boolean => {
+  const results = (criteriaSchema.safeParse(report).data?.criteria ?? []).map(({ result }) =>
+    result
+      .replace(/[\s_]+/g, ' ')
+      .trim()
+      .toLowerCase()
+  );
+  return results.includes('met') && !results.includes('not met');
+};
+
 // Whether a delivered PR is verified in the app: when it touches a path that shows on screen, unless the implement
-// run said why nothing a person sees changed. Without that reason it's verified, as it always was.
-export const decideVerify = (paths: string[], changedFiles: string[], report: unknown): VerifyDecision => {
+// run said why nothing a person sees changed, or an earlier verify run on the work item already met every criterion
+// (`verifiedAt`, as the thread shows it): a revision for review findings doesn't redo that work.
+export const decideVerify = (
+  paths: string[],
+  changedFiles: string[],
+  report: unknown,
+  verifiedAt?: string
+): VerifyDecision => {
   if (!showsOnScreen(paths, changedFiles)) {
     return { verify: false };
   }
   const reason = notOnScreenSchema.safeParse(report).data?.notOnScreen?.replace(/\s+/g, ' ');
-  return reason ? { verify: false, skipped: reason } : { verify: true };
+  if (reason) {
+    return { verify: false, skipped: reason };
+  }
+  return verifiedAt
+    ? { verify: false, skipped: `already verified at ${verifiedAt}, with every criterion met` }
+    : { verify: true };
 };
 
 type StatusKey = keyof FactoryConfig['linear']['statuses'];
@@ -492,6 +517,8 @@ const findingSchema = z.looseObject({
 
 type Finding = z.infer<typeof findingSchema>;
 
+export type ReviewFinding = Finding;
+
 const reviewReportSchema = z.looseObject({
   verdict: z.enum(REVIEW_VERDICTS).nullish(),
   findings: z.array(z.unknown()).nullish()
@@ -511,6 +538,9 @@ const readReview = (report: unknown): { verdict: ReviewVerdict; fixable: Finding
 };
 
 export const reviewVerdict = (report: unknown): ReviewVerdict => readReview(report).verdict;
+
+// The findings the implement stage could fix: everything but those that need a human's decision.
+export const readFixableFindings = (report: unknown): Finding[] => readReview(report).fixable;
 
 const MAX_FINDINGS_IN_BRIEF = 25;
 const MAX_FIELD_LENGTH = 600;

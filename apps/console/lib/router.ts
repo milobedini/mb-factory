@@ -48,6 +48,8 @@ import {
   dispatchLapsesAt,
   emptyMentionText,
   escapeSlack,
+  findingsPrompt,
+  formatReleaseAt,
   GATE_CHANGES_QUESTION,
   GATE_GONE,
   governDispatch,
@@ -60,6 +62,7 @@ import {
   linearStatusFor,
   MAX_READY_ROWS,
   mentioning,
+  metEveryCriterion,
   modelFor,
   nextStepAfterRun,
   notAllowedText,
@@ -85,6 +88,7 @@ import {
   READY_UNREADABLE,
   RERUN_GONE,
   readBump,
+  readFixableFindings,
   readGate,
   readNextIssues,
   readQuestions,
@@ -102,6 +106,8 @@ import {
   shouldResume,
   shouldRetry,
   slackFiledText,
+  slackFindingsMessage,
+  slackFindingsSettled,
   slackFinishedText,
   slackGateMessage,
   slackGateSettled,
@@ -171,6 +177,7 @@ import { touchCard, withCards } from './redraw';
 import type { RunWithWorkItem } from './runs';
 import { findAnyRun, findRun } from './runs';
 import {
+  addSlackReaction,
   postSlackEphemeral,
   postSlackMessage,
   respondToSlack,
@@ -1216,7 +1223,8 @@ export const handleAgentSessionEvent = withCards(async (payload: unknown): Promi
   await handleReply(project, workItem, event.body, { via: 'linear' });
 });
 
-type ReplyFrom = { via: 'linear' } | { via: 'slack'; name: string };
+// `message` is the reply typed in the thread, acknowledged when it starts a run; a tapped button has none.
+type ReplyFrom = { via: 'linear' } | { via: 'slack'; name: string; message?: { channel: string; ts: string } };
 
 // The gate a stage reported last, read back from its run's report when the gate is answered.
 const reportedGate = async (workItem: WorkItem): Promise<Gate | undefined> => {
@@ -1283,6 +1291,11 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
     return;
   }
   await dispatchRun(project, await createRun(project, workItem, request));
+  if (from.via === 'slack' && from.message) {
+    const { channel, ts } = from.message;
+    // The card shows the run; the reaction shows this message started it.
+    await attempt('slack reaction', { issue: workItem.issueIdentifier }, () => addSlackReaction(channel, ts, 'eyes'));
+  }
   if (request.trigger === 'spec_approved') {
     await attempt('spec parts', { issue: workItem.issueIdentifier }, () => fileSpecParts(project, workItem));
   }
@@ -1347,7 +1360,11 @@ export const handleSlackMessage = withCards(async (payload: unknown): Promise<vo
   }
   const name = await slackUserName(reply.userId).catch(() => reply.userId);
   log('info', 'slack reply', { issue: workItem.issueIdentifier, user: reply.userId });
-  await handleReply(project, workItem, reply.body, { via: 'slack', name });
+  await handleReply(project, workItem, reply.body, {
+    via: 'slack',
+    name,
+    message: { channel: reply.channel, ts: reply.ts }
+  });
 });
 
 // A top-level mention is a request: it's filed in Linear and worked on in the mention's thread. The work item exists,
@@ -1822,6 +1839,75 @@ export const resumeFromSlack = withCards(async (userId: string): Promise<boolean
   return true;
 });
 
+const FINDINGS_GONE = 'That review has moved on, so nothing changed.';
+const NOTHING_TICKED = 'Nothing is ticked: tick a finding to fix, or choose Merge as it is.';
+
+// Fix ticked or Merge as it is, under the findings of the review the PR waits on: the ticked ones go to an implement
+// run as a revision would, and the next review round checks them. Only while nothing has run since that review.
+const handleFindingsTap = async (
+  action: Extract<SlackAction, { kind: 'findings' }>,
+  tellTapper: (text: string) => Promise<void>
+): Promise<void> => {
+  const found = await findRun(action.runId);
+  const workItem = found?.workItem;
+  const project = workItem && findProject(workItem.project);
+  if (!found || !workItem || !project || found.run.agent !== 'review') {
+    return;
+  }
+  if (!isAllowedSlackUser(project, action.userId)) {
+    log('info', 'slack tap from someone not allowed', { issue: workItem.issueIdentifier, user: action.userId });
+    await tellTapper(notAllowedText(project));
+    return;
+  }
+  log('info', 'slack tap', { issue: workItem.issueIdentifier, user: action.userId, kind: action.kind });
+  const [latest] = await getDb()
+    .select({ id: runs.id })
+    .from(runs)
+    .where(eq(runs.workItemId, workItem.id))
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  if (latest?.id !== found.run.id || workItem.stage !== 'awaiting_merge') {
+    await tellTapper(FINDINGS_GONE);
+    return;
+  }
+  const findings = readFixableFindings(found.run.report);
+  const ticked = findings.flatMap((_, index) => (action.unticked.includes(index) ? [] : [index]));
+  const fixing = action.choice === 'fix' ? ticked : null;
+  if (fixing?.length === 0) {
+    await tellTapper(NOTHING_TICKED);
+    return;
+  }
+  const name = await slackUserName(action.userId).catch(() => action.userId);
+  const round = workItem.reviewRounds;
+  const place = { repository: workItem.repository, branch: workItem.branch };
+  await Promise.all([
+    action.messageTs
+      ? editInThread(
+          project,
+          workItem,
+          action.messageTs,
+          slackFindingsSettled({ round }, findings, place, fixing, name)
+        )
+      : undefined,
+    postActivity(workItem, {
+      type: 'thought',
+      body: fixing
+        ? `${name} chose ${fixing.length} of the review’s ${findings.length} findings to fix, in Slack.`
+        : `${name} left the review’s findings as they are, in Slack.`
+    })
+  ]);
+  if (fixing) {
+    const chosen = findings.filter((_, index) => fixing.includes(index));
+    const request: RunRequest = {
+      agent: 'implement',
+      trigger: 'review_findings',
+      priority: 'in_flight',
+      prompt: findingsPrompt(round, chosen)
+    };
+    await dispatchRun(project, await createRun(project, workItem, request, found.run.id));
+  }
+};
+
 const handleTap = async (action: SlackAction, tellTapper: (text: string) => Promise<void>): Promise<void> => {
   if (action.kind === 'home') {
     await handleHomeTap(action, tellTapper);
@@ -1833,6 +1919,10 @@ const handleTap = async (action: SlackAction, tellTapper: (text: string) => Prom
   }
   if (action.kind === 'rerun') {
     await handleRerunTap(action.runId, action.userId, tellTapper);
+    return;
+  }
+  if (action.kind === 'findings') {
+    await handleFindingsTap(action, tellTapper);
     return;
   }
   const tapped = action.kind === 'question' ? await findQuestionWithWorkItem(action.questionId) : undefined;
@@ -1945,8 +2035,26 @@ const lockfileOnlyMerge = async (
   }
 };
 
-// Whether a delivered PR is verified, from GitHub's list of its files and the implement run's report. When GitHub
-// can't say, it's verified: a run spent for nothing costs less than a change nobody looked at.
+// When an earlier verify run on the work item met every criterion, as the thread shows the time.
+const verifiedAt = async (project: FactoryConfig, workItemId: string): Promise<string | undefined> => {
+  const done = await getDb()
+    .select({ report: runs.report, finishedAt: runs.finishedAt })
+    .from(runs)
+    .where(
+      and(
+        eq(runs.workItemId, workItemId),
+        eq(runs.agent, 'verify'),
+        eq(runs.status, 'finished'),
+        eq(runs.outcome, 'done')
+      )
+    )
+    .orderBy(desc(runs.finishedAt));
+  const verified = done.find(({ report }) => metEveryCriterion(report));
+  return verified?.finishedAt ? formatReleaseAt(verified.finishedAt, new Date(), project.timeZone) : undefined;
+};
+
+// Whether a delivered PR is verified, from GitHub's list of its files, the implement run's report and any earlier
+// verify run. When GitHub can't say, it's verified: a run spent for nothing costs less than a change nobody looked at.
 const needsVerify = async (
   project: FactoryConfig,
   run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null; report: unknown },
@@ -1963,7 +2071,8 @@ const needsVerify = async (
     return { verify: false };
   }
   try {
-    return decideVerify(project.verify.paths, await pullFiles(repository, prNumber), run.report);
+    const [files, verified] = await Promise.all([pullFiles(repository, prNumber), verifiedAt(project, workItem.id)]);
+    return decideVerify(project.verify.paths, files, run.report, verified);
   } catch (error) {
     log('warn', 'verify check failed', { issue: workItem.issueIdentifier, pr: prNumber, error: errorMessage(error) });
     return { verify: true };
@@ -2094,6 +2203,21 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       .update(workItems)
       .set({ gateSlackTs: ts ?? null })
       .where(eq(workItems.id, workItem.id));
+  }
+  // Review findings nobody has to decide on: chosen with a tap when the PR waits at the merge gate, listed when the next
+  // round takes them.
+  const findings = run.agent === 'review' && run.outcome === 'done' ? readFixableFindings(run.report) : [];
+  if (findings.length > 0 && (next.stage === 'awaiting_merge' || next.stage === 'building')) {
+    await replyInThread(
+      project,
+      workItem,
+      slackFindingsMessage(
+        { id: run.id, round: next.reviewRounds ?? workItem.reviewRounds },
+        findings,
+        { repository: workItem.repository, branch: workItem.branch },
+        next.stage === 'awaiting_merge'
+      )
+    );
   }
   if (next.request) {
     await dispatchRun(project, await createRun(project, workItem, next.request, run.id));

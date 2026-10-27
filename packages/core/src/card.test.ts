@@ -97,6 +97,21 @@ describe('workItemCard', () => {
     expect(card.text).toBe('TAS-38 Recipe details: running');
   });
 
+  it('follows the run that’s going, not a reply’s run queued behind it', () => {
+    const card = workItemCard(
+      input({
+        runs: [
+          run(),
+          run({ agent: 'implement', trigger: 'prompted', status: 'running', finishedAt: null }),
+          run({ agent: 'implement', trigger: 'prompted', status: 'queued', dispatchedAt: null, startedAt: null })
+        ],
+        hold: { reason: 'work_item_busy', releaseAt: null }
+      })
+    );
+    expect(track(card)).toContain(':tb-running: *Implement*');
+    expect(status(card)).toContain('*Implementing*');
+  });
+
   it('puts the title above the attachment, linked to the issue', () => {
     expect(texts(workItemCard(input()).blocks)).toEqual([
       '*<https://linear.app/tastebook/issue/TAS-38|TAS-38> Recipe details*'

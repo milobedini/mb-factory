@@ -162,6 +162,11 @@ const stepOf = (agent: AgentRole): number => {
   return index === -1 ? 0 : index;
 };
 
+// The run the card follows: one already going, ahead of any queued behind it (a second reply while it runs); otherwise
+// the latest.
+const currentRun = (runs: CardRun[]): CardRun | undefined =>
+  runs.findLast((run) => run.status === 'dispatched' || run.status === 'running') ?? runs.at(-1);
+
 // The run that's waiting on a person, or still going, decides the step; otherwise the stage does.
 const RUN_DECIDES: InboxEntry['kind'][] = ['questions', 'run_ended', 'reply_needed'];
 
@@ -199,7 +204,7 @@ const trackSteps = (
   entry: InboxEntry | undefined,
   status: CardStatus
 ): { name: string; state: StepState; current: boolean }[] => {
-  const latest = runs.at(-1);
+  const latest = currentRun(runs);
   const runDecides =
     latest !== undefined &&
     (stage === 'canceled' || isOpenRun(latest.status) || (entry !== undefined && RUN_DECIDES.includes(entry.kind)));
@@ -285,7 +290,7 @@ const waitingText = (input: CardInput, entry: InboxEntry | undefined, latest: Ca
 
 const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | undefined): string => {
   const { workItem, now, timeZone } = input;
-  const latest = input.runs.at(-1);
+  const latest = currentRun(input.runs);
   const pr = workItem.prNumber ? ` · PR #${workItem.prNumber}` : '';
   switch (status) {
     case 'queued':
@@ -352,7 +357,7 @@ export const linkButton = (actionId: string, text: string, url: string, primary 
 
 const cardButtons = (input: CardInput, status: CardStatus, entry: InboxEntry | undefined): SlackBlock[] => {
   const { workItem } = input;
-  const latest = input.runs.at(-1);
+  const latest = currentRun(input.runs);
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
   const runLog = latest?.actionsRunUrl ? [linkButton('run_log', 'Run log', latest.actionsRunUrl)] : [];
   if (status === 'waiting' && entry?.kind === 'questions') {
@@ -409,7 +414,7 @@ export type CardSummary = { status: CardStatus; entry: InboxEntry | undefined; l
 export const cardSummary = (input: CardInput): CardSummary => {
   const { workItem, runs, round } = input;
   const entry = inboxEntry(workItem, runs, round);
-  const status = cardStatus(workItem.stage, runs.at(-1), entry, input.hold !== null);
+  const status = cardStatus(workItem.stage, currentRun(runs), entry, input.hold !== null);
   return { status, entry, line: statusText(input, status, entry), buttons: cardButtons(input, status, entry) };
 };
 

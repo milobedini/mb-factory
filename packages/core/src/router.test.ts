@@ -19,6 +19,7 @@ import {
   formatReleaseAt,
   governDispatch,
   linearStatusFor,
+  metEveryCriterion,
   modelFor,
   neverStarted,
   nextStepAfterRun,
@@ -349,6 +350,42 @@ describe('decideVerify', () => {
 
   it('says nothing about a PR that never touches the screen', () => {
     expect(decideVerify(screen, ['backend/api.py'], { notOnScreen: reason })).toEqual({ verify: false });
+  });
+
+  it('skips verify once an earlier run met every criterion, saying when', () => {
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], null, '15:24')).toEqual({
+      verify: false,
+      skipped: 'already verified at 15:24, with every criterion met'
+    });
+  });
+
+  it('gives the implement run’s reason over the earlier verify', () => {
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], { notOnScreen: reason }, '15:24')).toEqual({
+      verify: false,
+      skipped: reason
+    });
+  });
+});
+
+describe('metEveryCriterion', () => {
+  const report = (...results: string[]) => ({ criteria: results.map((result) => ({ criterion: 'c', result })) });
+
+  it('holds when at least one criterion was met and none was not met', () => {
+    expect(metEveryCriterion(report('met', 'met'))).toBe(true);
+    expect(metEveryCriterion(report('met', 'unverified'))).toBe(true);
+  });
+
+  it('fails when a criterion was not met, however it is written', () => {
+    expect(metEveryCriterion(report('met', 'not met'))).toBe(false);
+    expect(metEveryCriterion(report('met', 'not_met'))).toBe(false);
+    expect(metEveryCriterion(report('Met', 'Not Met'))).toBe(false);
+  });
+
+  it('fails when nothing was met or the report has no criteria', () => {
+    expect(metEveryCriterion(report('unverified'))).toBe(false);
+    expect(metEveryCriterion(report())).toBe(false);
+    expect(metEveryCriterion({ outcome: 'done' })).toBe(false);
+    expect(metEveryCriterion(null)).toBe(false);
   });
 });
 

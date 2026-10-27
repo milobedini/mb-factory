@@ -6,6 +6,7 @@ import { slackChunks, slackMarkdown } from './gates';
 import type { AskedQuestion, PositionedQuestion } from './questions';
 import { FOR_ALL, FOR_THE_REST, laterThan, RECOMMENDED, topicOf } from './questions';
 import type { ReadyIssue } from './ready';
+import type { ReviewFinding } from './router';
 import type { AgentRole } from './stages';
 
 // Block Kit is plain JSON; the console only passes these through to Slack.
@@ -44,6 +45,8 @@ const buttonValueSchema = z.union([
   z.object({ w: z.uuid(), a: z.string().min(1) }),
   z.object({ g: z.uuid(), a: z.string().min(1) }),
   z.object({ r: z.uuid() }),
+  // Review findings: fix the ticked ones, or leave them all.
+  z.object({ f: z.uuid(), a: z.enum(['fix', 'keep']) }),
   z.object({ h: z.enum(HOME_ACTIONS) }),
   z.object({
     d: z
@@ -254,6 +257,124 @@ export const slackGateSettled = (gate: Gate, answer: string, by: string): SlackM
   blocks: [...gateSections(gate), context(`✓ ${escapeSlack(clip(oneLine(answer), 200))}, ${escapeSlack(by)}.`)]
 });
 
+const FINDING_BLOCK = /^finding_(\d+)$/;
+// Slack holds 50 blocks a message: the heading, the findings, a note of any more and the buttons.
+const MAX_FINDINGS_SHOWN = 40;
+const FINDING_FIELD_LIMIT = 600;
+
+const TIER_NAMES: Record<string, string> = {
+  blocking: 'Blocking',
+  should_fix: 'Should fix',
+  nit: 'Nit',
+  could_cut: 'Could cut'
+};
+
+export type FindingsPlace = { repository: string; branch: string | null };
+
+const findingPlace = ({ path, line }: ReviewFinding, { repository, branch }: FindingsPlace): string => {
+  if (!path) {
+    return '';
+  }
+  const label = escapeSlack(`${path}${line ? `:${line}` : ''}`);
+  return branch
+    ? ` <https://github.com/${repository}/blob/${encodeURI(branch)}/${encodeURI(path)}${line ? `#L${line}` : ''}|${label}>`
+    : ` \`${label}\``;
+};
+
+const findingText = (finding: ReviewFinding, place: FindingsPlace, note?: string): string =>
+  [
+    `*${TIER_NAMES[finding.tier ?? ''] ?? 'Finding'}*${findingPlace(finding, place)}`,
+    escapeSlack(clip(oneLine(finding.summary), FINDING_FIELD_LIMIT)),
+    finding.fix ? `_Fix:_ ${escapeSlack(clip(oneLine(finding.fix), FINDING_FIELD_LIMIT))}` : undefined,
+    note
+  ]
+    .filter((part) => part !== undefined)
+    .join('\n');
+
+const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`;
+
+const moreFindings = (findings: ReviewFinding[]): SlackBlock[] =>
+  findings.length > MAX_FINDINGS_SHOWN
+    ? [context(`…and ${findings.length - MAX_FINDINGS_SHOWN} more in the PR’s review, fixed with the ticked ones.`)]
+    : [];
+
+const FIX_OPTION = { text: { type: 'plain_text', text: 'Fix' }, value: 'fix' };
+
+// Review findings left for a person (Nits, Could cut, and any a revision round can't take): each with a Fix box,
+// ticked to start, then Fix ticked or Merge as it is. A revision round's own findings are listed without them.
+export const slackFindingsMessage = (
+  run: { id: string; round: number },
+  findings: ReviewFinding[],
+  place: FindingsPlace,
+  choosable: boolean
+): SlackMessage => {
+  const shown = findings.slice(0, MAX_FINDINGS_SHOWN);
+  const heading = choosable
+    ? `*Review round ${run.round}* left ${plural(findings.length, 'finding')} for you. Untick any to leave as they are.`
+    : `*Review round ${run.round}* found ${plural(findings.length, 'thing')} to fix. The next round fixes them.`;
+  return {
+    text: choosable ? `Review left ${plural(findings.length, 'finding')} for you.` : 'Review found things to fix.',
+    blocks: [
+      section(heading),
+      ...shown.map((finding, index) => ({
+        type: 'section',
+        block_id: `finding_${index}`,
+        text: { type: 'mrkdwn', text: findingText(finding, place) },
+        ...(choosable
+          ? {
+              accessory: {
+                type: 'checkboxes',
+                action_id: `tick_${index}`,
+                options: [FIX_OPTION],
+                initial_options: [FIX_OPTION]
+              }
+            }
+          : {})
+      })),
+      ...moreFindings(findings),
+      ...(choosable
+        ? [
+            {
+              type: 'actions',
+              elements: [
+                button('findings_fix', 'Fix ticked', { f: run.id, a: 'fix' }, true),
+                button('findings_keep', 'Merge as it is', { f: run.id, a: 'keep' })
+              ]
+            }
+          ]
+        : [])
+    ]
+  };
+};
+
+// The findings once chosen: the list stays for the record, the boxes and buttons go. `fixing` is null when they were
+// all left as they are.
+export const slackFindingsSettled = (
+  run: { round: number },
+  findings: ReviewFinding[],
+  place: FindingsPlace,
+  fixing: number[] | null,
+  by: string
+): SlackMessage => {
+  const left = (index: number) => fixing === null || !fixing.includes(index);
+  const outcome =
+    fixing === null
+      ? `✓ Left as they are, by ${escapeSlack(by)}. Ready for you to merge.`
+      : `✓ Fixing ${fixing.length} of ${plural(findings.length, 'finding')}, chosen by ${escapeSlack(by)}.`;
+  return {
+    text: fixing === null ? 'Review findings left as they are.' : 'Fixing the chosen review findings.',
+    blocks: [
+      section(`*Review round ${run.round}* left ${plural(findings.length, 'finding')}.`),
+      ...findings
+        .slice(0, MAX_FINDINGS_SHOWN)
+        .map((finding, index) =>
+          section(findingText(finding, place, fixing !== null && left(index) ? '_Left as it is._' : undefined))
+        ),
+      context(outcome)
+    ]
+  };
+};
+
 // A thread message that waits on someone, with them mentioned first, so Slack notifies them: the bot starts each
 // thread, so the person isn't in it unless they've replied. The notification shows `text`; the message, its first
 // section.
@@ -319,7 +440,7 @@ const messageEventSchema = z.looseObject({
   })
 });
 
-export type SlackThreadReply = { channel: string; threadTs: string; userId: string; body: string };
+export type SlackThreadReply = { channel: string; threadTs: string; ts: string; userId: string; body: string };
 
 // A person's reply in a thread. Bots (the factory included), edits, joins and top-level messages are not replies.
 export const parseSlackThreadReply = (payload: unknown): SlackThreadReply | undefined => {
@@ -328,7 +449,9 @@ export const parseSlackThreadReply = (payload: unknown): SlackThreadReply | unde
     return undefined;
   }
   const body = slackPlainText(event.text);
-  return body ? { channel: event.channel, threadTs: event.thread_ts, userId: event.user, body } : undefined;
+  return body
+    ? { channel: event.channel, threadTs: event.thread_ts, ts: event.ts, userId: event.user, body }
+    : undefined;
 };
 
 const actionPayloadSchema = z.looseObject({
@@ -346,8 +469,25 @@ const actionPayloadSchema = z.looseObject({
   response_url: z.url({ protocol: /^https$/ }).nullish(),
   view: z.looseObject({ type: z.string() }).nullish(),
   container: z.looseObject({ is_ephemeral: z.boolean().nullish() }).nullish(),
-  actions: z.array(z.looseObject({ value: z.string().nullish(), action_ts: z.string().min(1) })).min(1)
+  actions: z.array(z.looseObject({ value: z.string().nullish(), action_ts: z.string().min(1) })).min(1),
+  // Every stateful element in the message as it is now, such as the review findings' Fix boxes.
+  state: z
+    .looseObject({
+      values: z.record(
+        z.string(),
+        z.record(z.string(), z.looseObject({ selected_options: z.array(z.unknown()).nullish() }))
+      )
+    })
+    .nullish()
 });
+
+// The findings whose Fix box was cleared. A box Slack sends no state for is as it was drawn: ticked.
+const untickedFindings = (state: z.infer<typeof actionPayloadSchema>['state']): number[] =>
+  Object.entries(state?.values ?? {}).flatMap(([blockId, elements]) => {
+    const index = FINDING_BLOCK.exec(blockId)?.[1];
+    const cleared = Object.values(elements).some(({ selected_options }) => selected_options?.length === 0);
+    return index !== undefined && cleared ? [Number(index)] : [];
+  });
 
 // The message a tapped button sits in, as Slack sends it back, so it can be redrawn without being rebuilt.
 export type TappedMessage = { ts: string; text: string; blocks: SlackBlock[] };
@@ -368,6 +508,8 @@ export type SlackAction = {
   | { kind: 'gate'; workItemId: string; body: string }
   | { kind: 'delegate'; identifiers: string[]; message: TappedMessage | null }
   | { kind: 'rerun'; runId: string }
+  // `unticked` are the findings whose Fix box was cleared, by their index in the review's report.
+  | { kind: 'findings'; runId: string; choice: 'fix' | 'keep'; unticked: number[]; messageTs: string | null }
   | { kind: 'home'; action: HomeAction }
 );
 
@@ -409,6 +551,16 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
   }
   if ('r' in value) {
     return { ...base, kind: 'rerun', runId: value.r };
+  }
+  if ('f' in value) {
+    return {
+      ...base,
+      kind: 'findings',
+      runId: value.f,
+      choice: value.a,
+      unticked: untickedFindings(parsed.state),
+      messageTs: parsed.message?.ts ?? null
+    };
   }
   if ('g' in value) {
     return { ...base, kind: 'gate', workItemId: value.g, body: value.a };

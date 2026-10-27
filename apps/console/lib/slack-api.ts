@@ -20,6 +20,11 @@ const callSlack = async (method: string, body: Record<string, unknown>): Promise
   return result;
 };
 
+// Reacts to a message: an acknowledgement that, unlike a reply, notifies nobody following the thread.
+export const addSlackReaction = async (channel: string, ts: string, name: string): Promise<void> => {
+  await callSlack('reactions.add', { channel, timestamp: ts, name });
+};
+
 // Returns the message's `ts`, which is also the thread's ID when the message starts one. `text` is the notification
 // and fallback when there are blocks.
 export const postSlackMessage = async ({
