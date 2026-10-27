@@ -65,7 +65,10 @@ Don't post questions yourself. Put them in the stage report's `questions` and re
 
 ## Gates
 
-A **gate** is different: spec approval, slicing approval. A gate needs an explicit answer, so post it yourself as one elicitation with a `select` (`--option "Approve=Approve" --option "Change something=Change something"`, label and value the same) and still end with the default you'd pick. Silence never passes a gate. A gate's report has no `questions`.
+A **gate** is different: spec approval, slicing approval. A gate needs an explicit answer, and silence never passes it. A gate's report has no `questions`.
+
+- **Spec approval:** post it yourself as one elicitation with a `select` (`--option "Approve=Approve" --option "Change something=Change something"`, label and value the same) and still end with the default you'd pick.
+- **Any other gate**, such as slicing approval: don't post it. Put it in the report's `gate` as `{ "body": "<markdown>", "options": ["<your default>", …] }` (two to four options, each under 75 characters) and report `needs_input`; the router posts it in the session and the Slack thread with one-tap options. A bare `Change something` is answered by the router asking what to change.
 
 The human may answer a gate in free text instead of picking an option. Read it for intent, except at the spec approval gate, which the router reads (see the `spec` agent).
 
