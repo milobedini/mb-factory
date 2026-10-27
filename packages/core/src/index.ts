@@ -270,6 +270,7 @@ export {
   readSpecReply,
   resumeRequestFor,
   retryText,
+  reverifiesOnRequest,
   reviewThreadsToResolve,
   reviewVerdict,
   runRequestFor,

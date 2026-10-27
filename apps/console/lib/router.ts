@@ -121,6 +121,7 @@ import {
   readSpecParts,
   resumeRequestFor,
   retryText,
+  reverifiesOnRequest,
   reviewersFor,
   reviewThreadsToResolve,
   reviewVerdict,
@@ -2560,7 +2561,7 @@ const needsVerify = async (
   try {
     const [files, verified] = await Promise.all([
       pullFiles(repository, prNumber),
-      run.trigger === 'review_findings' ? verifiedAt(project, workItem.id) : undefined
+      reverifiesOnRequest(run.trigger) ? verifiedAt(project, workItem.id) : undefined
     ]);
     return decideVerify(project.verify.paths, files, run.report, verified);
   } catch (error) {

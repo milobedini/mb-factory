@@ -30,6 +30,7 @@ import {
   queuedThought,
   readSpecReply,
   retryText,
+  reverifiesOnRequest,
   reviewThreadsToResolve,
   runRequestFor,
   shouldMoveIssue,
@@ -328,6 +329,21 @@ describe('modelFor', () => {
   it('falls back to the triage model for slicing when none is set', () => {
     const { slicing: _, ...models } = config.models;
     expect(modelFor({ ...config, models }, 'triage', false, 'Slice Real recipes')).toBe('sonnet');
+  });
+});
+
+describe('reverifiesOnRequest', () => {
+  // TAS-40, 27 Oct: merging main in to clear a GLOSSARY.md conflict re-ran verify, though main's changes were verified
+  // on their own PRs and the resolution changed nothing on screen.
+  it('reuses a verify that met every criterion after review fixes and conflict fixes', () => {
+    expect(reverifiesOnRequest('review_findings')).toBe(true);
+    expect(reverifiesOnRequest('conflict')).toBe(true);
+  });
+
+  it('verifies any other delivery as usual', () => {
+    expect(reverifiesOnRequest('delegated')).toBe(false);
+    expect(reverifiesOnRequest('ci_failed')).toBe(false);
+    expect(reverifiesOnRequest('answered')).toBe(false);
   });
 });
 

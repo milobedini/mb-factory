@@ -301,10 +301,16 @@ export const metEveryCriterion = (report: unknown): boolean => {
   return results.includes('met') && !results.includes('not met');
 };
 
+// Revisions that don't redo a verify run that met every criterion, unless they ask for it with `verifyAgain`: fixing
+// review findings, and merging the default branch in to clear a conflict (its own changes were verified on their PRs).
+const REVERIFY_ON_REQUEST: RunTrigger[] = ['review_findings', 'conflict'];
+
+export const reverifiesOnRequest = (trigger: RunTrigger): boolean => REVERIFY_ON_REQUEST.includes(trigger);
+
 // Whether a delivered PR is verified in the app: when the implement run asks for it again, with why; otherwise when it
 // touches a path that shows on screen, unless the implement run said why nothing a person sees changed, or an earlier
-// verify run on the work item already met every criterion (`verifiedAt`, as the thread shows it): a revision for
-// review findings doesn't redo that work.
+// verify run on the work item already met every criterion (`verifiedAt`, as the thread shows it), for a revision that
+// reverifies only on request.
 export const decideVerify = (
   paths: string[],
   changedFiles: string[],
