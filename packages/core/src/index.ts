@@ -191,7 +191,7 @@ export {
   STAGE_WORKFLOW
 } from './oidc';
 export type { SpecPart } from './parts';
-export { partDescription, partsFiledText, readSpecParts } from './parts';
+export { partDescription, partStateId, partsFiledText, readSpecParts } from './parts';
 export type {
   AfterAnswers,
   AnswerResult,

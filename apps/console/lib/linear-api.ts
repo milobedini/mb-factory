@@ -1,4 +1,4 @@
-import { decryptSecret, encryptSecret } from '@mb-factory/core';
+import { decryptSecret, encryptSecret, partStateId } from '@mb-factory/core';
 import { eq } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
@@ -349,7 +349,7 @@ type ParentForParts = {
   issue: {
     id: string;
     identifier: string;
-    team: { id: string };
+    team: { id: string; states: { nodes: { id: string; position: number }[] } };
     project: { id: string } | null;
     children: { nodes: { id: string }[] };
   } | null;
@@ -358,7 +358,7 @@ type ParentForParts = {
 
 export type SubIssue = { title: string; description: string; estimate: number | null };
 
-// The later parts of a split issue, as its sub-issues in its project, each blocked by the part before (the first by
+// The later parts of a split issue, as its sub-issues in its project and Backlog, each blocked by the part before (the first by
 // the issue itself), undelegated so each is delegated when it's ready. Nothing is filed when the issue already has
 // sub-issues, so approving the same spec twice files them once.
 export const fileSubIssues = async (
@@ -368,7 +368,7 @@ export const fileSubIssues = async (
 ): Promise<CreatedIssue[]> => {
   const { issue: parent, issueLabels } = await linearGraphql<ParentForParts>(
     organizationId,
-    'query ParentForParts($id: String!) { issue(id: $id) { id identifier team { id } project { id } children(first: 1) { nodes { id } } } issueLabels(filter: { name: { eqIgnoreCase: "factory" } }) { nodes { id name team { id } } } }',
+    'query ParentForParts($id: String!) { issue(id: $id) { id identifier team { id states(filter: { type: { eq: "backlog" } }) { nodes { id position } } } project { id } children(first: 1) { nodes { id } } } issueLabels(filter: { name: { eqIgnoreCase: "factory" } }) { nodes { id name team { id } } } }',
     { id: parentId }
   );
   if (!parent) {
@@ -378,6 +378,7 @@ export const fileSubIssues = async (
     return [];
   }
   const labelIds = await labelIdsFor(organizationId, parent.team.id, ['factory'], issueLabels.nodes);
+  const stateId = partStateId(parent.team.states.nodes);
   // One after another: each part's blocker is the one filed before it.
   return parts.reduce<Promise<CreatedIssue[]>>(async (filing, { title, description, estimate }) => {
     const filed = await filing;
@@ -391,6 +392,7 @@ export const fileSubIssues = async (
           title,
           description,
           labelIds,
+          ...(stateId ? { stateId } : {}),
           ...(parent.project ? { projectId: parent.project.id } : {}),
           ...(estimate === null ? {} : { estimate })
         }

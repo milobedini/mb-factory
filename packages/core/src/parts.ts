@@ -53,6 +53,11 @@ export const partDescription = (
     `The PR's first line is \`Fixes <this issue>\`, so each part closes its own issue.`
   ].join('\n');
 
+// Parts are filed in the team's first Backlog status, so each is ready to delegate once unblocked; without one, Linear
+// would put an issue filed by the app in Triage, as work nobody has accepted yet.
+export const partStateId = (backlogStates: { id: string; position: number }[]): string | undefined =>
+  backlogStates.toSorted((a, b) => a.position - b.position)[0]?.id;
+
 // The thread's note once the parts are filed.
 export const partsFiledText = (parent: { identifier: string }, filed: { identifier: string; url: string }[]): string =>
   `Split into ${filed.length + 1} parts: ${parent.identifier} is part 1, and I filed ${filed

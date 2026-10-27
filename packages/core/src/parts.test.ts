@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { partDescription, partsFiledText, readSpecParts } from './parts';
+import { partDescription, partStateId, partsFiledText, readSpecParts } from './parts';
 
 describe('readSpecParts', () => {
   it('reads the later parts in order, with their sizes as Linear estimates', () => {
@@ -46,5 +46,17 @@ describe('part text', () => {
     ).toBe(
       'Split into 3 parts: TAS-29 is part 1, and I filed <https://linear.app/t/TAS-30|TAS-30> (part 2), <https://linear.app/t/TAS-31|TAS-31> (part 3) as sub-issues. Each is posted in the channel to delegate once the one before merges.'
     );
+  });
+});
+
+describe('partStateId', () => {
+  it("files parts in the team's first Backlog status, so they don't land in Triage", () => {
+    expect(
+      partStateId([
+        { id: 'later', position: 2 },
+        { id: 'backlog', position: 0 }
+      ])
+    ).toBe('backlog');
+    expect(partStateId([])).toBeUndefined();
   });
 });
