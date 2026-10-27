@@ -37,12 +37,20 @@ describe('readAskReport', () => {
     });
   });
 
-  it('takes out anything that would notify people', () => {
+  it('makes anything that would notify people show as typed', () => {
     const read = readAskReport({
       ...report,
-      answer: '<!channel> Ask <@U0CBS3FN806> or <!subteam^S1|devs>, <!date^1^{ago}|then>'
+      answer: '<!channel> Ask <@U0CBS3FN806> or <!subteam^S1|devs>, <!date^1^{ago}|then> <https://x.dev|x>'
     });
-    expect(read?.answer).toBe('Ask  or , <!date^1^{ago}|then>');
+    expect(read?.answer).toBe(
+      '&lt;!channel> Ask &lt;@U0CBS3FN806> or &lt;!subteam^S1|devs>, <!date^1^{ago}|then> <https://x.dev|x>'
+    );
+  });
+
+  it('can’t be beaten by nesting one form in another', () => {
+    expect(readAskReport({ ...report, answer: '<<@U1>!here> <https://x.dev|<!channel>>' })?.answer).toBe(
+      '&lt;&lt;@U1>!here> &lt;https://x.dev|&lt;!channel>>'
+    );
   });
 
   it('keeps an answer whose ticket or head is malformed, and refuses a report with no answer', () => {

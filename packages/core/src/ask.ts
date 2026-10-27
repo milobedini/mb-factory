@@ -47,9 +47,11 @@ export type AskTicket = { title: string; request: string };
 
 export type AskReport = { answer: string; head: string | null; ticket: AskTicket | null };
 
-// The agent read public repo and Linear text to write its answer, so nothing in it may notify anyone: broadcasts
-// (`<!here>`, `<!channel>`, user groups) and member mentions are taken out. Dates stay, since they only format.
-const quiet = (text: string): string => text.replace(/<!(?!date\^)[^>]*>/g, '').replace(/<@[^>]*>/g, '');
+// The agent read public repo and Linear text to write its answer, so nothing in it may notify anyone. Slack only
+// reads `<…>` as a mention, broadcast or link when the `<` is literal, so every `<` that doesn't open a web link or a
+// date is written as `&lt;` and shows as typed. Removing the forms instead could be beaten by nesting one in another.
+const quiet = (text: string): string =>
+  text.replace(/<(?!(?:https?:\/\/[^<>|\s]+(?:\|[^<>]*)?|!date\^[^<>]*)>)/g, '&lt;');
 
 // A run's report as an answer; undefined when it holds none.
 export const readAskReport = (report: unknown): AskReport | undefined => {
@@ -257,7 +259,9 @@ export const ASK_TICKET_GONE = 'That ticket was already filed.';
 // the agent wrote.
 export const slackToMarkdown = (text: string): string => {
   const decode = (part: string): string => part.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-  const pattern = /<(https?:\/\/[^|>\s]+)(?:\|([^>]*))?>/g;
+  // A target with brackets, quotes or angle brackets could close the Markdown link early and start an image after it,
+  // so only plain URLs become links.
+  const pattern = /<(https?:\/\/[^|>\s()[\]<"']+)(?:\|([^>]*))?>/g;
   const pieces = [...text.matchAll(pattern)].reduce<{ out: string; from: number }>(
     ({ out, from }, match) => {
       const [whole, url = '', label] = match;
