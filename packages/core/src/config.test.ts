@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { parseFactoryConfig, reviewersFor } from './config';
+import { coAuthorFor, parseFactoryConfig, reviewersFor } from './config';
 
 const tastebookConfig = readFileSync(
   fileURLToPath(new URL('../../../projects/tastebook/factory.yaml', import.meta.url)),
@@ -50,6 +50,23 @@ describe('verify', () => {
       .replace(/\nverify:\n {2}paths:\n {4}- frontend\/\n/, '\n')
       .replace('  verify: sonnet\n', '');
     expect(parseFactoryConfig(without).verify).toBeUndefined();
+  });
+});
+
+describe('people', () => {
+  const milo = 'Milo Bedini <89992629+milobedini@users.noreply.github.com>';
+
+  it('credits the assignee the project lists, by email in any case, and nobody else', () => {
+    const config = parseFactoryConfig(tastebookConfig);
+    expect(coAuthorFor(config, 'MiloBedini64@gmail.com')).toBe(milo);
+    expect(coAuthorFor(config, 'someone@example.com')).toBeUndefined();
+    expect(coAuthorFor(config, null)).toBeUndefined();
+  });
+
+  it('needs a git identity as "Name <email>", and lists nobody by default', () => {
+    expect(() => parseFactoryConfig(tastebookConfig.replace(milo, 'milobedini'))).toThrow(/people/);
+    const without = tastebookConfig.replace(/\npeople:\n(?: {2}.*\n| {4}.*\n)+/, '\n');
+    expect(parseFactoryConfig(without).people).toEqual([]);
   });
 });
 

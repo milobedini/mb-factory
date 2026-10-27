@@ -78,6 +78,16 @@ export const factoryConfigSchema = z
         canceled: z.string().min(1)
       })
     }),
+    // The people the factory credits as co-author on its commits: a Linear member (by email) and their git identity,
+    // with the noreply address GitHub links to their account. Someone not listed is credited nowhere.
+    people: z
+      .array(
+        z.object({
+          linear: z.email(),
+          git: z.string().regex(/^[^<>\n]+ <[^<>\s]+@[^<>\s]+>$/, { message: 'not "Name <email>"' })
+        })
+      )
+      .default([]),
     slack: z
       .object({
         channel: z.string().min(1),
@@ -145,3 +155,7 @@ export const parseFactoryConfig = (source: string): FactoryConfig => factoryConf
 export const reviewersFor = ({ repositories }: FactoryConfig, repository: string): string[] =>
   repositories.find(({ owner, name }) => `${owner}/${name}`.toLowerCase() === repository.toLowerCase())?.reviewers ??
   [];
+
+// The git identity to credit on a work item's commits: the person it's assigned to, when the project lists them.
+export const coAuthorFor = (config: Pick<FactoryConfig, 'people'>, email: string | null): string | undefined =>
+  email ? config.people.find(({ linear }) => linear.toLowerCase() === email.toLowerCase())?.git : undefined;

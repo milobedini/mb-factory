@@ -18,6 +18,7 @@ Your prompt is the brief. It carries:
 - `prompt`: the human's latest message in the session or thread, verbatim, when the trigger is `prompted`; with `spec_approved`, the suggestions the human approved the spec with, if any; with `review_findings`, the findings to fix; with `ci_failed`, the failed workflow run; with `conflict`, the base branch to merge; with `answered`, each question you reported and its answer.
 - `pr` and `branch`, once they exist.
 - `round`: the review round (1 or 2), for review and revise runs.
+- `co-author`: `Name <email>` of the person the issue is assigned to, when the project lists them. Credit them on every commit as `git-text` says.
 
 Environment: `LINEAR_ACCESS_TOKEN` (masked), `GH_TOKEN`, `FACTORY_REPORT_PATH`. A brief field that is missing means it doesn't exist yet. Never print a token.
 

@@ -137,6 +137,21 @@ jobs:
             echo "EVIDENCE_URL_PREFIX=https://${STORE,,}.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/"
           } >> "$GITHUB_ENV"
 
+      - name: Name the factory app's bot
+        id: bot
+        # Its commits show the project's own factory bot rather than github-actions[bot].
+        if: steps.app-token.outcome == 'success'
+        # Without it the commits keep the action's default name; the run goes on.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          id=$(gh api "users/${SLUG}%5Bbot%5D" --jq .id)
+          [[ "$id" =~ ^[0-9]+$ ]] || { echo "::error::No bot user for the app $SLUG"; exit 1; }
+          echo "name=${SLUG}[bot]" >> "$GITHUB_OUTPUT"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
       - name: Run the stage
         id: claude
         timeout-minutes: 50
@@ -145,6 +160,9 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Empty without the factory app, which leaves the action to its own OIDC exchange.
           github_token: ${{ steps.app-token.outputs.token }}
+          # The action's own defaults when there's no factory app.
+          bot_id: ${{ steps.bot.outputs.id || '41898282' }}
+          bot_name: ${{ steps.bot.outputs.name || 'claude[bot]' }}
           prompt: ${{ inputs.prompt }}
           claude_args: |
             --model ${{ inputs.model }}

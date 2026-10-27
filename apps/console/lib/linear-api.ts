@@ -438,6 +438,16 @@ export const setBlockedLabel = async (organizationId: string, issueId: string, b
   );
 };
 
+// The email of the person an issue is assigned to, or null when nobody is.
+export const issueAssigneeEmail = async (organizationId: string, issueId: string): Promise<string | null> => {
+  const { issue } = await linearGraphql<{ issue: { assignee: { email: string } | null } | null }>(
+    organizationId,
+    'query IssueAssignee($id: String!) { issue(id: $id) { assignee { email } } }',
+    { id: issueId }
+  );
+  return issue?.assignee?.email ?? null;
+};
+
 // The issue's workflow state type (`triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled`), or null when
 // Linear can't find it.
 export const issueStateType = async (organizationId: string, issueId: string): Promise<string | null> => {

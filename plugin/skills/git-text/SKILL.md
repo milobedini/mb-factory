@@ -10,7 +10,7 @@ The repo's own rules win: read `AGENTS.md` and `.github/pull_request_template.md
 ## Everywhere
 
 - British English. Specific, not vague: read the diff before writing, and name what changed.
-- No AI attribution of any kind: no "Claude", no "AI", no `Co-Authored-By` trailer, no "Generated with" footer, even when a tool or harness adds one by default. Strip it. Traceability comes from the `factory` label and the console's run records.
+- No AI attribution of any kind: no "Claude", no "AI", no AI `Co-Authored-By` trailer, no "Generated with" footer, even when a tool or harness adds one by default. Strip it. Traceability comes from the `factory` label and the console's run records. The only trailer allowed is the person the brief credits (see Commits).
 - Write `and`, not `&`. No Oxford comma.
 
 ## Linear IDs
@@ -27,6 +27,7 @@ Use the issue's Linear branch name (the `branchName` field) when the spec stage 
 
 - **Summary:** imperative, capitalised (`Fix…`, `Add…`), about 50 characters, no full stop.
 - **Body:** a blank line, then one or two plain sentences on why, wrapped at about 72 columns. Skip it for a trivial change. End with the issue ID: `TAS-123`.
+- **Credit:** when the brief has a `co-author`, end every commit message with a blank line and `Co-authored-by: <co-author>`, copied exactly, including on a commit with no body. It credits the person the work is for. Never add any other co-author, and none when the brief has no `co-author`.
 - **One logical unit per commit.** A refactor goes in its own commit before the behaviour change that needs it. A bug's failing test goes in the same commit as its fix, so no commit fails CI.
 - **Review fixes:** one commit per finding, named for what it fixes, with a body saying why the point held. Two fixes in the same file share a commit.
 - Stage by path (`git add <paths>`). Never amend, rebase or force-push a pushed commit.

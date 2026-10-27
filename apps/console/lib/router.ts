@@ -31,6 +31,7 @@ import {
   canRerun,
   ciHandOverText,
   closingActivity,
+  coAuthorFor,
   conflictFixesSince,
   conflictHandOverText,
   consecutiveCiFixes,
@@ -153,6 +154,7 @@ import {
   findAppUserId,
   findUserIdByEmail,
   hasClosingActivity,
+  issueAssigneeEmail,
   moveIssueToStatus,
   setBlockedLabel
 } from './linear-api';
@@ -485,6 +487,20 @@ const startRun = async (
     .set({ releasedAt: now })
     .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)));
 
+  // Credits the person the work is for on its commits; a lookup that fails only loses the credit.
+  const coAuthor =
+    project.people.length > 0
+      ? coAuthorFor(
+          project,
+          await issueAssigneeEmail(workItem.linearOrganizationId, workItem.linearIssueId).catch((error: unknown) => {
+            log('warn', 'linear assignee lookup failed', {
+              issue: workItem.issueIdentifier,
+              error: errorMessage(error)
+            });
+            return null;
+          })
+        )
+      : undefined;
   const payload = buildDispatchPayload({
     runId: run.id,
     model,
@@ -496,7 +512,8 @@ const startRun = async (
       prompt: run.prompt ?? undefined,
       pr: workItem.prNumber ?? undefined,
       branch: workItem.branch ?? undefined,
-      round: briefRound(run, workItem.reviewRounds)
+      round: briefRound(run, workItem.reviewRounds),
+      coAuthor
     }
   });
   try {

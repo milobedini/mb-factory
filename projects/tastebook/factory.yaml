@@ -22,6 +22,12 @@ linear:
 
 timeZone: Europe/London
 
+# Credited as co-author on the factory's commits for issues assigned to them. `git` is GitHub's noreply address,
+# so the commits count on their profile without publishing an email.
+people:
+  - linear: milobedini64@gmail.com
+    git: Milo Bedini <89992629+milobedini@users.noreply.github.com>
+
 slack:
   channel: "#tastebook-factory"
   channelId: C0CBSE2Q6FQ

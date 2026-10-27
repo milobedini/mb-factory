@@ -13,6 +13,8 @@ export type Brief = {
   pr?: number;
   branch?: string;
   round?: number;
+  // `Name <email>` of the person the work is for, credited on every commit.
+  coAuthor?: string;
 };
 
 // A scheduled job's brief: no issue or session, just the slot it fills and where the last run of it got to.
@@ -43,7 +45,7 @@ const indent = (text: string): string =>
 // Keeps a field on its own line, so no value can add lines that read as other brief fields.
 const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
-const renderBrief = ({ agent, issue, session, trigger, prompt, pr, branch, round }: Brief): string =>
+const renderBrief = ({ agent, issue, session, trigger, prompt, pr, branch, round, coAuthor }: Brief): string =>
   [
     `stage: ${agent}`,
     `issue: ${oneLine(issue.identifier)} ${oneLine(issue.url)}`,
@@ -52,6 +54,7 @@ const renderBrief = ({ agent, issue, session, trigger, prompt, pr, branch, round
     pr === undefined ? undefined : `pr: ${pr}`,
     branch === undefined ? undefined : `branch: ${oneLine(branch)}`,
     round === undefined ? undefined : `round: ${round}`,
+    coAuthor === undefined ? undefined : `co-author: ${oneLine(coAuthor)}`,
     prompt === undefined ? undefined : `prompt: |\n${indent(prompt)}`
   ]
     .filter((line) => line !== undefined)
