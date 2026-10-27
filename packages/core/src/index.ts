@@ -232,7 +232,6 @@ export {
   showsOnScreen,
   slackFinishedText,
   slackReplyText,
-  slackStartedText,
   slackThreadText,
   stageForAgent,
   startedThought,

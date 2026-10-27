@@ -111,7 +111,6 @@ import {
   slackReplyText,
   slackSpecGateMessage,
   slackSpecGateSettled,
-  slackStartedText,
   slackThreadText,
   specUrl,
   stageAfterPrClosed,
@@ -553,10 +552,11 @@ const startRun = async (
   }
   log('info', 'run dispatched', { runId: run.id, issue: workItem.issueIdentifier, model, downshift });
 
+  // The card says what's running and why; a reply would notify everyone following the thread.
+  touchCard(workItem.id);
   const stage = stageForAgent(run.agent);
   await Promise.all([
     postActivity(workItem, { type: 'thought', body: startedThought(run.agent) }),
-    replyInThread(project, workItem, slackStartedText(run, briefRound(run, workItem.reviewRounds))),
     stage ? moveWorkItem(project, workItem, stage) : undefined
   ]);
   return 'started';

@@ -749,27 +749,9 @@ const escapeSlack = (text: string): string => text.replace(/&/g, '&amp;').replac
 
 const slackLink = (url: string, label: string): string => `<${url}|${escapeSlack(label)}>`;
 
-// The thread's first message; each run then replies in it.
+// The thread's first message, until the card replaces it.
 export const slackThreadText = (issue: { identifier: string; url: string; title: string | null }): string =>
   `${slackLink(issue.url, issue.identifier)}${issue.title ? ` ${escapeSlack(issue.title)}` : ''}`;
-
-const STARTED_BECAUSE: Record<RunTrigger, (round: number | undefined) => string> = {
-  delegated: () => '',
-  prompted: () => ' for your reply',
-  spec_approved: () => ' now the spec is approved',
-  delivered: () => ' on the PR',
-  review_findings: (round) => ` to fix the review findings${round ? ` from round ${round}` : ''}`,
-  ci_failed: () => ' to fix the failed CI run',
-  conflict: () => ' to resolve a merge conflict',
-  rerun: () => ' again, after the usage limit reset',
-  console: () => ' again',
-  answered: () => ' with your answers',
-  scheduled: () => ', as scheduled'
-};
-
-// Says why, so the thread reads as a timeline on its own.
-export const slackStartedText = (run: { agent: AgentRole; trigger: RunTrigger }, round?: number): string =>
-  `Started the ${run.agent} run${STARTED_BECAUSE[run.trigger](round)}.`;
 
 const MAX_MIRRORED_REPLY = 280;
 
