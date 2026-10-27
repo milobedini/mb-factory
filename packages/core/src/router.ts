@@ -302,8 +302,9 @@ export const metEveryCriterion = (report: unknown): boolean => {
 };
 
 // Revisions that don't redo a verify run that met every criterion, unless they ask for it with `verifyAgain`: fixing
-// review findings, and merging the default branch in to clear a conflict (its own changes were verified on their PRs).
-const REVERIFY_ON_REQUEST: RunTrigger[] = ['review_findings', 'conflict'];
+// review findings, making the changes a human's answers to review asked for, fixing a failed check, and merging the
+// default branch in to clear a conflict (its own changes were verified on their PRs).
+const REVERIFY_ON_REQUEST: RunTrigger[] = ['review_findings', 'answered', 'ci_failed', 'conflict'];
 
 export const reverifiesOnRequest = (trigger: RunTrigger): boolean => REVERIFY_ON_REQUEST.includes(trigger);
 

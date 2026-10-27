@@ -357,15 +357,18 @@ describe('withFindings', () => {
 describe('reverifiesOnRequest', () => {
   // TAS-40, 27 Oct: merging main in to clear a GLOSSARY.md conflict re-ran verify, though main's changes were verified
   // on their own PRs and the resolution changed nothing on screen.
-  it('reuses a verify that met every criterion after review fixes and conflict fixes', () => {
+  // TAS-43, 27 Oct: fixing two end-to-end locators, as the user's answer asked, re-ran verify for ten minutes.
+  it('reuses a verify that met every criterion after any revision of a delivered PR', () => {
     expect(reverifiesOnRequest('review_findings')).toBe(true);
+    expect(reverifiesOnRequest('answered')).toBe(true);
+    expect(reverifiesOnRequest('ci_failed')).toBe(true);
     expect(reverifiesOnRequest('conflict')).toBe(true);
   });
 
-  it('verifies any other delivery as usual', () => {
+  it('verifies a first delivery and a person’s own instruction as usual', () => {
     expect(reverifiesOnRequest('delegated')).toBe(false);
-    expect(reverifiesOnRequest('ci_failed')).toBe(false);
-    expect(reverifiesOnRequest('answered')).toBe(false);
+    expect(reverifiesOnRequest('spec_approved')).toBe(false);
+    expect(reverifiesOnRequest('prompted')).toBe(false);
   });
 });
 
