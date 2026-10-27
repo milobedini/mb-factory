@@ -128,7 +128,6 @@ import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-
 import { getDb } from '@/db/client';
 import { events, questions, queue, runs, stageChanges, workItems } from '@/db/schema';
 
-import { touchCard, withCards } from './cards';
 import { requireEnv } from './env';
 import {
   branchContains,
@@ -167,6 +166,7 @@ import { log } from './log';
 import { currentPause, pauseFactory, resumeFactory } from './pause';
 import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
 import { loadReadyList, postReadyMessage, readyMessage } from './ready';
+import { touchCard, withCards } from './redraw';
 import type { RunWithWorkItem } from './runs';
 import { findAnyRun, findRun } from './runs';
 import {

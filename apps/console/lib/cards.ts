@@ -1,8 +1,6 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
 import type { CardInput, FactoryConfig } from '@mb-factory/core';
 import { canRerun, readGate, readNextIssues, slackMessageUrl, workItemCard } from '@mb-factory/core';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
-import { after } from 'next/server';
 
 import { getDb } from '@/db/client';
 import { questions, queue, runs, workItems } from '@/db/schema';
@@ -12,10 +10,7 @@ import { findProject } from './projects';
 import { slackWorkspaceUrl, updateSlackMessage } from './slack-api';
 
 // Each work item's thread starts with a card (core `workItemCard`), redrawn from the database whenever the work item or
-// its runs change. A webhook or a tap can change a work item many times; the work items it touched are collected and
-// each card is redrawn once, after the last change.
-
-const touched = new AsyncLocalStorage<Set<string>>();
+// its runs change (`touchCard` in `redraw.ts`).
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -94,47 +89,21 @@ export const loadCardInput = async (
   };
 };
 
-// Redraws the work item's card. Never throws: a stale card mustn't stop the work.
-export const refreshCard = async (workItemId: string): Promise<void> => {
+// Redraws the work item's card, and returns its project, whose Home tabs show it too. Never throws: a stale card
+// mustn't stop the work.
+export const refreshCard = async (workItemId: string): Promise<string | undefined> => {
   try {
     const [workItem] = await getDb().select().from(workItems).where(eq(workItems.id, workItemId)).limit(1);
     const project = workItem && findProject(workItem.project);
     const channel = workItem?.slackChannelId ?? project?.slack?.channelId;
     if (!workItem || !project || !channel || !workItem.slackThreadTs) {
-      return;
+      return project?.name;
     }
     const card = workItemCard(await loadCardInput(workItem, project, channel));
     await updateSlackMessage({ channel, ts: workItem.slackThreadTs, ...card });
+    return project.name;
   } catch (error) {
     log('warn', 'slack card failed', { workItemId, error: errorMessage(error) });
+    return undefined;
   }
 };
-
-// Marks a work item's card for redrawing once the handler that changed it finishes; outside one, after the response.
-export const touchCard = (workItemId: string | null | undefined): void => {
-  if (!workItemId) {
-    return;
-  }
-  const scope = touched.getStore();
-  if (scope) {
-    scope.add(workItemId);
-    return;
-  }
-  after(() => refreshCard(workItemId));
-};
-
-// Runs a handler that may change work items, then redraws the cards it touched. A handler called from inside another
-// leaves the redrawing to the outer one.
-export const withCards =
-  <A extends unknown[], R>(handler: (...args: A) => Promise<R>) =>
-  async (...args: A): Promise<R> => {
-    if (touched.getStore()) {
-      return handler(...args);
-    }
-    const scope = new Set<string>();
-    try {
-      return await touched.run(scope, () => handler(...args));
-    } finally {
-      await Promise.all([...scope].map(refreshCard));
-    }
-  };

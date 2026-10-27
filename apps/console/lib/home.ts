@@ -19,7 +19,7 @@ import { loadCardInput } from './cards';
 import { requireEnv } from './env';
 import { log } from './log';
 import { currentPause } from './pause';
-import { allProjects } from './projects';
+import { allProjects, findProject } from './projects';
 import { recentReadyList } from './ready';
 import { publishHomeView } from './slack-api';
 import { latestReadings } from './usage';
@@ -133,18 +133,39 @@ export const loadHomeInput = async (project: FactoryConfig, now: Date): Promise<
   };
 };
 
+const withSlack = (): FactoryConfig[] => allProjects().filter((project) => project.slack);
+
 // The project whose Home tab a person sees: the first that lists them. Others see who can.
+const homeProjectOf = (userId: string): FactoryConfig | undefined =>
+  withSlack().find((candidate) => isAllowedSlackUser(candidate, userId));
+
 export const publishHome = async (userId: string): Promise<void> => {
   try {
-    const withSlack = allProjects().filter((project) => project.slack);
-    const project = withSlack.find((candidate) => isAllowedSlackUser(candidate, userId));
+    const project = homeProjectOf(userId);
     const view = project
       ? homeView(await loadHomeInput(project, new Date()))
-      : homeNotAllowedView(withSlack[0]?.alias ?? 'This');
+      : homeNotAllowedView(withSlack()[0]?.alias ?? 'This');
     await publishHomeView(userId, view);
     log('info', 'slack home published', { user: userId, project: project?.name });
   } catch (error) {
     log('warn', 'slack home failed', { user: userId, error: errorMessage(error) });
+  }
+};
+
+// Work in a project changed: redraw the Home tab of everyone who sees that project there, drawn once for all of them.
+// Never throws, like a card's redraw.
+export const republishHome = async (projectName: string): Promise<void> => {
+  const project = findProject(projectName);
+  const people = (project?.slack?.allowedUserIds ?? []).filter((userId) => homeProjectOf(userId)?.name === projectName);
+  if (!project || people.length === 0) {
+    return;
+  }
+  try {
+    const view = homeView(await loadHomeInput(project, new Date()));
+    await Promise.all(people.map((userId) => publishHomeView(userId, view)));
+    log('info', 'slack home republished', { project: project.name, people: people.length });
+  } catch (error) {
+    log('warn', 'slack home failed', { project: project.name, error: errorMessage(error) });
   }
 };
 
