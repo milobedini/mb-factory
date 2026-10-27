@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CardInput, CardRun } from './card';
 import type { HomeInput } from './home';
-import { homeNotAllowedView, homeView, MAX_HOME_ROWS, usageBar } from './home';
+import { homeNotAllowedView, homeView, MAX_HOME_ROWS, slackStatusMessage, usageBar } from './home';
 import type { SlackBlock } from './slack';
 import type { UsageSummary } from './usage';
 
@@ -233,5 +233,40 @@ describe('homeNotAllowedView', () => {
     expect(texts(homeNotAllowedView('Tastebook').blocks)).toContain(
       'Only the people listed for Tastebook can see its work here. Ask one of them to add you.'
     );
+  });
+});
+
+describe('slackStatusMessage', () => {
+  const hub = 'slack://app?team=T1&id=A1&tab=home';
+
+  it('leads with the hub’s counts and usage, then what needs you with its action', () => {
+    const message = slackStatusMessage(
+      input({
+        items: [
+          item('TAS-39', 'building', [run(), run({ agent: 'implement', status: 'running', finishedAt: null })]),
+          item('TAS-38', 'spec_review', [run(), run({ agent: 'spec' })])
+        ]
+      }),
+      hub
+    );
+    expect(message.text).toBe('Tastebook: 1 running, 1 needs you');
+    expect(texts(message.blocks).slice(0, 2)).toEqual([
+      '*Tastebook factory* · 1 running · 1 needs you',
+      '5-hour window 82% · Week 41%'
+    ]);
+    const spec = message.blocks.find((block) => texts([block])[0]?.includes('TAS-38'));
+    expect(spec?.accessory).toMatchObject({ text: { text: 'Approve' } });
+    expect(texts(message.blocks).some((text) => text.includes('TAS-39'))).toBe(false);
+    expect(texts(message.blocks).at(-1)).toBe(`<${hub}|Open the hub> · <https://console.test|Open the console>`);
+  });
+
+  it('says when nothing waits, when it’s paused, and how many more are on the hub', () => {
+    const quiet = texts(slackStatusMessage(input({ paused: { by: 'Milo in Slack', at: at(10) } }), hub).blocks);
+    expect(quiet).toContain('Nothing is waiting on you.');
+    expect(quiet).toContain('*Paused* by Milo in Slack since 10:10: nothing new starts.');
+    const waiting = Array.from({ length: MAX_HOME_ROWS + 3 }, (_, index) =>
+      item(`TAS-${index}`, 'spec_review', [run(), run({ agent: 'spec' })])
+    );
+    expect(texts(slackStatusMessage(input({ items: waiting }), hub).blocks).at(-1)).toMatch(/^3 more on the hub\. /);
   });
 });

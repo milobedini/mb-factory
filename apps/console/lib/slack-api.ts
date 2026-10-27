@@ -81,17 +81,25 @@ export const postSlackEphemeral = async ({
   await callSlack('chat.postEphemeral', { channel, user, text, thread_ts: threadTs ?? undefined });
 };
 
-// Answers a button tap privately, to whoever tapped, through its response URL.
-export const respondToSlackAction = async (responseUrl: string, text: string): Promise<void> => {
+// Answers a slash command or a button tap privately, through its response URL: a new message only that person sees, or,
+// with `replaceOriginal`, the message they tapped redrawn (the only way to edit an ephemeral one).
+export const respondToSlack = async (
+  responseUrl: string,
+  { text, blocks }: { text: string; blocks?: SlackBlock[] },
+  replaceOriginal = false
+): Promise<void> => {
   const response = await fetch(responseUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify({ response_type: 'ephemeral', replace_original: false, text })
+    body: JSON.stringify({ response_type: 'ephemeral', replace_original: replaceOriginal, text, blocks })
   });
   if (!response.ok) {
     throw new Error(`Slack response URL failed with ${response.status}`);
   }
 };
+
+export const respondToSlackAction = (responseUrl: string, text: string): Promise<void> =>
+  respondToSlack(responseUrl, { text });
 
 type UserInfo = SlackResponse & {
   user?: {

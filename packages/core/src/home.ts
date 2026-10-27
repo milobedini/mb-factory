@@ -2,7 +2,7 @@ import type { CardInput, CardSummary } from './card';
 import { cardSummary, linkButton, STATUS_EMOJI, sizeText, slackEmoji } from './card';
 import type { ReadyIssue } from './ready';
 import { formatReleaseAt } from './router';
-import type { SlackBlock } from './slack';
+import type { SlackBlock, SlackMessage } from './slack';
 import { button, escapeSlack } from './slack';
 import type { UsageSummary, WindowSummary } from './usage';
 
@@ -61,7 +61,7 @@ const clip = (text: string, limit: number): string => (text.length > limit ? `${
 
 const plural = (count: number, word: string, words = `${word}s`): string => `${count} ${count === 1 ? word : words}`;
 
-const clock = (at: Date, timeZone: string): string =>
+export const clock = (at: Date, timeZone: string): string =>
   new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
 
 const CELLS = 10;
@@ -161,8 +161,8 @@ const healthRow = ({ problems, emojiPrefix }: HomeInput): SlackBlock =>
 
 const field = (text: string) => ({ type: 'mrkdwn', text });
 
-export const homeView = (input: HomeInput): HomeView => {
-  const { now, timeZone, consoleUrl, week, paused } = input;
+// What needs the viewer (longest waiting first) and what's in flight (oldest first), with the counts both lead with.
+const sortRows = (input: HomeInput) => {
   const rows = input.items.map((item): Row => ({ input: item, summary: cardSummary(item) }));
   const needsYou = rows
     .filter(({ summary }) => NEEDS_YOU.includes(summary.status))
@@ -171,13 +171,23 @@ export const homeView = (input: HomeInput): HomeView => {
     .filter(({ summary }) => summary.status === 'running' || summary.status === 'queued')
     .toSorted((a, b) => latestRunAt(a) - latestRunAt(b));
   const queued = inFlight.filter(({ summary }) => summary.status === 'queued').length;
-  const windows = input.usage.windows.map((window) => field(windowText(window, input)));
-  const status = [
-    `Updated ${clock(now, timeZone)}`,
+  const counts = [
     `${inFlight.length - queued} running`,
     ...(queued > 0 ? [`${queued} queued`] : []),
     `${needsYou.length} need${needsYou.length === 1 ? 's' : ''} you`
-  ].join(' · ');
+  ];
+  return { needsYou, inFlight, counts };
+};
+
+const pausedText = ({ paused, timeZone }: HomeInput): string | undefined =>
+  paused ? `*Paused* by ${escapeSlack(paused.by)} since ${clock(paused.at, timeZone)}: nothing new starts.` : undefined;
+
+export const homeView = (input: HomeInput): HomeView => {
+  const { now, timeZone, consoleUrl, week, paused } = input;
+  const { needsYou, inFlight, counts } = sortRows(input);
+  const windows = input.usage.windows.map((window) => field(windowText(window, input)));
+  const status = [`Updated ${clock(now, timeZone)}`, ...counts].join(' · ');
+  const pausedLine = pausedText(input);
   const controls = [
     linkButton('console_open', 'Open the console', consoleUrl),
     paused
@@ -196,9 +206,7 @@ export const homeView = (input: HomeInput): HomeView => {
   const blocks: SlackBlock[] = [
     header(`${input.alias} factory`),
     context(status),
-    ...(paused
-      ? [section(`*Paused* by ${escapeSlack(paused.by)} since ${clock(paused.at, timeZone)}: nothing new starts.`)]
-      : []),
+    ...(pausedLine ? [section(pausedLine)] : []),
     ...(windows.length > 0 ? [{ type: 'section', fields: windows }] : []),
     { type: 'actions', elements: controls },
     ...listSection(
@@ -255,3 +263,27 @@ export const homeNotAllowedView = (alias: string): HomeView => ({
     section(`Only the people listed for ${escapeSlack(alias)} can see its work here. Ask one of them to add you.`)
   ]
 });
+
+const windowShort = (window: WindowSummary): string =>
+  `${WINDOW_NAMES[window.window]} ${Math.round(window.utilisation * 100)}%`;
+
+// The slash command's `status`: the hub's counts and what needs the person, each with its action, in a reply only they
+// see, with links to the hub and the console for the rest.
+export const slackStatusMessage = (input: HomeInput, hubUrl: string): SlackMessage => {
+  const { needsYou, counts } = sortRows(input);
+  const pausedLine = pausedText(input);
+  const usage = input.usage.windows.map(windowShort).join(' · ');
+  const more = needsYou.length > MAX_HOME_ROWS ? `${needsYou.length - MAX_HOME_ROWS} more on the hub. ` : '';
+  return {
+    text: `${input.alias}: ${counts.join(', ')}`,
+    blocks: [
+      section(`*${escapeSlack(input.alias)} factory* · ${counts.join(' · ')}`),
+      ...(usage ? [context(usage)] : []),
+      ...(pausedLine ? [section(pausedLine)] : []),
+      ...(needsYou.length > 0
+        ? needsYou.slice(0, MAX_HOME_ROWS).map(itemRow)
+        : [context('Nothing is waiting on you.')]),
+      context(`${more}<${hubUrl}|Open the hub> · <${input.consoleUrl}|Open the console>`)
+    ]
+  };
+};

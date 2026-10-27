@@ -10,6 +10,12 @@ features:
   bot_user:
     display_name: Tastebook
     always_online: true
+  slash_commands:
+    - command: /tastebook
+      url: https://mb-factory-console.vercel.app/api/webhooks/slack/commands
+      description: The factory's status, what's ready, pause and resume
+      usage_hint: "[status | ready | pause | resume | help]"
+      should_escape: false
 oauth_config:
   scopes:
     bot:
@@ -17,6 +23,7 @@ oauth_config:
       - channels:history
       - channels:read
       - chat:write
+      - commands
       - files:read
       - groups:history
       - groups:read

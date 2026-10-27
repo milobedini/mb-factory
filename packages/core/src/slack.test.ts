@@ -272,7 +272,8 @@ describe('parseSlackAction', () => {
       channelId: 'C0CBSE2Q6FQ',
       responseUrl: 'https://hooks.slack.com/actions/A1/2/x',
       actionTs: '1792947200.1',
-      fromHome: false
+      fromHome: false,
+      ephemeral: false
     });
   });
 
@@ -290,7 +291,8 @@ describe('parseSlackAction', () => {
       channelId: null,
       responseUrl: null,
       actionTs: '1792947200.1',
-      fromHome: true
+      fromHome: true,
+      ephemeral: false
     });
   });
 

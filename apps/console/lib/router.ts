@@ -166,12 +166,13 @@ import {
 import { log } from './log';
 import { currentPause, pauseFactory, resumeFactory } from './pause';
 import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
-import { loadReadyList, postReadyMessage } from './ready';
+import { loadReadyList, postReadyMessage, readyMessage } from './ready';
 import type { RunWithWorkItem } from './runs';
 import { findAnyRun, findRun } from './runs';
 import {
   postSlackEphemeral,
   postSlackMessage,
+  respondToSlack,
   respondToSlackAction,
   slackPermalink,
   slackUser,
@@ -1566,9 +1567,11 @@ const handleDelegateTap = async (
   action: Extract<SlackAction, { kind: 'delegate' }>,
   tellTapper: (text: string) => Promise<void>
 ): Promise<void> => {
-  // A tap in the App Home has no channel: the issues' team says whose they are.
+  // A tap in the App Home has no channel, and a slash command's reply may sit in any channel: the issues' team says
+  // whose they are.
   const teamKey = action.identifiers[0]?.split('-')[0] ?? '';
-  const project = action.channelId ? findProjectBySlackChannel(action.channelId) : findProjectByTeamKey(teamKey);
+  const project =
+    (action.channelId ? findProjectBySlackChannel(action.channelId) : undefined) ?? findProjectByTeamKey(teamKey);
   if (!project) {
     return;
   }
@@ -1611,7 +1614,7 @@ const handleDelegateTap = async (
   const withResult = (wanted: string) =>
     results.filter(({ result }) => result === wanted).map(({ identifier }) => identifier);
   const [notReady, failed] = [withResult('not_ready'), withResult('failed')];
-  const { message, channelId } = action;
+  const { message, channelId, responseUrl } = action;
   const [card] =
     message && channelId
       ? await getDb()
@@ -1622,6 +1625,17 @@ const handleDelegateTap = async (
       : [];
   await Promise.all([
     card && outcomes.length > 0 ? settleNextOnCard(card, outcomes) : undefined,
+    // Slack doesn't send an ephemeral message back, so it's redrawn from the list it was drawn from.
+    action.ephemeral && responseUrl && outcomes.length > 0
+      ? attempt('slack ephemeral edit', { issues: action.identifiers }, () => {
+          const reply = readyMessage(project, READY_HEADING, list.ready);
+          return respondToSlack(
+            responseUrl,
+            { ...reply, blocks: settleReadyMessage(reply.blocks, outcomes, project.timeZone) },
+            true
+          );
+        })
+      : undefined,
     !card && message && channelId && outcomes.length > 0
       ? attempt('slack edit', { issues: action.identifiers }, () =>
           updateSlackMessage({
@@ -1763,17 +1777,30 @@ const handleHomeTap = async (
     await tellTapper('Only the factory’s people can pause or resume it.');
     return;
   }
-  const by = `${await slackUserName(action.userId).catch(() => action.userId)} in Slack`;
   if (action.action === 'pause') {
-    await pauseFactory(by);
-    log('info', 'factory paused', { login: by });
+    await pauseFromSlack(action.userId);
     return;
   }
-  if (await resumeFactory(by)) {
-    log('info', 'factory resumed', { login: by });
-    await releaseQueue();
-  }
+  await resumeFromSlack(action.userId);
 };
+
+// Pausing and resuming from the hub or the slash command, as the console's Usage page does, recorded under the person's
+// Slack name. Resuming releases the queue straight away.
+export const pauseFromSlack = async (userId: string): Promise<void> => {
+  const by = `${await slackUserName(userId).catch(() => userId)} in Slack`;
+  await pauseFactory(by);
+  log('info', 'factory paused', { login: by });
+};
+
+export const resumeFromSlack = withCards(async (userId: string): Promise<boolean> => {
+  const by = `${await slackUserName(userId).catch(() => userId)} in Slack`;
+  if (!(await resumeFactory(by))) {
+    return false;
+  }
+  log('info', 'factory resumed', { login: by });
+  await releaseQueue();
+  return true;
+});
 
 const handleTap = async (action: SlackAction, tellTapper: (text: string) => Promise<void>): Promise<void> => {
   if (action.kind === 'home') {

@@ -321,6 +321,7 @@ const actionPayloadSchema = z.looseObject({
   // A tap in the App Home has no response URL, only the view it sits in.
   response_url: z.url({ protocol: /^https$/ }).nullish(),
   view: z.looseObject({ type: z.string() }).nullish(),
+  container: z.looseObject({ is_ephemeral: z.boolean().nullish() }).nullish(),
   actions: z.array(z.looseObject({ value: z.string().nullish(), action_ts: z.string().min(1) })).min(1)
 });
 
@@ -334,6 +335,9 @@ export type SlackAction = {
   actionTs: string;
   // Tapped in the App Home, which is redrawn for the tapper afterwards.
   fromHome: boolean;
+  // Tapped in a message only the tapper sees (a slash command's reply). Slack doesn't send such a message back, so it
+  // can only be redrawn through the response URL.
+  ephemeral: boolean;
 } & (
   | { kind: 'question'; questionId: string; body: string }
   | { kind: 'spec_gate'; workItemId: string; body: string }
@@ -364,7 +368,8 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
     channelId: parsed.channel?.id ?? null,
     responseUrl: parsed.response_url ?? null,
     actionTs: action.action_ts,
-    fromHome: parsed.view?.type === 'home'
+    fromHome: parsed.view?.type === 'home',
+    ephemeral: parsed.container?.is_ephemeral === true
   };
   if ('d' in value) {
     const { message } = parsed;

@@ -1,4 +1,4 @@
-import type { CandidateIssue, FactoryConfig, ReadyIssue, ReadyList } from '@mb-factory/core';
+import type { CandidateIssue, FactoryConfig, ReadyIssue, ReadyList, SlackMessage } from '@mb-factory/core';
 import { readyList, slackReadyMessage } from '@mb-factory/core';
 
 import { requireEnv } from './env';
@@ -96,8 +96,11 @@ export const recentReadyList = async (project: FactoryConfig, now: Date): Promis
   return list;
 };
 
-// A message in the project's channel listing ready issues with a Delegate button each: top-level, or in the thread of
-// the mention that asked for it.
+// Ready issues with a Delegate button each.
+export const readyMessage = (project: FactoryConfig, heading: string, issues: ReadyIssue[]): SlackMessage =>
+  slackReadyMessage(heading, issues, { alias: project.alias, consoleUrl: requireEnv('CONSOLE_URL') });
+
+// A message in the project's channel listing ready issues: top-level, or in the thread of the mention that asked for it.
 export const postReadyMessage = async (
   project: FactoryConfig,
   heading: string,
@@ -107,6 +110,5 @@ export const postReadyMessage = async (
   if (!project.slack || issues.length === 0) {
     return;
   }
-  const message = slackReadyMessage(heading, issues, { alias: project.alias, consoleUrl: requireEnv('CONSOLE_URL') });
-  await postSlackMessage({ channel: project.slack.channelId, threadTs, ...message });
+  await postSlackMessage({ channel: project.slack.channelId, threadTs, ...readyMessage(project, heading, issues) });
 };

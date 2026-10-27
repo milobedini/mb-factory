@@ -2,6 +2,22 @@ export type { Brief, DispatchPayload, JobBrief } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
 export type { CardInput, CardRun, CardStatus, NextIssue, SlackCard } from './card';
 export { CARD_COLOURS, cardStatus, readNextIssues, workItemCard } from './card';
+export type { CommandRequest, SlashCommand } from './command';
+export {
+  alreadyPausedText,
+  COMMAND_FAILED,
+  COMMAND_REQUESTS,
+  commandHelpText,
+  commandNotAllowedText,
+  LINEAR_UNREADABLE,
+  NOT_PAUSED_TEXT,
+  parseSlashCommand,
+  pausedReplyText,
+  RESUMED_TEXT,
+  readCommandRequest,
+  slackHubUrl,
+  unknownRequestText
+} from './command';
 export type { FactoryConfig, Job, JobScope, UsagePolicy } from './config';
 export {
   coAuthorFor,
@@ -82,7 +98,7 @@ export {
   problemHour
 } from './health';
 export type { HomeCheck, HomeInput, HomeView } from './home';
-export { homeNotAllowedView, homeView, MAX_HOME_ROWS } from './home';
+export { homeNotAllowedView, homeView, MAX_HOME_ROWS, slackStatusMessage } from './home';
 export type { ChecksState, InboxEntry, InboxKind, InboxQuestion, InboxRun } from './inbox';
 export { checksState, INBOX_KINDS, inboxEntry } from './inbox';
 export type {
