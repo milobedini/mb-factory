@@ -4,6 +4,7 @@ import type {
   DependencyPr,
   DependencyWork,
   FactoryConfig,
+  Gate,
   GitHubEvent,
   GovernedDecision,
   Question,
@@ -42,6 +43,8 @@ import {
   dependencyTakenText,
   dispatchLapsesAt,
   emptyMentionText,
+  GATE_CHANGES_QUESTION,
+  GATE_GONE,
   governDispatch,
   isAllowedSlackUser,
   isMajorBump,
@@ -56,6 +59,7 @@ import {
   notAllowedToStartText,
   nothingReadyText,
   notReadyText,
+  onlyAsksForChanges,
   onlyLockfilesChanged,
   orderQueue,
   parseGitHubEvent,
@@ -74,6 +78,7 @@ import {
   READY_UNREADABLE,
   RERUN_GONE,
   readBump,
+  readGate,
   readQuestions,
   readSpecParts,
   resumeRequestFor,
@@ -91,6 +96,8 @@ import {
   showsOnScreen,
   slackFiledText,
   slackFinishedText,
+  slackGateMessage,
+  slackGateSettled,
   slackIssueFromRequest,
   slackQuestionCard,
   slackReplyText,
@@ -1154,26 +1161,38 @@ export const handleAgentSessionEvent = async (payload: unknown): Promise<void> =
 
 type ReplyFrom = { via: 'linear' } | { via: 'slack'; name: string };
 
-// The spec gate's message in the thread, once the gate is answered from anywhere.
-const settleSpecGate = async (
+// The gate a stage reported last, read back from its run's report when the gate is answered.
+const reportedGate = async (workItem: WorkItem): Promise<Gate | undefined> => {
+  const [latest] = await getDb()
+    .select({ report: runs.report })
+    .from(runs)
+    .where(and(eq(runs.workItemId, workItem.id), eq(runs.status, 'finished'), eq(runs.outcome, 'needs_input')))
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  return latest && readGate(latest.report);
+};
+
+// The open gate's message in the thread, once the gate is answered from anywhere.
+const settleGate = async (
   project: FactoryConfig,
   workItem: WorkItem,
+  body: string,
   request: RunRequest | undefined,
   from: ReplyFrom
 ): Promise<void> => {
-  const ts = workItem.specGateSlackTs;
-  if (workItem.stage !== 'spec_review' || !ts) {
+  const ts = workItem.gateSlackTs;
+  if (!ts) {
     return;
   }
   const by = from.via === 'slack' ? `by ${from.name}` : 'in Linear';
+  const gate = workItem.stage === 'spec_review' ? undefined : await reportedGate(workItem);
+  const settled =
+    workItem.stage === 'spec_review'
+      ? slackSpecGateSettled(request?.trigger === 'spec_approved' ? 'approved' : 'changes', by, specUrl(workItem))
+      : gate && slackGateSettled(gate, body, by);
   await Promise.all([
-    editInThread(
-      project,
-      workItem,
-      ts,
-      slackSpecGateSettled(request?.trigger === 'spec_approved' ? 'approved' : 'changes', by, specUrl(workItem))
-    ),
-    getDb().update(workItems).set({ specGateSlackTs: null }).where(eq(workItems.id, workItem.id))
+    settled ? editInThread(project, workItem, ts, settled) : undefined,
+    getDb().update(workItems).set({ gateSlackTs: null }).where(eq(workItems.id, workItem.id))
   ]);
 };
 
@@ -1186,8 +1205,17 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
   if (await answerQuestion(project, workItem, body, from)) {
     return;
   }
+  const atReportedGate = workItem.gateSlackTs !== null && workItem.stage !== 'spec_review';
   const request = runRequestFor({ kind: 'prompted', body }, workItem.stage);
-  await settleSpecGate(project, workItem, request, from);
+  await settleGate(project, workItem, body, request, from);
+  if (atReportedGate && onlyAsksForChanges(body)) {
+    // As at the spec gate: ask what to change rather than start a run that would only ask the same.
+    await Promise.all([
+      postActivity(workItem, { type: 'elicitation', body: GATE_CHANGES_QUESTION }),
+      replyInThread(project, workItem, GATE_CHANGES_QUESTION)
+    ]);
+    return;
+  }
   if (!request) {
     // The Change something option on its own: ask what to change, and keep waiting in Spec Review.
     await Promise.all([
@@ -1647,6 +1675,10 @@ export const handleSlackAction = async (payload: unknown): Promise<void> => {
     await tellTapper(SPEC_GATE_GONE);
     return;
   }
+  if (action.kind === 'gate' && (workItem.gateSlackTs === null || workItem.stage === 'spec_review')) {
+    await tellTapper(GATE_GONE);
+    return;
+  }
   if (action.kind === 'question') {
     const open = await openRound(workItem);
     if (!tapped || currentQuestion(open?.round ?? [])?.id !== action.questionId) {
@@ -1792,9 +1824,9 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
     reviewRounds: workItem.reviewRounds,
     maxReviewRounds: project.review.maxRounds
   });
-  // Reported questions are the run's last word: the router asks them instead of closing the session.
+  // Reported questions and gates are the run's last word: the router posts them instead of closing the session.
   const agentClosed =
-    !next.questions && run.status === 'finished' && workItem.agentSessionId && run.startedAt
+    !next.questions && !next.gate && run.status === 'finished' && workItem.agentSessionId && run.startedAt
       ? await hasClosingActivity(workItem.linearOrganizationId, workItem.agentSessionId, run.startedAt).catch(
           (error: unknown) => {
             log('error', 'linear session check failed', { runId, error: errorMessage(error) });
@@ -1802,13 +1834,18 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
           }
         )
       : false;
-  const closing = next.questions || retrying ? undefined : closingActivity(run, { agentClosed, resuming });
+  const closing =
+    next.questions || retrying
+      ? undefined
+      : next.gate
+        ? ({ type: 'elicitation', body: next.gate.body } as const)
+        : closingActivity(run, { agentClosed, resuming });
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
   const skippedReview = run.agent === 'implement' && next.stage === 'awaiting_merge';
   const finishedText = [
     slackFinishedText(
       { ...run, prUrl, actionsRunUrl: run.actionsRunUrl },
-      { questions: next.questions?.length, specReview: next.stage === 'spec_review' }
+      { questions: next.questions?.length, specReview: next.stage === 'spec_review', gate: next.gate !== undefined }
     ),
     ...(skippedReview ? [LOCKFILE_GATE_TEXT] : [])
   ].join('\n');
@@ -1831,7 +1868,7 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   }
 
   await Promise.all([
-    closing ? postActivity(workItem, closing) : undefined,
+    closing ? postActivity(workItem, closing, next.gate?.options) : undefined,
     replyInThread(
       project,
       workItem,
@@ -1860,7 +1897,14 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
     const ts = await replyInThread(project, workItem, gate);
     await getDb()
       .update(workItems)
-      .set({ specGateSlackTs: ts ?? null })
+      .set({ gateSlackTs: ts ?? null })
+      .where(eq(workItems.id, workItem.id));
+  }
+  if (next.gate) {
+    const ts = await replyInThread(project, workItem, slackGateMessage(workItem.id, next.gate, workItem.issueUrl));
+    await getDb()
+      .update(workItems)
+      .set({ gateSlackTs: ts ?? null })
       .where(eq(workItems.id, workItem.id));
   }
   if (next.request) {

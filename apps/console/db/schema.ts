@@ -72,8 +72,9 @@ export const workItems = pgTable(
     origin: text({ enum: WORK_ORIGINS }).notNull(),
     slackChannelId: text(),
     slackThreadTs: text(),
-    // The spec approval message in the thread while Spec Review waits, edited once it's answered.
-    specGateSlackTs: text(),
+    // The open gate's message in the thread, edited once it's answered: the spec approval while Spec Review waits, or a
+    // gate a stage reported, such as slicing approval. The column keeps its first name.
+    gateSlackTs: text('spec_gate_slack_ts'),
     requester: text(),
     stage: text({ enum: STAGES }).notNull(),
     reviewRounds: integer().notNull().default(0),

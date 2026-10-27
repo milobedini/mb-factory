@@ -26,6 +26,8 @@ export {
 } from './dashboard';
 export type { Bump, DependencyPr, DependencyWork } from './dependencies';
 export { DEPENDABOT_LOGIN, dependencyIssue, dependencyTakenText, isMajorBump, readBump } from './dependencies';
+export type { Gate } from './gates';
+export { GATE_CHANGES_QUESTION, GATE_GONE, onlyAsksForChanges, readGate } from './gates';
 export type {
   Decision,
   DispatchRequest,
@@ -255,6 +257,8 @@ export {
   SPEC_GATE_GONE,
   settleReadyMessage,
   slackFiledText,
+  slackGateMessage,
+  slackGateSettled,
   slackIssueFromRequest,
   slackMessageUrl,
   slackPlainText,

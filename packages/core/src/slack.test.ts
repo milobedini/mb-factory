@@ -20,6 +20,8 @@ import {
   READY_HEADING,
   settleReadyMessage,
   slackFiledText,
+  slackGateMessage,
+  slackGateSettled,
   slackIssueFromRequest,
   slackMessageUrl,
   slackPlainText,
@@ -280,6 +282,14 @@ describe('parseSlackAction', () => {
     });
   });
 
+  it('reads a gate button', () => {
+    expect(parseSlackAction(payload(JSON.stringify({ g: workItemId, a: 'Create them' })))).toMatchObject({
+      kind: 'gate',
+      workItemId,
+      body: 'Create them'
+    });
+  });
+
   it('reads a delegate button with the message it sits in', () => {
     const blocks = [{ type: 'section', block_id: 'ready:TAS-25' }];
     expect(
@@ -510,5 +520,46 @@ describe('ready messages', () => {
     expect(delegateFailedText(['TAS-25', 'TAS-26', 'TAS-27'], 'Tastebook')).toBe(
       'I couldn’t start TAS-25, TAS-26 and TAS-27, so they’re still listed. Try again, or delegate to @Tastebook in Linear. The details are in the console log.'
     );
+  });
+});
+
+describe('slackGateMessage', () => {
+  const gate = {
+    body: '**Verdict:** split into 2 issues.\n\n## Slices\n- Recipe details, M\n- Recipe photo, S',
+    options: ['Create them', 'Change something', 'Keep as one']
+  };
+
+  it('shows the gate in Slack’s markup, with a button per option and the first suggested', () => {
+    const { blocks } = slackGateMessage(workItemId, gate, 'https://linear.app/tastebook/issue/TAS-37');
+    expect(blocks[0]).toEqual({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*Verdict:* split into 2 issues.\n\n*Slices*\n• Recipe details, M\n• Recipe photo, S'
+      }
+    });
+    const actions = blocks[1] as { elements: { text: { text: string }; value: string; style?: string }[] };
+    expect(actions.elements.map(({ text }) => text.text)).toEqual(gate.options);
+    expect(JSON.parse(actions.elements[0]?.value ?? '')).toEqual({ g: workItemId, a: 'Create them' });
+    expect(actions.elements.map(({ style }) => style)).toEqual(['primary', undefined, undefined]);
+  });
+
+  it('splits a long gate over sections Slack can hold', () => {
+    const long = {
+      ...gate,
+      body: Array.from({ length: 120 }, (_, index) => `- Slice ${index} ${'x'.repeat(60)}`).join('\n')
+    };
+    const sections = slackGateMessage(workItemId, long, 'https://linear.app/x').blocks.filter(
+      (block) => block.type === 'section'
+    ) as { text: { text: string } }[];
+    expect(sections.length).toBeGreaterThan(1);
+    expect(sections.every(({ text }) => text.text.length <= 3000)).toBe(true);
+    expect(sections.map(({ text }) => text.text).join('\n')).toContain('• Slice 119');
+  });
+
+  it('keeps the gate and swaps its buttons for the answer once settled', () => {
+    const { blocks } = slackGateSettled(gate, 'Create them', 'by Milo');
+    expect(blocks.some((block) => block.type === 'actions')).toBe(false);
+    expect(blocks.at(-1)).toEqual({ type: 'context', elements: [{ type: 'mrkdwn', text: '✓ Create them, by Milo.' }] });
   });
 });

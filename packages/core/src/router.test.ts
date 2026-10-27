@@ -445,6 +445,15 @@ describe('nextStepAfterRun', () => {
     report: { stage: 'triage', outcome: 'done', summary: 'Size S.', next }
   });
 
+  it('hands a reported gate to the router, unless the run also asked questions', () => {
+    const gate = { body: 'Split into 16.', options: ['Create them', 'Change something', 'Keep as one'] };
+    const waiting = { ...finished, outcome: 'needs_input' as const, agent: 'triage' as const };
+    expect(nextStepAfterRun({ ...waiting, report: { gate } }, loop)).toEqual({ gate });
+    const question = { prompt: 'Which?', options: ['A', 'B'] };
+    expect(nextStepAfterRun({ ...waiting, report: { gate, questions: [question] } }, loop)).not.toHaveProperty('gate');
+    expect(nextStepAfterRun({ ...finished, agent: 'triage', report: { gate } }, loop)).not.toHaveProperty('gate');
+  });
+
   it('sends a delivered PR to review, as in-flight work', () => {
     expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, { ...loop, hasPr: true })).toEqual({
       stage: 'in_review',
@@ -847,6 +856,9 @@ describe('Slack text', () => {
     );
     expect(slackFinishedText(asked, { questions: 1 })).toMatch(/^The spec run has a question for you below\./);
     expect(slackFinishedText(asked)).toMatch(/^The spec run needs an answer\. Six questions/);
+    expect(slackFinishedText(asked, { gate: true })).toBe(
+      'The spec run is waiting for your answer below. <https://github.com/milobedini/tastebook/actions/runs/2|run log>'
+    );
     expect(slackFinishedText({ ...asked, summary: 'Spec in PR #12.' }, { specReview: true })).toBe(
       'The spec run finished: the spec is ready for review below. Spec in PR #12. <https://github.com/milobedini/tastebook/actions/runs/2|run log>'
     );

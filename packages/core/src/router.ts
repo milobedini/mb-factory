@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import type { FactoryConfig } from './config';
+import type { Gate } from './gates';
+import { readGate } from './gates';
 import type { Decision, DispatchRequest, HoldReason, Priority, UsageWindow } from './governor';
 import { decideDispatch, PRIORITIES, USAGE_HOLD_REASONS } from './governor';
 import type { Question } from './questions';
@@ -300,7 +302,13 @@ export const shouldMoveIssue = (currentStateType: string): boolean =>
 
 // `reviewRounds` is set when a review finished, to the number of reviews completed in this loop. `questions` are for
 // the router to ask one at a time.
-export type NextStep = { stage?: Stage; request?: RunRequest; reviewRounds?: number; questions?: Question[] };
+export type NextStep = {
+  stage?: Stage;
+  request?: RunRequest;
+  reviewRounds?: number;
+  questions?: Question[];
+  gate?: Gate;
+};
 
 // The review round a brief names: the one a review run is about to do, or the one a revision is fixing.
 export const briefRound = (
@@ -586,8 +594,11 @@ export const nextStepAfterRun = (
     ...loop
   }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean; verify?: boolean }
 ): NextStep => {
-  const questions = run.status === 'finished' && run.outcome === 'needs_input' ? readQuestions(run.report) : [];
-  const asking = questions.length > 0 ? { questions } : {};
+  const waiting = run.status === 'finished' && run.outcome === 'needs_input';
+  const questions = waiting ? readQuestions(run.report) : [];
+  // A gate's report has no questions; if one has both, the questions are asked.
+  const gate = waiting && questions.length === 0 ? readGate(run.report) : undefined;
+  const asking = questions.length > 0 ? { questions } : gate ? { gate } : {};
   if (run.agent === 'spec' && run.status === 'finished' && WAITING_ON_SPEC_REVIEW.includes(run.outcome) && hasPr) {
     return { stage: 'spec_review', ...asking };
   }
@@ -745,32 +756,34 @@ const OUTCOME_COPY: Record<RunOutcome, string> = {
   stopped: 'stopped'
 };
 
-// A run that asked questions points at them instead of repeating its summary, which only says it has questions; a spec
-// waiting for approval points at the approval message.
+// A run that asked questions, or reported a gate, points at them instead of repeating its summary, which only says what's
+// coming; a spec waiting for approval points at the approval message.
 // A blocked run waits on a person changing something; their reply is what starts it again.
 const BLOCKED_NEXT = 'Reply here once that’s done and I’ll carry on.';
 
 export const slackFinishedText = (
   run: FinishedRun & { prUrl: string | null; actionsRunUrl: string | null },
-  { questions = 0, specReview = false }: { questions?: number; specReview?: boolean } = {}
+  { questions = 0, specReview = false, gate = false }: { questions?: number; specReview?: boolean; gate?: boolean } = {}
 ): string => {
   const verdict =
     run.status === 'limit_hit'
       ? 'hit the usage limit; it resumes once the window resets'
       : questions > 0
         ? `has ${questions === 1 ? 'a question' : `${questions} questions`} for you below`
-        : specReview
-          ? 'finished: the spec is ready for review below'
-          : run.outcome
-            ? OUTCOME_COPY[run.outcome]
-            : run.status;
+        : gate
+          ? 'is waiting for your answer below'
+          : specReview
+            ? 'finished: the spec is ready for review below'
+            : run.outcome
+              ? OUTCOME_COPY[run.outcome]
+              : run.status;
   const links = [
     run.prUrl ? slackLink(run.prUrl, 'PR') : undefined,
     run.actionsRunUrl ? slackLink(run.actionsRunUrl, 'run log') : undefined
   ].filter((link) => link !== undefined);
   return [
     `The ${run.agent} run ${verdict}.`,
-    run.summary && questions === 0 ? escapeSlack(run.summary) : undefined,
+    run.summary && questions === 0 && !gate ? escapeSlack(run.summary) : undefined,
     run.status === 'finished' && run.outcome === 'blocked' ? BLOCKED_NEXT : undefined,
     links.length > 0 ? links.join(' · ') : undefined
   ]

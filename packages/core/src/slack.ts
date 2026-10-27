@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import type { FactoryConfig } from './config';
+import type { Gate } from './gates';
+import { slackChunks, slackMarkdown } from './gates';
 import type { AskedQuestion, PositionedQuestion } from './questions';
 import { FOR_ALL, FOR_THE_REST, laterThan, RECOMMENDED, topicOf } from './questions';
 import type { ReadyIssue } from './ready';
@@ -35,6 +37,7 @@ export const MAX_READY_ROWS = 10;
 const buttonValueSchema = z.union([
   z.object({ q: z.uuid(), a: z.string().min(1) }),
   z.object({ w: z.uuid(), a: z.string().min(1) }),
+  z.object({ g: z.uuid(), a: z.string().min(1) }),
   z.object({ r: z.uuid() }),
   z.object({
     d: z
@@ -213,6 +216,38 @@ export const slackSpecGateSettled = (
 
 export const SPEC_GATE_GONE = 'The spec isn’t waiting for approval any more.';
 
+// Slack holds 3,000 characters a section and 50 blocks a message; a gate needs two blocks besides its body.
+const SECTION_LIMIT = 3000;
+const MAX_BODY_SECTIONS = 45;
+
+const gateSections = (gate: Gate): SlackBlock[] =>
+  slackChunks(slackMarkdown(gate.body), SECTION_LIMIT)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.length > 0)
+    .slice(0, MAX_BODY_SECTIONS)
+    .map(section);
+
+// A reported gate in the thread, such as slicing approval: its body, then a button per option, the first suggested.
+export const slackGateMessage = (workItemId: string, gate: Gate, issueUrl: string): SlackMessage => ({
+  text: 'Waiting for your answer.',
+  blocks: [
+    ...gateSections(gate),
+    {
+      type: 'actions',
+      elements: gate.options.map((option, index) =>
+        button(`gate_${index}`, option, { g: workItemId, a: option }, index === 0)
+      )
+    },
+    context(`Reply in this thread to answer in your own words. Also in <${issueUrl}|Linear>.`)
+  ]
+});
+
+// The gate once answered, wherever: its body stays for the record, the buttons go. `by` reads "by Milo" or "in Linear".
+export const slackGateSettled = (gate: Gate, answer: string, by: string): SlackMessage => ({
+  text: 'Answered.',
+  blocks: [...gateSections(gate), context(`✓ ${escapeSlack(clip(oneLine(answer), 200))}, ${escapeSlack(by)}.`)]
+});
+
 export const QUESTION_GONE = 'That question was already answered, or the work moved on.';
 
 export const notAllowedText = (config: FactoryConfig): string =>
@@ -292,6 +327,7 @@ export type SlackAction = {
 } & (
   | { kind: 'question'; questionId: string; body: string }
   | { kind: 'spec_gate'; workItemId: string; body: string }
+  | { kind: 'gate'; workItemId: string; body: string }
   | { kind: 'delegate'; identifiers: string[]; message: TappedMessage | null }
   | { kind: 'rerun'; runId: string }
 );
@@ -329,6 +365,9 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
   }
   if ('r' in value) {
     return { ...base, kind: 'rerun', runId: value.r };
+  }
+  if ('g' in value) {
+    return { ...base, kind: 'gate', workItemId: value.g, body: value.a };
   }
   return 'q' in value
     ? { ...base, kind: 'question', questionId: value.q, body: value.a }
