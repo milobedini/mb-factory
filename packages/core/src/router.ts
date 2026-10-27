@@ -454,9 +454,10 @@ export const decideConflict = (
 };
 
 // Two runs that finish close together (a conflict fix and an answer's revision) can each hand on to the same stage. A
-// verify or review already queued works on the PR's head when it starts, so a second would only repeat it.
+// verify or review already queued works on the PR's head when it starts, so a second would only repeat it; and with an
+// implement run queued, that run hands on once it's done, so one review sees both changes.
 export const queuedAlready = (request: RunRequest, queued: { agent: AgentRole }[]): boolean =>
-  request.trigger === 'delivered' && queued.some(({ agent }) => agent === request.agent);
+  request.trigger === 'delivered' && queued.some(({ agent }) => agent === request.agent || agent === 'implement');
 
 export type ReviewThread = { id: string; isResolved: boolean; author: string | null };
 
@@ -573,6 +574,13 @@ const clip = (text: string): string => {
 };
 
 // Unambiguous findings never reach GitHub, so the revision's brief carries them.
+// A review round's answers and its fixable findings settle in one revision: findings left beside questions are fixed
+// with the answers that change the PR, as the findings message's default (every box ticked) would.
+export const withFindings = (request: RunRequest, round: number, findings: Finding[]): RunRequest =>
+  findings.length === 0
+    ? request
+    : { ...request, prompt: [request.prompt, findingsPrompt(round, findings)].filter(Boolean).join('\n\n') };
+
 export const findingsPrompt = (round: number, findings: Finding[]): string => {
   const listed = findings.slice(0, MAX_FINDINGS_IN_BRIEF).map(({ tier, path, line, summary, fix, guard }, index) => {
     const where = path ? ` ${path}${line ? `:${line}` : ''}` : '';

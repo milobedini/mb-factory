@@ -12,6 +12,7 @@ import type {
   Question,
   ReadyIssue,
   ReadyOutcome,
+  ReviewFinding,
   RunOutcome,
   RunRequest,
   RunStatus,
@@ -155,6 +156,7 @@ import {
   TERMINAL_STAGES,
   unblockedBy,
   unblockedHeading,
+  withFindings,
   withRerunButton,
   wrongChannelText
 } from '@mb-factory/core';
@@ -462,9 +464,10 @@ const resolveReviewThreads = (workItem: WorkItem) => {
 };
 
 // At the merge gate a PR that no longer merges goes back before anyone is asked to review it. With no question open,
-// the review's threads are resolved; a question's thread waits for its answer.
-const enterMergeGate = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
-  if ((await checkConflict(project, workItem)) === 'fixing') {
+// the review's threads are resolved; a question's thread waits for its answer. While review asks questions, merging the
+// base waits for the answers (`keepReviewedPr`), since starting a run would close them unanswered.
+const enterMergeGate = async (project: FactoryConfig, workItem: WorkItem, asking: boolean): Promise<void> => {
+  if (!asking && (await checkConflict(project, workItem)) === 'fixing') {
     return;
   }
   if (!(await openRound(workItem))) {
@@ -475,10 +478,15 @@ const enterMergeGate = async (project: FactoryConfig, workItem: WorkItem): Promi
 
 // Records the stage and moves the Linear issue to its status; a failed move is logged, not fatal. The merge gate's
 // checks follow the move, since a conflict fix moves the work item on again.
-const moveWorkItem = async (project: FactoryConfig, workItem: WorkItem, stage: Stage): Promise<void> => {
+const moveWorkItem = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  stage: Stage,
+  { asking = false }: { asking?: boolean } = {}
+): Promise<void> => {
   await moveTo(project, workItem, stage);
   if (stage === 'awaiting_merge') {
-    await enterMergeGate(project, workItem);
+    await enterMergeGate(project, workItem, asking);
   }
 };
 
@@ -910,18 +918,27 @@ const currentQuestion = (round: AskedQuestion[]): AskedQuestion | undefined =>
 // A reply while questions are open answers the next one; the last answer starts the stage that asked, once.
 // Returns false when nothing was open, so the reply goes the usual way.
 // Answers that keep a reviewed PR as it is start nothing: the decisions are recorded where people look, and the PR
-// waits at the merge gate.
+// waits at the merge gate. The base branch is merged in now if the PR conflicts with it (held while the questions were
+// open), and the round's findings, held back too, are offered to fix; only with neither is it ready to merge.
 const keepReviewedPr = async (
   project: FactoryConfig,
   workItem: WorkItem,
   round: AskedQuestion[],
-  from: ReplyFrom
+  from: ReplyFrom,
+  review: { id: string; findings: ReviewFinding[] }
 ): Promise<void> => {
   const text = keptText(round, from.via === 'slack' ? `by ${from.name} in Slack` : 'in Linear');
   const { prNumber } = workItem;
   log('info', 'review decisions kept the PR', { issue: workItem.issueIdentifier });
+  const merging = (await checkConflict(project, workItem)) === 'fixing';
+  const offering = !merging && review.findings.length > 0;
+  const next = merging
+    ? 'The PR no longer merges cleanly, so I’m merging its base branch in first; review looks again after.'
+    : offering
+      ? 'Choose which of the round’s findings to fix below, or merge as it is.'
+      : 'It’s ready for you to merge.';
   await Promise.all([
-    replyInThread(project, workItem, askingFor(project, workItem)(`${text}\nIt’s ready for you to merge.`)),
+    replyInThread(project, workItem, askingFor(project, workItem)(`${text}\n${next}`)),
     postActivity(workItem, { type: 'response', body: text }),
     prNumber
       ? attempt('pr comment', { issue: workItem.issueIdentifier }, () =>
@@ -930,6 +947,18 @@ const keepReviewedPr = async (
       : undefined,
     resolveReviewThreads(workItem)
   ]);
+  if (offering) {
+    await replyInThread(
+      project,
+      workItem,
+      slackFindingsMessage(
+        { id: review.id, round: workItem.reviewRounds },
+        review.findings,
+        { repository: workItem.repository, branch: workItem.branch },
+        true
+      )
+    );
+  }
 };
 
 const answerQuestion = async (
@@ -972,11 +1001,28 @@ const answerQuestion = async (
   // A review's questions say which answer keeps the PR as it is, in the review's own report.
   const [asking] = await getDb().select({ report: runs.report }).from(runs).where(eq(runs.id, open.runId)).limit(1);
   const after = afterAnswers(open.agent, answered, readQuestions(asking?.report));
+  // The round's fixable findings were held back while its questions were open.
+  const findings = open.agent === 'review' ? readFixableFindings(asking?.report) : [];
   if (after.kind === 'keep') {
-    await keepReviewedPr(project, workItem, answered, from);
+    await keepReviewedPr(project, workItem, answered, from, { id: open.runId, findings });
     return true;
   }
-  await dispatchRun(project, await createRun(project, workItem, after.request, open.runId));
+  if (findings.length > 0) {
+    await replyInThread(
+      project,
+      workItem,
+      slackFindingsSettled(
+        { round: workItem.reviewRounds },
+        findings,
+        { repository: workItem.repository, branch: workItem.branch },
+        findings.map((_, index) => index),
+        from.via === 'slack' ? from.name : 'Linear',
+        true
+      )
+    );
+  }
+  const request = withFindings(after.request, workItem.reviewRounds, findings);
+  await dispatchRun(project, await createRun(project, workItem, request, open.runId));
   return true;
 };
 
@@ -2679,7 +2725,9 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
           setBlockedLabel(workItem.linearOrganizationId, workItem.linearIssueId, true)
         )
       : undefined,
-    next.stage ? moveWorkItem(project, workItem, next.stage) : undefined
+    next.stage
+      ? moveWorkItem(project, workItem, next.stage, { asking: Boolean(next.questions || next.gate) })
+      : undefined
   ]);
   if (readyToMerge && replyTs) {
     await getDb().update(workItems).set({ mergeSlackTs: replyTs }).where(eq(workItems.id, workItem.id));
@@ -2711,9 +2759,9 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       .where(eq(workItems.id, workItem.id));
   }
   // Review findings nobody has to decide on: chosen with a tap when the PR waits at the merge gate, listed when the next
-  // round takes them.
+  // round takes them. Beside questions, they wait for the answers, so the round's decisions settle in one revision.
   const findings = run.agent === 'review' && run.outcome === 'done' ? readFixableFindings(run.report) : [];
-  if (findings.length > 0 && (next.stage === 'awaiting_merge' || next.stage === 'building')) {
+  if (findings.length > 0 && !next.questions && (next.stage === 'awaiting_merge' || next.stage === 'building')) {
     await replyInThread(
       project,
       workItem,

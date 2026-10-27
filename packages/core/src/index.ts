@@ -284,7 +284,8 @@ export {
   slackThreadText,
   stageForAgent,
   startedThought,
-  startsReviewLoop
+  startsReviewLoop,
+  withFindings
 } from './router';
 export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } from './run-report';
 export { readingsFromEvents, runReportSchema, stageReportSchema, summariseRun } from './run-report';

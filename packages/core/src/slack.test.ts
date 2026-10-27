@@ -639,6 +639,11 @@ describe('slackFindingsMessage', () => {
     expect(JSON.stringify(kept.blocks.at(-1))).toContain('Left as they are, by Milo Bedini. Ready for you to merge.');
     expect(kept.blocks.some((block) => block.type === 'actions')).toBe(false);
   });
+
+  it('says when the findings are fixed with the round’s answers', () => {
+    const withAnswers = slackFindingsSettled({ round: 1 }, findings, place, [0, 1], 'Milo Bedini', true);
+    expect(JSON.stringify(withAnswers.blocks.at(-1))).toContain('Fixing them in the same run as the answers above.');
+  });
 });
 
 describe('slackGateMessage', () => {

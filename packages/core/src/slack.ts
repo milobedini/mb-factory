@@ -405,13 +405,17 @@ export const slackFindingsSettled = (
   findings: ReviewFinding[],
   place: FindingsPlace,
   fixing: number[] | null,
-  by: string
+  by: string,
+  // Fixed with the answers to the same round's questions, rather than chosen here.
+  withAnswers = false
 ): SlackMessage => {
   const left = (index: number) => fixing === null || !fixing.includes(index);
   const outcome =
     fixing === null
       ? `✓ Left as they are, by ${escapeSlack(by)}. Ready for you to merge.`
-      : `✓ Fixing ${fixing.length} of ${plural(findings.length, 'finding')}, chosen by ${escapeSlack(by)}.`;
+      : withAnswers
+        ? `✓ Fixing ${fixing.length === findings.length ? 'them' : `${fixing.length} of them`} in the same run as the answers above.`
+        : `✓ Fixing ${fixing.length} of ${plural(findings.length, 'finding')}, chosen by ${escapeSlack(by)}.`;
   return {
     text: fixing === null ? 'Review findings left as they are.' : 'Fixing the chosen review findings.',
     blocks: [

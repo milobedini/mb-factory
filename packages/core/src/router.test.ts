@@ -41,7 +41,8 @@ import {
   slackReplyText,
   slackThreadText,
   stageForAgent,
-  startsReviewLoop
+  startsReviewLoop,
+  withFindings
 } from './router';
 
 const config = parseFactoryConfig(
@@ -329,6 +330,26 @@ describe('modelFor', () => {
   it('falls back to the triage model for slicing when none is set', () => {
     const { slicing: _, ...models } = config.models;
     expect(modelFor({ ...config, models }, 'triage', false, 'Slice Real recipes')).toBe('sonnet');
+  });
+});
+
+describe('withFindings', () => {
+  const answered = {
+    agent: 'implement',
+    trigger: 'answered',
+    priority: 'in_flight',
+    prompt: 'The human decided the findings the review left for them.'
+  } as const;
+  const nit = { tier: 'nit', path: 'backend/recipes/views.py', line: 52, summary: 'A ninth query.', fix: 'Reuse it.' };
+
+  // TAS-43, 27 Oct: an answer that changed the PR would have shut out the round's Fix box.
+  it('adds the round’s findings to the answers’ revision', () => {
+    expect(withFindings(answered, 1, [nit]).prompt).toBe([answered.prompt, findingsPrompt(1, [nit])].join('\n\n'));
+    expect(withFindings(answered, 1, [nit]).trigger).toBe('answered');
+  });
+
+  it('leaves the request alone with no findings', () => {
+    expect(withFindings(answered, 1, [])).toBe(answered);
   });
 });
 
@@ -1100,6 +1121,13 @@ describe('queuedAlready', () => {
   it('keeps it when only other stages are queued', () => {
     expect(queuedAlready(verify, [])).toBe(false);
     expect(queuedAlready(verify, [{ agent: 'review' }])).toBe(false);
+  });
+
+  // TAS-43, 27 Oct: a review round's answers and its Fix box could each start a revision; the first to finish would
+  // have sent half the changes to review.
+  it('leaves the hand-on to an implement run still queued, so one review sees both changes', () => {
+    expect(queuedAlready({ ...verify, agent: 'review' }, [{ agent: 'implement' }])).toBe(true);
+    expect(queuedAlready(verify, [{ agent: 'implement' }])).toBe(true);
   });
 
   it('keeps any other kind of run, which carries its own request', () => {
