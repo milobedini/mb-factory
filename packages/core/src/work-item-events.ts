@@ -19,6 +19,8 @@ const pullRequestEventSchema = z.looseObject({
     html_url: z.url({ protocol: /^https$/ }).nullish(),
     user: z.looseObject({ login: z.string() }).nullish(),
     merged: z.boolean().nullish(),
+    merged_by: z.looseObject({ id: z.int(), login: z.string() }).nullish(),
+    merge_commit_sha: z.string().nullish(),
     head: z.looseObject({ ref: z.string().min(1), repo: z.looseObject({ full_name: z.string() }).nullish() })
   })
 });
@@ -46,7 +48,16 @@ const workflowRunEventSchema = z.looseObject({
 });
 
 export type GitHubEvent =
-  | { kind: 'pr_closed'; repository: string; number: number; branch: string; merged: boolean }
+  | {
+      kind: 'pr_closed';
+      repository: string;
+      number: number;
+      branch: string;
+      merged: boolean;
+      // Who merged it, and the merge commit, when it was merged.
+      mergedBy: { id: number; login: string } | null;
+      mergeCommitSha: string | null;
+    }
   | ({ kind: 'dependency_pr_opened' } & DependencyPr)
   | { kind: 'human_push'; repository: string; branch: string; login: string; commits: number }
   | { kind: 'default_branch_moved'; repository: string; branch: string }
@@ -113,7 +124,12 @@ export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEve
       repository: repository.full_name,
       number: pull_request.number,
       branch: pull_request.head.ref,
-      merged: pull_request.merged === true
+      merged: pull_request.merged === true,
+      mergedBy:
+        pull_request.merged && pull_request.merged_by
+          ? { id: pull_request.merged_by.id, login: pull_request.merged_by.login }
+          : null,
+      mergeCommitSha: pull_request.merged ? (pull_request.merge_commit_sha ?? null) : null
     };
   }
   if (eventName !== 'push') {

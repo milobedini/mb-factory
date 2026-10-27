@@ -163,3 +163,23 @@ export const slackWorkspaceUrl = (): Promise<string> => {
   fetching.catch(() => workspaceUrls.delete('bot'));
   return fetching;
 };
+
+type RepliesResponse = SlackResponse & { messages?: { ts: string; text?: string; blocks?: SlackBlock[] }[] };
+
+// One message in a thread as it is now, so it can be edited without being rebuilt (`channels:history`).
+export const slackThreadMessage = async (
+  channel: string,
+  threadTs: string,
+  ts: string
+): Promise<SlackMessage | undefined> => {
+  const query = new URLSearchParams({ channel, ts: threadTs, oldest: ts, latest: ts, inclusive: 'true', limit: '10' });
+  const response = await fetch(`https://slack.com/api/conversations.replies?${query}`, {
+    headers: { Authorization: `Bearer ${requireEnv('SLACK_BOT_TOKEN')}` }
+  });
+  const { ok, messages, error } = (await response.json()) as RepliesResponse;
+  if (!ok) {
+    throw new Error(`Slack conversations.replies failed: ${error ?? response.status}`);
+  }
+  const message = messages?.find((candidate) => candidate.ts === ts);
+  return message ? { text: message.text ?? '', blocks: message.blocks ?? [] } : undefined;
+};

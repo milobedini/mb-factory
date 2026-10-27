@@ -143,8 +143,10 @@ describe('homeView', () => {
     );
     expect(texts(view.blocks)).toContain('*Needs you* · 2');
     expect(rowsUnder(view.blocks, 'Needs you')[0]).toBe(
-      ':tb-done: *<https://linear.app/t/TAS-41|TAS-41>* Work on TAS-41\n*Ready to merge:* PR #38 waits for your approval on GitHub.'
+      ':tb-done: *<https://linear.app/t/TAS-41|TAS-41>* Work on TAS-41\n*Ready to merge:* review accepted PR #38 at 10:02.'
     );
+    const merge = view.blocks.find((block) => texts([block])[0]?.includes('TAS-41'));
+    expect(merge?.accessory).toMatchObject({ action_id: 'merge', text: { text: 'Approve and merge' } });
     expect(rowsUnder(view.blocks, 'In flight')[0]).toMatch(
       /^:tb-running: \*<https:\/\/linear.app\/t\/TAS-39\|TAS-39>\*/
     );

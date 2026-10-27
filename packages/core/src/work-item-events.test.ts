@@ -27,6 +27,8 @@ const pullRequestClosed = (merged: boolean) => ({
   pull_request: {
     number: 4,
     merged,
+    merged_by: merged ? { id: 89992629, login: 'milobedini' } : null,
+    merge_commit_sha: merged ? '04ad31d0' : 'abc123',
     head: { ref: 'tas-7-page-not-found', repo: { full_name: 'milobedini/tastebook' } },
     user: { login: 'claude[bot]' }
   }
@@ -50,7 +52,9 @@ describe('parseGitHubEvent', () => {
       repository: 'milobedini/tastebook',
       number: 4,
       branch: 'tas-7-page-not-found',
-      merged
+      merged,
+      mergedBy: merged ? { id: 89992629, login: 'milobedini' } : null,
+      mergeCommitSha: merged ? '04ad31d0' : null
     });
   });
 

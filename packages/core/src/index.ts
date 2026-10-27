@@ -25,6 +25,8 @@ export {
   jobSchema,
   parseFactoryConfig,
   personFor,
+  personForGitHub,
+  personForSlack,
   personName,
   reviewersFor,
   slackMentionFor,
@@ -101,7 +103,7 @@ export {
   problemHour
 } from './health';
 export type { CheckState, HomeCheck, HomeInput, HomeView } from './home';
-export { checkState, homeNotAllowedView, homeView, MAX_HOME_ROWS, slackStatusMessage } from './home';
+export { checkState, clock, homeNotAllowedView, homeView, MAX_HOME_ROWS, slackStatusMessage } from './home';
 export type { ChecksState, InboxEntry, InboxKind, InboxQuestion, InboxRun } from './inbox';
 export { checksState, INBOX_KINDS, inboxEntry } from './inbox';
 export type {
@@ -136,6 +138,22 @@ export {
   readJobReport,
   slotDay
 } from './jobs';
+export type { AcceptedPr, PullForMerge } from './merge';
+export {
+  approveRefusedText,
+  closedLine,
+  connectGitHubMessage,
+  MERGE_ACTION,
+  mergedLine,
+  mergeNotSetUpText,
+  mergeRefusal,
+  mergeRefusedText,
+  notWaitingToMergeText,
+  readBeforeMerging,
+  slackAcceptedMessage,
+  slackMergeSettled,
+  withConnectInstead
+} from './merge';
 export type { ClaimCheck, StageRunClaims } from './oidc';
 export {
   checkGovernorClaims,

@@ -1,5 +1,12 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { ChangedFile, ChecksState, DispatchPayload, ReviewThread, ScheduledRun } from '@mb-factory/core';
+import type {
+  ChangedFile,
+  ChecksState,
+  DispatchPayload,
+  PullForMerge,
+  ReviewThread,
+  ScheduledRun
+} from '@mb-factory/core';
 import { checksState, currentMergeable, DISPATCH_EVENT } from '@mb-factory/core';
 
 import { requireEnv } from './env';
@@ -299,3 +306,50 @@ export const pullRequestInfo = async (repository: string, prNumber: number): Pro
     headRepository: pull.head.repo?.full_name ?? null
   };
 };
+
+// A PR as Approve and merge checks it, with whether it merges into its base as GitHub works it out now.
+export const pullForMerge = async (repository: string, prNumber: number): Promise<PullForMerge> => {
+  const pull = await githubGet<{ state: 'open' | 'closed'; merged: boolean; draft: boolean; head: { sha: string } }>(
+    `/repos/${repository}/pulls/${prNumber}`,
+    'pull request'
+  );
+  const open = pull.state === 'open' && !pull.merged;
+  // A short wait at most: the person is waiting on the tap, and a second tap asks again.
+  const { mergeable } = open ? await pullMergeState(repository, prNumber, [2000, 3000]) : { mergeable: null };
+  return { state: pull.state, merged: pull.merged, draft: pull.draft, head: pull.head.sha, mergeable };
+};
+
+export type GitHubRefusal = { ok: false; message: string };
+
+// Approving and merging act as the person who tapped, with their own token: GitHub records the review and the merge
+// as theirs, and branch protection counts their approval.
+const asPerson = async (
+  token: string,
+  method: 'POST' | 'PUT',
+  path: string,
+  body: unknown
+): Promise<{ ok: true } | GitHubRefusal> => {
+  const response = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  if (response.ok) {
+    return { ok: true };
+  }
+  const { message } = (await response.json().catch(() => ({}))) as { message?: string };
+  return { ok: false, message: message ?? `GitHub answered ${response.status}` };
+};
+
+// The approval is pinned to the commit review accepted, so it can't land on anything newer.
+export const approvePull = (token: string, repository: string, prNumber: number, sha: string) =>
+  asPerson(token, 'POST', `/repos/${repository}/pulls/${prNumber}/reviews`, { event: 'APPROVE', commit_id: sha });
+
+// A merge commit keeps the co-authors' credit; `sha` makes GitHub refuse if the head moved since.
+export const mergePull = (token: string, repository: string, prNumber: number, sha: string) =>
+  asPerson(token, 'PUT', `/repos/${repository}/pulls/${prNumber}/merge`, { merge_method: 'merge', sha });

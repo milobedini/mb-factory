@@ -45,6 +45,8 @@ const buttonValueSchema = z.union([
   z.object({ w: z.uuid(), a: z.string().min(1) }),
   z.object({ g: z.uuid(), a: z.string().min(1) }),
   z.object({ r: z.uuid() }),
+  // Approve and merge a work item's PR.
+  z.object({ m: z.uuid() }),
   // Review findings: fix the ticked ones, or leave them all.
   z.object({ f: z.uuid(), a: z.enum(['fix', 'keep']) }),
   z.object({ h: z.enum(HOME_ACTIONS) }),
@@ -512,6 +514,7 @@ export type SlackAction = {
   | { kind: 'gate'; workItemId: string; body: string }
   | { kind: 'delegate'; identifiers: string[]; message: TappedMessage | null }
   | { kind: 'rerun'; runId: string }
+  | { kind: 'merge'; workItemId: string }
   // `unticked` are the findings whose Fix box was cleared, by their index in the review's report.
   | { kind: 'findings'; runId: string; choice: 'fix' | 'keep'; unticked: number[]; messageTs: string | null }
   | { kind: 'home'; action: HomeAction }
@@ -555,6 +558,9 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
   }
   if ('r' in value) {
     return { ...base, kind: 'rerun', runId: value.r };
+  }
+  if ('m' in value) {
+    return { ...base, kind: 'merge', workItemId: value.m };
   }
   if ('f' in value) {
     return {

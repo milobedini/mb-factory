@@ -4,6 +4,7 @@ import { refresh } from 'next/cache';
 import { after } from 'next/server';
 
 import { startGovernorProbe } from '@/lib/github-api';
+import { disconnect } from '@/lib/github-connect';
 import { log } from '@/lib/log';
 import { pauseFactory, resumeFactory } from '@/lib/pause';
 import { allowRunOnce, releaseQueue } from '@/lib/router';
@@ -46,4 +47,11 @@ export const refreshAction = async (): Promise<RefreshState> => {
     log('error', 'usage probe request failed', { error: error instanceof Error ? error.message : String(error) });
     return { message: 'Couldn’t start the probe. The details are in the console log.' };
   }
+};
+
+export const disconnectGitHubAction = async (): Promise<void> => {
+  const { id, login } = await requireConsoleUser();
+  await disconnect(id);
+  log('info', 'github disconnected', { login });
+  refresh();
 };

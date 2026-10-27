@@ -81,6 +81,8 @@ export const factoryConfigSchema = z
     // The people the factory works for: a Linear member (by email), their git identity, with the noreply address
     // GitHub links to their account, credited as co-author on the commits of issues assigned to them, and their Slack
     // member ID, mentioned when one of those issues waits on them. Someone not listed is credited and mentioned nowhere.
+    // `github` is their GitHub user ID (an ID, not a login, which can change hands): with it, they can connect GitHub
+    // and approve and merge PRs from Slack as themselves.
     people: z
       .array(
         z.object({
@@ -89,7 +91,8 @@ export const factoryConfigSchema = z
           slack: z
             .string()
             .regex(/^[UW][A-Z0-9]+$/)
-            .optional()
+            .optional(),
+          github: z.int().positive().optional()
         })
       )
       .default([]),
@@ -175,6 +178,14 @@ export const personFor = (config: Pick<FactoryConfig, 'people'>, email: string |
 // The git identity to credit on a work item's commits.
 export const coAuthorFor = (config: Pick<FactoryConfig, 'people'>, email: string | null): string | undefined =>
   personFor(config, email)?.git;
+
+// The person behind a Slack member, when the project lists them.
+export const personForSlack = (config: Pick<FactoryConfig, 'people'>, userId: string): Person | undefined =>
+  config.people.find(({ slack }) => slack === userId);
+
+// The person behind a GitHub account, when the project lists them.
+export const personForGitHub = (config: Pick<FactoryConfig, 'people'>, githubUserId: number): Person | undefined =>
+  config.people.find(({ github }) => github === githubUserId);
 
 // The person's name, as their git identity gives it.
 export const personName = (person: Person): string => person.git.replace(/\s*<[^>]*>$/, '');

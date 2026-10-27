@@ -41,6 +41,20 @@ export const linearInstallations = pgTable('linear_installations', {
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
 });
 
+// A person's GitHub connection through the factory's GitHub App, so a tap in Slack can approve and merge as them.
+// Tokens are AES-256-GCM encrypted; the access token lasts 8 hours and the refresh token, which rotates, 6 months.
+export const githubConnections = pgTable('github_connections', {
+  githubUserId: integer().primaryKey(),
+  login: text().notNull(),
+  accessToken: text().notNull(),
+  // Null when the app's tokens don't expire, so there's nothing to refresh.
+  accessTokenExpiresAt: timestamp({ withTimezone: true }),
+  refreshToken: text(),
+  refreshTokenExpiresAt: timestamp({ withTimezone: true }),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
+});
+
 export const events = pgTable(
   'events',
   {
@@ -92,6 +106,8 @@ export const workItems = pgTable(
     assigneeEmail: text(),
     // Issues this one's finishing made ready, offered on its Slack card (core `NextIssue`).
     nextReady: jsonb(),
+    // Review's "accepted" message in the thread, with Approve and merge, settled once the PR is merged or closed.
+    mergeSlackTs: text(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
   },

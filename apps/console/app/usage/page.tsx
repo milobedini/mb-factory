@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 
+import { GitHubConnection } from './github-connection';
 import { UsageDashboard } from './usage-dashboard';
 
 export const metadata: Metadata = { title: 'Usage · mb-factory' };
@@ -16,6 +17,9 @@ const UsagePage = () => (
     </header>
     <Suspense fallback={<p className="text-foreground/70">Loading usage…</p>}>
       <UsageDashboard />
+    </Suspense>
+    <Suspense fallback={null}>
+      <GitHubConnection />
     </Suspense>
   </main>
 );

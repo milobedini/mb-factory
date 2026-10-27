@@ -25,16 +25,20 @@ import type {
 import {
   afterAnswers,
   applyAnswer,
+  approveRefusedText,
   BLOCKING_OUTCOMES,
   briefRound,
   buildDispatchPayload,
   CHANGES_QUESTION,
   canRerun,
   ciHandOverText,
+  clock,
+  closedLine,
   closingActivity,
   coAuthorFor,
   conflictFixesSince,
   conflictHandOverText,
+  connectGitHubMessage,
   consecutiveCiFixes,
   consoleRerunRequest,
   DEPENDABOT_LOGIN,
@@ -62,6 +66,10 @@ import {
   linearStatusFor,
   MAX_READY_ROWS,
   mentioning,
+  mergedLine,
+  mergeNotSetUpText,
+  mergeRefusal,
+  mergeRefusedText,
   metEveryCriterion,
   modelFor,
   nextStepAfterRun,
@@ -69,6 +77,7 @@ import {
   notAllowedToStartText,
   nothingReadyText,
   notReadyText,
+  notWaitingToMergeText,
   onlyAsksForChanges,
   onlyLockfilesChanged,
   orderQueue,
@@ -80,6 +89,9 @@ import {
   parseSlackThreadReply,
   partDescription,
   partsFiledText,
+  personForGitHub,
+  personForSlack,
+  personName,
   prClosedText,
   QUESTION_GONE,
   questionElicitation,
@@ -87,6 +99,7 @@ import {
   READY_HEADING,
   READY_UNREADABLE,
   RERUN_GONE,
+  readBeforeMerging,
   readBump,
   readFixableFindings,
   readGate,
@@ -105,6 +118,7 @@ import {
   shouldMoveIssue,
   shouldResume,
   shouldRetry,
+  slackAcceptedMessage,
   slackFiledText,
   slackFindingsMessage,
   slackFindingsSettled,
@@ -113,6 +127,7 @@ import {
   slackGateSettled,
   slackIssueFromRequest,
   slackMentionFor,
+  slackMergeSettled,
   slackQuestionCard,
   slackReplyText,
   slackSpecGateMessage,
@@ -137,13 +152,17 @@ import { events, questions, queue, runs, stageChanges, workItems } from '@/db/sc
 
 import { requireEnv } from './env';
 import {
+  approvePull,
+  branchChecks,
   branchContains,
   cancelActionsRun,
   commentOnPullRequest,
   commitParents,
   compareFiles,
   defaultBranch,
+  mergePull,
   pullFiles,
+  pullForMerge,
   pullHead,
   pullMergeState,
   pullRequestInfo,
@@ -152,6 +171,7 @@ import {
   resolveReviewThread,
   sendStageDispatch
 } from './github-api';
+import { connectStartUrl, userGitHubToken } from './github-connect';
 import { fileGuards } from './guards';
 import { publishHome } from './home';
 import { findJob, jobBriefFor, jobTitleOf, postJobMessage } from './job-runs';
@@ -181,8 +201,8 @@ import {
   postSlackEphemeral,
   postSlackMessage,
   respondToSlack,
-  respondToSlackAction,
   slackPermalink,
+  slackThreadMessage,
   slackUser,
   slackUserName,
   updateSlackMessage
@@ -1787,12 +1807,14 @@ export const handleSlackAction = withCards(async (payload: unknown): Promise<voi
   }
   const { responseUrl } = action;
   // A tap in the App Home has no response URL, so the answer goes to the app's messages with the tapper.
-  const tellTapper = (text: string) =>
-    attempt('slack action response', { user: action.userId }, () =>
+  const tellTapper = (message: string | SlackMessage) => {
+    const content = typeof message === 'string' ? { text: message } : message;
+    return attempt('slack action response', { user: action.userId }, () =>
       responseUrl
-        ? respondToSlackAction(responseUrl, text)
-        : postSlackMessage({ channel: action.userId, text }).then(() => undefined)
+        ? respondToSlack(responseUrl, content)
+        : postSlackMessage({ channel: action.userId, ...content }).then(() => undefined)
     );
+  };
   try {
     await handleTap(action, tellTapper);
   } finally {
@@ -1838,6 +1860,76 @@ export const resumeFromSlack = withCards(async (userId: string): Promise<boolean
   await releaseQueue();
   return true;
 });
+
+const GITHUB_UNREACHABLE = 'I couldn’t reach GitHub, so nothing was merged. Try again in a minute.';
+
+// Approve and merge, from the card, review's accepted message or the Home tab: the PR is approved and merged on GitHub
+// as the person who tapped, with their own connection, and only at the commit review accepted. Anything that stops it
+// is said to them alone; the PR's merge webhook does the rest (the card, the message, Linear).
+const handleMergeTap = async (
+  action: Extract<SlackAction, { kind: 'merge' }>,
+  tellTapper: (message: string | SlackMessage) => Promise<void>
+): Promise<void> => {
+  const workItem = await findWorkItemById(action.workItemId);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project) {
+    return;
+  }
+  const issue = workItem.issueIdentifier;
+  if (!isAllowedSlackUser(project, action.userId)) {
+    log('info', 'slack tap from someone not allowed', { issue, user: action.userId });
+    await tellTapper(notAllowedText(project));
+    return;
+  }
+  log('info', 'slack tap', { issue, user: action.userId, kind: action.kind });
+  const githubUserId = personForSlack(project, action.userId)?.github;
+  if (!githubUserId) {
+    await tellTapper(mergeNotSetUpText(project.alias));
+    return;
+  }
+  const connection = await userGitHubToken(githubUserId);
+  if (connection.kind !== 'connected') {
+    await tellTapper(connectGitHubMessage(connectStartUrl(), connection.kind === 'expired'));
+    return;
+  }
+  const { prNumber, repository, branch } = workItem;
+  if (workItem.stage !== 'awaiting_merge' || !prNumber || !branch) {
+    await tellTapper(notWaitingToMergeText(issue));
+    return;
+  }
+  try {
+    const [pull, accepted, checks] = await Promise.all([
+      pullForMerge(repository, prNumber),
+      acceptedHead(workItem),
+      branchChecks(repository, branch)
+    ]);
+    const refusal = mergeRefusal(prNumber, { pull, acceptedHead: accepted, checks });
+    if (refusal !== undefined || accepted === null) {
+      log('info', 'merge from slack refused', { issue, login: connection.login, refusal });
+      await tellTapper(refusal ?? notWaitingToMergeText(issue));
+      return;
+    }
+    const approved = await approvePull(connection.token, repository, prNumber, accepted);
+    if (!approved.ok) {
+      log('warn', 'github approve refused', { issue, login: connection.login, message: approved.message });
+      await tellTapper(approveRefusedText(prNumber, approved.message));
+      return;
+    }
+    const merged = await mergePull(connection.token, repository, prNumber, accepted);
+    if (!merged.ok) {
+      log('warn', 'github merge refused', { issue, login: connection.login, message: merged.message });
+      await tellTapper(mergeRefusedText(prNumber, merged.message));
+      return;
+    }
+  } catch (error) {
+    log('error', 'merge from slack failed', { issue, error: errorMessage(error) });
+    await tellTapper(GITHUB_UNREACHABLE);
+    return;
+  }
+  log('info', 'pr merged from slack', { issue, login: connection.login, pr: prNumber });
+  const name = await slackUserName(action.userId).catch(() => connection.login);
+  await postActivity(workItem, { type: 'thought', body: `${name} approved and merged PR #${prNumber} from Slack.` });
+};
 
 const FINDINGS_GONE = 'That review has moved on, so nothing changed.';
 const NOTHING_TICKED = 'Nothing is ticked: tick a finding to fix, or choose Merge as it is.';
@@ -1908,7 +2000,10 @@ const handleFindingsTap = async (
   }
 };
 
-const handleTap = async (action: SlackAction, tellTapper: (text: string) => Promise<void>): Promise<void> => {
+const handleTap = async (
+  action: SlackAction,
+  tellTapper: (message: string | SlackMessage) => Promise<void>
+): Promise<void> => {
   if (action.kind === 'home') {
     await handleHomeTap(action, tellTapper);
     return;
@@ -1923,6 +2018,10 @@ const handleTap = async (action: SlackAction, tellTapper: (text: string) => Prom
   }
   if (action.kind === 'findings') {
     await handleFindingsTap(action, tellTapper);
+    return;
+  }
+  if (action.kind === 'merge') {
+    await handleMergeTap(action, tellTapper);
     return;
   }
   const tapped = action.kind === 'question' ? await findQuestionWithWorkItem(action.questionId) : undefined;
@@ -1959,6 +2058,46 @@ const handleTap = async (action: SlackAction, tellTapper: (text: string) => Prom
   await handleReply(project, workItem, action.body, { via: 'slack', name });
 };
 
+// A branch's head as of a moment: the last push to it GitHub told us about before then.
+const branchHeadBefore = async (repository: string, branch: string, before: Date): Promise<string | null> => {
+  const [push] = await getDb()
+    .select({ head: sql<string | null>`${events.payload}->>'after'` })
+    .from(events)
+    .where(
+      and(
+        eq(events.source, 'github'),
+        eq(events.type, 'push'),
+        sql`${events.payload}->'repository'->>'full_name' = ${repository}`,
+        sql`${events.payload}->>'ref' = ${`refs/heads/${branch}`}`,
+        lt(events.receivedAt, before)
+      )
+    )
+    .orderBy(desc(events.receivedAt))
+    .limit(1);
+  return push?.head ?? null;
+};
+
+// The commit the merge gate waits on: the branch's head when the last review started (what it checked out), or, after
+// a conflict fix that changed only lockfiles, when that fix finished. Null when it can't be told, so nothing merges.
+const acceptedHead = async (workItem: WorkItem): Promise<string | null> => {
+  const { repository, branch } = workItem;
+  const [latest] = await getDb()
+    .select({ agent: runs.agent, trigger: runs.trigger, createdAt: runs.createdAt, finishedAt: runs.finishedAt })
+    .from(runs)
+    .where(eq(runs.workItemId, workItem.id))
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  if (!branch || !latest) {
+    return null;
+  }
+  if (latest.agent === 'review') {
+    return branchHeadBefore(repository, branch, latest.createdAt);
+  }
+  return latest.agent === 'implement' && latest.trigger === 'conflict' && latest.finishedAt
+    ? branchHeadBefore(repository, branch, latest.finishedAt)
+    : null;
+};
+
 // After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a
 // limit-hit run, free its slot.
 const LOCKFILE_GATE_TEXT = 'Only lockfiles conflicted, so it’s back at the merge gate without another review.';
@@ -1991,21 +2130,7 @@ const lockfileOnlyMerge = async (
   if (!review || reviewVerdict(review.report) !== 'accepted') {
     return false;
   }
-  const [reviewedPush] = await getDb()
-    .select({ head: sql<string | null>`${events.payload}->>'after'` })
-    .from(events)
-    .where(
-      and(
-        eq(events.source, 'github'),
-        eq(events.type, 'push'),
-        sql`${events.payload}->'repository'->>'full_name' = ${repository}`,
-        sql`${events.payload}->>'ref' = ${`refs/heads/${branch}`}`,
-        lt(events.receivedAt, review.createdAt)
-      )
-    )
-    .orderBy(desc(events.receivedAt))
-    .limit(1);
-  const reviewed = reviewedPush?.head;
+  const reviewed = await branchHeadBefore(repository, branch, review.createdAt);
   if (!reviewed) {
     return false;
   }
@@ -2170,17 +2295,26 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       .where(eq(workItems.id, workItem.id));
   }
 
-  await Promise.all([
+  // Ready to merge: the message carries Approve and merge, and is settled once the PR is merged or closed.
+  const readyToMerge =
+    next.stage === 'awaiting_merge' && !next.questions && !next.gate && !retrying && !rerunnable && workItem.prNumber;
+  const reply = retrying
+    ? retryText(run.agent, run.actionsRunUrl)
+    : rerunnable
+      ? mentionIf(withRerunButton(finishedText, run.id))
+      : readyToMerge && prUrl
+        ? mentionIf(
+            slackAcceptedMessage(finishedText, {
+              workItemId: workItem.id,
+              prNumber: readyToMerge,
+              prUrl,
+              beforeMerging: run.agent === 'review' ? readBeforeMerging(run.report) : undefined
+            })
+          )
+        : mentionIf(finishedText);
+  const [, replyTs] = await Promise.all([
     closing ? postActivity(workItem, closing, next.gate?.options) : undefined,
-    replyInThread(
-      project,
-      workItem,
-      retrying
-        ? retryText(run.agent, run.actionsRunUrl)
-        : rerunnable
-          ? mentionIf(withRerunButton(finishedText, run.id))
-          : mentionIf(finishedText)
-    ),
+    replyInThread(project, workItem, reply),
     waitsOnPerson
       ? attempt('linear blocked label', { issue: workItem.issueIdentifier }, () =>
           setBlockedLabel(workItem.linearOrganizationId, workItem.linearIssueId, true)
@@ -2188,6 +2322,9 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       : undefined,
     next.stage ? moveWorkItem(project, workItem, next.stage) : undefined
   ]);
+  if (readyToMerge && replyTs) {
+    await getDb().update(workItems).set({ mergeSlackTs: replyTs }).where(eq(workItems.id, workItem.id));
+  }
   if (next.questions) {
     await startQuestions(project, workItem, run, next.questions);
   }
@@ -2513,6 +2650,49 @@ export const handleGitHubEvent = withCards(async (eventName: string, payload: un
     // Linear's GitHub integration links a PR by the issue ID in its branch or text, which Dependabot's don't carry.
     await moveTo(project, workItem, stage);
   }
-  await replyInThread(project, workItem, prClosedText(event.number, event.merged));
+  // The accepted message says it in place of a reply, so nobody following the thread is notified again.
+  if (!(await settleMergeMessage(project, workItem, event))) {
+    await replyInThread(project, workItem, prClosedText(event.number, event.merged));
+  }
   await stopForCause(project, workItem, { kind: 'pr_closed', number: event.number, merged: event.merged });
 });
+
+// Review's accepted message, once its PR is merged or closed: the buttons go, and it says who merged it and when.
+const settleMergeMessage = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  event: Extract<GitHubEvent, { kind: 'pr_closed' }>
+): Promise<boolean> => {
+  const channel = workItem.slackChannelId ?? project.slack?.channelId;
+  const { mergeSlackTs: ts, slackThreadTs: threadTs } = workItem;
+  if (!channel || !ts || !threadTs) {
+    return false;
+  }
+  try {
+    const message = await slackThreadMessage(channel, threadTs, ts);
+    if (!message) {
+      return false;
+    }
+    const person = event.mergedBy ? personForGitHub(project, event.mergedBy.id) : undefined;
+    const line = event.merged
+      ? mergedLine({
+          by: person ? personName(person) : (event.mergedBy?.login ?? null),
+          time: clock(new Date(), project.timeZone),
+          repository: workItem.repository,
+          sha: event.mergeCommitSha
+        })
+      : closedLine(event.number);
+    await updateSlackMessage({
+      channel,
+      ts,
+      text: `${message.text}\n${line}`,
+      blocks: slackMergeSettled(message.blocks, line)
+    });
+    await getDb().update(workItems).set({ mergeSlackTs: null }).where(eq(workItems.id, workItem.id));
+    touchCard(workItem.id);
+    return true;
+  } catch (error) {
+    log('warn', 'slack merge settle failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return false;
+  }
+};

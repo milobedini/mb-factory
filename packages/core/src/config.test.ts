@@ -2,7 +2,16 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { coAuthorFor, parseFactoryConfig, personFor, personName, reviewersFor, slackMentionFor } from './config';
+import {
+  coAuthorFor,
+  parseFactoryConfig,
+  personFor,
+  personForGitHub,
+  personForSlack,
+  personName,
+  reviewersFor,
+  slackMentionFor
+} from './config';
 
 const tastebookConfig = readFileSync(
   fileURLToPath(new URL('../../../projects/tastebook/factory.yaml', import.meta.url)),
@@ -72,6 +81,17 @@ describe('people', () => {
     const unmapped = parseFactoryConfig(tastebookConfig.replace(/\n {4}slack: U0CBS3FN806/, ''));
     expect(slackMentionFor(unmapped, 'milobedini64@gmail.com')).toBeUndefined();
     expect(() => parseFactoryConfig(tastebookConfig.replace('slack: U0CBS3FN806', 'slack: milo'))).toThrow(/people/);
+  });
+
+  it('finds a person by their Slack member ID or GitHub user ID, which must be a positive whole number', () => {
+    const config = parseFactoryConfig(tastebookConfig);
+    expect(personForSlack(config, 'U0CBS3FN806')?.linear).toBe('milobedini64@gmail.com');
+    expect(personForSlack(config, 'U0SOMEONE')).toBeUndefined();
+    expect(personForGitHub(config, 89992629)?.slack).toBe('U0CBS3FN806');
+    expect(personForGitHub(config, 1)).toBeUndefined();
+    expect(() => parseFactoryConfig(tastebookConfig.replace('github: 89992629', 'github: milobedini'))).toThrow(
+      /people/
+    );
   });
 
   it('needs a git identity as "Name <email>", and lists nobody by default', () => {

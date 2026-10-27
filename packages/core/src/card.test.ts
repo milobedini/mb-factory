@@ -236,7 +236,33 @@ describe('workItemCard', () => {
     expect(track(card)).toBe(
       ':tb-done: Triage   :tb-skipped: ~Spec~   :tb-done: Implement   :tb-skipped: ~Verify~   :tb-done: Review   :tb-needs-you: *Merge*'
     );
-    expect(buttons(card)).toEqual([{ text: 'Open PR #38', url: 'https://github.com/milobedini/tastebook/pull/38' }]);
+    expect(status(card)).toBe(':tb-done: *Ready to merge:* review accepted PR #38 at 10:02.');
+    expect(buttons(card)).toEqual([
+      { text: 'Approve and merge', value: JSON.stringify({ m: '22222222-2222-4222-8222-222222222222' }) },
+      { text: 'Open PR #38', url: 'https://github.com/milobedini/tastebook/pull/38' }
+    ]);
+  });
+
+  it('asks to confirm a merge, with what review said to check first', () => {
+    const card = workItemCard(
+      input(
+        { runs: [run(), run({ agent: 'review' })], beforeMerging: 'Check the seed recipes read well.' },
+        { stage: 'awaiting_merge', prNumber: 38 }
+      )
+    );
+    const merge = attachment(card)
+      .blocks.flatMap((block) => (block.type === 'actions' ? (block.elements as SlackBlock[]) : []))
+      .find((element) => element.action_id === 'merge');
+    expect(merge?.confirm).toEqual({
+      title: { type: 'plain_text', text: 'Merge PR #38?' },
+      text: {
+        type: 'plain_text',
+        text: 'You’ll approve PR #38 on GitHub as yourself and merge it, which deploys it to production.\n\nBefore merging: Check the seed recipes read well.'
+      },
+      confirm: { type: 'plain_text', text: 'Approve and merge' },
+      deny: { type: 'plain_text', text: 'Not yet' },
+      style: 'primary'
+    });
   });
 
   it('settles once merged, offering the issue it made ready', () => {

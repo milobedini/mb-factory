@@ -1,4 +1,4 @@
-import type { FactoryConfig, HomeCheck, HomeInput, Job } from '@mb-factory/core';
+import type { FactoryConfig, HomeCheck, HomeInput, HomeView, Job } from '@mb-factory/core';
 import {
   checkState,
   homeNotAllowedView,
@@ -8,9 +8,11 @@ import {
   nextSlot,
   OPEN_RUN_STATUSES,
   parseAppHomeOpened,
+  personForSlack,
   readJobReport,
   summariseUsage,
-  TERMINAL_STAGES
+  TERMINAL_STAGES,
+  withConnectInstead
 } from '@mb-factory/core';
 import { and, count, countDistinct, desc, eq, gte, inArray, notInArray, sql, sum } from 'drizzle-orm';
 
@@ -19,6 +21,7 @@ import { consoleProblems, jobFindings, runs, stageChanges, workItems } from '@/d
 
 import { loadCardInput } from './cards';
 import { requireEnv } from './env';
+import { connectedGitHubIds, connectStartUrl } from './github-connect';
 import { log } from './log';
 import { currentPause } from './pause';
 import { allProjects, findProject } from './projects';
@@ -156,11 +159,23 @@ const withSlack = (): FactoryConfig[] => allProjects().filter((project) => proje
 const homeProjectOf = (userId: string): FactoryConfig | undefined =>
   withSlack().find((candidate) => isAllowedSlackUser(candidate, userId));
 
+// The people who can approve and merge as themselves; anyone else listed with a GitHub account sees Connect GitHub
+// where Approve and merge would be. Someone with no GitHub account listed keeps the button, whose tap says why not.
+const connectedIn = (project: FactoryConfig): Promise<number[]> =>
+  connectedGitHubIds(project.people.flatMap(({ github }) => (github === undefined ? [] : [github])));
+
+const forPerson = (view: HomeView, project: FactoryConfig, userId: string, connected: number[]): HomeView => {
+  const github = personForSlack(project, userId)?.github;
+  return github === undefined || connected.includes(github)
+    ? view
+    : { ...view, blocks: withConnectInstead(view.blocks, connectStartUrl()) };
+};
+
 export const publishHome = async (userId: string): Promise<void> => {
   try {
     const project = homeProjectOf(userId);
     const view = project
-      ? homeView(await loadHomeInput(project, new Date()))
+      ? forPerson(homeView(await loadHomeInput(project, new Date())), project, userId, await connectedIn(project))
       : homeNotAllowedView(withSlack()[0]?.alias ?? 'This');
     await publishHomeView(userId, view);
     log('info', 'slack home published', { user: userId, project: project?.name });
@@ -178,8 +193,11 @@ export const republishHome = async (projectName: string): Promise<void> => {
     return;
   }
   try {
-    const view = homeView(await loadHomeInput(project, new Date()));
-    await Promise.all(people.map((userId) => publishHomeView(userId, view)));
+    const [view, connected] = await Promise.all([
+      loadHomeInput(project, new Date()).then(homeView),
+      connectedIn(project)
+    ]);
+    await Promise.all(people.map((userId) => publishHomeView(userId, forPerson(view, project, userId, connected))));
     log('info', 'slack home republished', { project: project.name, people: people.length });
   } catch (error) {
     log('warn', 'slack home failed', { project: project.name, error: errorMessage(error) });

@@ -5,6 +5,7 @@ import type { Gate } from './gates';
 import type { HoldReason } from './governor';
 import type { InboxEntry, InboxQuestion, InboxRun } from './inbox';
 import { inboxEntry } from './inbox';
+import { mergeButton } from './merge';
 import { queuedThought } from './router';
 import type { RunTrigger } from './runs';
 import { formatRunTime, isOpenRun, runTotals } from './runs';
@@ -81,6 +82,8 @@ export type CardInput = {
   rerunnable: boolean;
   // The question card in the thread, while questions wait.
   questionsUrl: string | null;
+  // What the review the PR waits on says to check before merging, for Approve and merge's confirm.
+  beforeMerging?: string;
   next: NextIssue[];
   now: Date;
   timeZone: string;
@@ -288,6 +291,13 @@ const waitingText = (input: CardInput, entry: InboxEntry | undefined, latest: Ca
     : `*Waiting on you:* reply in the thread.${summaryOf(latest)}`;
 };
 
+// When review accepted the PR the merge gate waits on.
+const acceptedText = ({ workItem, runs, timeZone }: CardInput): string => {
+  const review = runs.findLast(({ agent, status }) => agent === 'review' && status === 'finished');
+  const at = review?.finishedAt ? ` at ${clock(review.finishedAt, timeZone)}` : '';
+  return `review accepted PR #${workItem.prNumber ?? '?'}${at}.`;
+};
+
 const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | undefined): string => {
   const { workItem, now, timeZone } = input;
   const latest = currentRun(input.runs);
@@ -305,7 +315,7 @@ const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | un
         ? `*Blocked:*${summaryOf(latest) || ' see the thread.'}`
         : `*The ${latest?.agent ?? 'last'} run failed.*${summaryOf(latest)}`;
     case 'ready':
-      return `*Ready to merge:* PR #${workItem.prNumber ?? '?'} waits for your approval on GitHub.`;
+      return `*Ready to merge:* ${acceptedText(input)}`;
     case 'merged':
       return `*Merged* at ${clock(workItem.updatedAt, timeZone)}${pr}`;
     case 'canceled':
@@ -380,7 +390,12 @@ const cardButtons = (input: CardInput, status: CardStatus, entry: InboxEntry | u
     return [...(input.rerunnable && latest ? [button('rerun', 'Re-run', { r: latest.id }, true)] : []), ...runLog];
   }
   if (status === 'ready') {
-    return prUrl ? [linkButton('pr_open', `Open PR #${workItem.prNumber}`, prUrl, true)] : [];
+    return prUrl && workItem.prNumber
+      ? [
+          mergeButton(workItem.id, workItem.prNumber, input.beforeMerging),
+          linkButton('pr_open', `Open PR #${workItem.prNumber}`, prUrl)
+        ]
+      : [];
   }
   if (status === 'running' || status === 'queued') {
     return [...(prUrl ? [linkButton('pr_open', `PR #${workItem.prNumber}`, prUrl)] : []), ...runLog];

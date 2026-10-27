@@ -3,6 +3,7 @@ import {
   canRerun,
   personFor,
   personName,
+  readBeforeMerging,
   readGate,
   readNextIssues,
   slackMessageUrl,
@@ -66,6 +67,7 @@ export const loadCardInput = async (
   const gate = workItem.gateSlackTs && workItem.stage !== 'spec_review' ? readGate(gateRun?.report) : undefined;
   const questionsTs = round.find(({ answeredAt, closedAt }) => answeredAt === null && closedAt === null)?.slackTs;
   const questionsUrl = questionsTs ? slackMessageUrl(await slackWorkspaceUrl(), channel, questionsTs) : null;
+  const review = itemRuns.findLast(({ agent, status }) => agent === 'review' && status === 'finished');
   return {
     workItem: {
       id: workItem.id,
@@ -96,6 +98,7 @@ export const loadCardInput = async (
         })
       : false,
     questionsUrl,
+    beforeMerging: workItem.stage === 'awaiting_merge' ? readBeforeMerging(review?.report) : undefined,
     next: readNextIssues(workItem.nextReady),
     now: new Date(),
     timeZone: project.timeZone,
