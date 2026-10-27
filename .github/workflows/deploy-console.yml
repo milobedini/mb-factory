@@ -1,0 +1,34 @@
+# Deploys the console when its code changes. Its Git deploys are off (apps/console/vercel.json): Vercel counts every
+# push against Hobby's 100 deployments a day, even one the Ignored Build Step cancels, and most pushes here change
+# only the plan.
+name: Deploy console
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/console/**
+      - packages/**
+      - projects/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+  # To deploy by hand, such as after Vercel's daily limit rejected one.
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: deploy-console
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The hook builds main's latest commit; anyone with its URL can start a deploy, so it's a secret.
+      - name: Trigger the console's deploy hook
+        env:
+          DEPLOY_HOOK: ${{ secrets.CONSOLE_DEPLOY_HOOK }}
+        run: curl --fail-with-body --silent --show-error --request POST "$DEPLOY_HOOK"

@@ -1,6 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "[ -n \"$VERCEL_GIT_PREVIOUS_SHA\" ] && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- . ../../packages ../../projects ../../package.json ../../pnpm-lock.yaml ../../pnpm-workspace.yaml",
+  "git": {
+    "deploymentEnabled": false
+  },
   "functions": {
     "app/api/scheduler/wake/route.ts": {
       "experimentalTriggers": [
