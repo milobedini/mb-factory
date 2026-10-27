@@ -1748,9 +1748,17 @@ const announceUnblocked = async (teamKey: string, identifier: string, canceled: 
     )
     .limit(1);
   if (finished) {
-    const next = unblocked
-      .slice(0, MAX_READY_ROWS)
-      .map(({ identifier: id, title, url, size }): NextIssue => ({ identifier: id, title, url, size }));
+    const next = unblocked.slice(0, MAX_READY_ROWS).map(
+      ({ identifier: id, title, url, size, project, projectUrl, milestone }): NextIssue => ({
+        identifier: id,
+        title,
+        url,
+        size,
+        project,
+        projectUrl,
+        milestone
+      })
+    );
     await getDb().update(workItems).set({ nextReady: next }).where(eq(workItems.id, finished.id));
     touchCard(finished.id);
     log('info', 'ready issues offered on the card', { after: identifier, issues });

@@ -1,9 +1,9 @@
 import type { CardInput, CardSummary } from './card';
-import { cardSummary, linkButton, STATUS_EMOJI, sizeText, slackEmoji } from './card';
+import { cardSummary, linkButton, STATUS_EMOJI } from './card';
 import type { ReadyIssue } from './ready';
 import { formatReleaseAt } from './router';
 import type { SlackBlock, SlackMessage } from './slack';
-import { button, escapeSlack } from './slack';
+import { button, escapeSlack, issueMetaText, slackEmoji } from './slack';
 import type { UsageSummary, WindowSummary } from './usage';
 
 // The app's Home tab in Slack: what needs the viewer, what's running, what's ready to start, the scheduled checks and
@@ -144,9 +144,10 @@ const listSection = (title: string, rows: SlackBlock[], empty: string, more: str
 
 const readyRow = (issue: ReadyIssue, emojiPrefix: string): SlackBlock =>
   section(
-    `<${issue.url}|${escapeSlack(issue.identifier)}> ${escapeSlack(clip(issue.title, 90))}\n${
-      sizeText(issue.size, emojiPrefix) ?? 'Unsized'
-    } · ${escapeSlack(issue.project)}`,
+    `<${issue.url}|${escapeSlack(issue.identifier)}> ${escapeSlack(clip(issue.title, 90))}\n${issueMetaText(
+      issue,
+      emojiPrefix
+    )}`,
     button('delegate', 'Delegate', { d: [issue.identifier] })
   );
 

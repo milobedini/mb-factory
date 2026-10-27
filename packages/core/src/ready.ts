@@ -12,7 +12,8 @@ export type CandidateIssue = {
   estimate: number | null;
   assignee: string | null;
   delegated: boolean;
-  project: { name: string; sortOrder: number; statusType: string };
+  project: { name: string; url: string | null; sortOrder: number; statusType: string };
+  milestone: string | null;
   // Every issue that blocks this one, with whether it's finished.
   blockers: { identifier: string; finished: boolean }[];
 };
@@ -23,6 +24,8 @@ export type ReadyIssue = {
   title: string;
   url: string;
   project: string;
+  projectUrl: string | null;
+  milestone: string | null;
   size: string;
   assignee: string | null;
   // Every issue that blocks this one, finished or not.
@@ -52,6 +55,8 @@ const toReady = (issue: CandidateIssue): ReadyIssue => ({
   title: issue.title,
   url: issue.url,
   project: issue.project.name,
+  projectUrl: issue.project.url,
+  milestone: issue.milestone,
   size: sizeLabel(issue.estimate),
   assignee: issue.assignee,
   blockedBy: issue.blockers.map(({ identifier }) => identifier),

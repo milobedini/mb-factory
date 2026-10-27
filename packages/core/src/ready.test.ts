@@ -3,8 +3,13 @@ import { describe, expect, it } from 'vitest';
 import type { CandidateIssue } from './ready';
 import { readyList, unblockedBy } from './ready';
 
-const platform = { name: 'Platform', sortOrder: -5811, statusType: 'backlog' };
-const recipes = { name: 'Real recipes', sortOrder: -5353, statusType: 'started' };
+const platform = {
+  name: 'Platform',
+  url: 'https://linear.app/tastebook/project/platform',
+  sortOrder: -5811,
+  statusType: 'backlog'
+};
+const recipes = { name: 'Real recipes', url: null, sortOrder: -5353, statusType: 'started' };
 
 const issue = (identifier: string, overrides: Partial<CandidateIssue> = {}): CandidateIssue => ({
   id: `id-${identifier}`,
@@ -16,6 +21,7 @@ const issue = (identifier: string, overrides: Partial<CandidateIssue> = {}): Can
   assignee: null,
   delegated: false,
   project: platform,
+  milestone: null,
   blockers: [],
   ...overrides
 });
@@ -48,6 +54,15 @@ describe('readyList', () => {
       ['TAS-24', []],
       ['TAS-25', ['TAS-24']]
     ]);
+  });
+
+  it('says where each issue sits: its project, linked when Linear gives the address, and its milestone', () => {
+    const [first, second] = readyList([
+      issue('TAS-27'),
+      issue('TAS-40', { project: recipes, milestone: 'Structured recipes' })
+    ]).ready;
+    expect(first).toMatchObject({ project: 'Platform', projectUrl: platform.url, milestone: null });
+    expect(second).toMatchObject({ project: 'Real recipes', projectUrl: null, milestone: 'Structured recipes' });
   });
 
   it('leaves out delegated issues and those in finished projects', () => {

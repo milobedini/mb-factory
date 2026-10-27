@@ -21,7 +21,8 @@ type CandidateNode = {
   estimate: number | null;
   assignee: { name: string } | null;
   delegate: { id: string } | null;
-  project: { name: string; sortOrder: number; status: { type: string } } | null;
+  project: { name: string; url: string; sortOrder: number; status: { type: string } } | null;
+  projectMilestone: { name: string } | null;
   relations: { nodes: Relation[] };
   inverseRelations: { nodes: Relation[] };
 };
@@ -34,7 +35,8 @@ const CANDIDATES_QUERY = `query ReadyCandidates($key: String!) {
       id identifier title url priority estimate
       assignee { name }
       delegate { id }
-      project { name sortOrder status { type } }
+      project { name url sortOrder status { type } }
+      projectMilestone { name }
       relations(first: 10) { nodes { type issue { identifier state { type } } relatedIssue { identifier } } }
       inverseRelations(first: 10) { nodes { type issue { identifier state { type } } relatedIssue { identifier } } }
     }
@@ -64,7 +66,13 @@ const toCandidate = (node: CandidateNode): CandidateIssue[] =>
           estimate: node.estimate,
           assignee: node.assignee?.name ?? null,
           delegated: node.delegate !== null,
-          project: { name: node.project.name, sortOrder: node.project.sortOrder, statusType: node.project.status.type },
+          project: {
+            name: node.project.name,
+            url: node.project.url,
+            sortOrder: node.project.sortOrder,
+            statusType: node.project.status.type
+          },
+          milestone: node.projectMilestone?.name ?? null,
           blockers: blockersOf(node)
         }
       ]
@@ -98,7 +106,11 @@ export const recentReadyList = async (project: FactoryConfig, now: Date): Promis
 
 // Ready issues with a Delegate button each.
 export const readyMessage = (project: FactoryConfig, heading: string, issues: ReadyIssue[]): SlackMessage =>
-  slackReadyMessage(heading, issues, { alias: project.alias, consoleUrl: requireEnv('CONSOLE_URL') });
+  slackReadyMessage(heading, issues, {
+    alias: project.alias,
+    consoleUrl: requireEnv('CONSOLE_URL'),
+    emojiPrefix: project.slack?.emojiPrefix ?? 'mbf'
+  });
 
 // A message in the project's channel listing ready issues: top-level, or in the thread of the mention that asked for it.
 export const postReadyMessage = async (

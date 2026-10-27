@@ -30,6 +30,46 @@ const section = (text: string): SlackBlock => ({ type: 'section', text: { type: 
 
 const context = (text: string): SlackBlock => ({ type: 'context', elements: [{ type: 'mrkdwn', text }] });
 
+// Custom emoji uploaded to the workspace (sources in `slack-assets/emoji`), named after the project's prefix.
+export const slackEmoji = (prefix: string, name: string): string => `:${prefix}-${name}:`;
+
+const SIZE_WORDS: Record<string, string> = {
+  XS: 'Extra small',
+  S: 'Small',
+  M: 'Medium',
+  L: 'Large',
+  XL: 'Extra large'
+};
+
+// The size as its bars emoji and the word, since a letter alone isn't clear.
+export const sizeText = (label: string, prefix: string): string | undefined => {
+  const word = SIZE_WORDS[label];
+  return word ? `${slackEmoji(prefix, `size-${label.toLowerCase()}`)} ${word}` : undefined;
+};
+
+// Where an issue sits in Linear: its project, linked, › its milestone.
+export const projectText = (
+  project: { name: string; url: string | null } | null,
+  milestone: string | null
+): string | undefined =>
+  project
+    ? `${project.url ? `<${project.url}|${escapeSlack(project.name)}>` : escapeSlack(project.name)}${
+        milestone ? ` › ${escapeSlack(milestone)}` : ''
+      }`
+    : undefined;
+
+// An issue's size and place, as the card's meta line shows them, for rows that offer issues to delegate.
+export const issueMetaText = (
+  issue: { size: string; project?: string | null; projectUrl?: string | null; milestone?: string | null },
+  prefix: string
+): string =>
+  [
+    sizeText(issue.size, prefix) ?? 'Unsized',
+    projectText(issue.project ? { name: issue.project, url: issue.projectUrl ?? null } : null, issue.milestone ?? null)
+  ]
+    .filter((part) => part !== undefined)
+    .join(' · ');
+
 // A ready message lists at most this many issues; the Inbox has the rest.
 export const MAX_READY_ROWS = 10;
 
@@ -664,8 +704,8 @@ export const slackMessageUrl = (workspaceUrl: string, channel: string, ts: strin
 const READY_ROW = 'ready:';
 const READY_ALL = 'ready_all';
 
-const readyRowText = ({ url, identifier, title, project, size }: ReadyIssue): string =>
-  `<${url}|${escapeSlack(identifier)}> ${escapeSlack(title)} · ${escapeSlack(project)} · ${size}`;
+const readyRowText = (issue: ReadyIssue, prefix: string): string =>
+  `<${issue.url}|${escapeSlack(issue.identifier)}> ${escapeSlack(issue.title)} · ${issueMetaText(issue, prefix)}`;
 
 const delegateAllBlock = (identifiers: string[]): SlackBlock => ({
   type: 'actions',
@@ -683,7 +723,7 @@ export const unblockedHeading = (identifier: string, canceled: boolean, count: n
 export const slackReadyMessage = (
   heading: string,
   issues: ReadyIssue[],
-  { alias, consoleUrl }: { alias: string; consoleUrl: string }
+  { alias, consoleUrl, emojiPrefix }: { alias: string; consoleUrl: string; emojiPrefix: string }
 ): SlackMessage => {
   const shown = issues.slice(0, MAX_READY_ROWS);
   const more = issues.length - shown.length;
@@ -695,7 +735,7 @@ export const slackReadyMessage = (
       ...shown.map((issue) => ({
         type: 'section',
         block_id: `${READY_ROW}${issue.identifier}`,
-        text: { type: 'mrkdwn', text: readyRowText(issue) },
+        text: { type: 'mrkdwn', text: readyRowText(issue, emojiPrefix) },
         accessory: button('delegate', 'Delegate', { d: [issue.identifier] })
       })),
       ...(shown.length > 1 ? [delegateAllBlock(shown.map(({ identifier }) => identifier))] : []),

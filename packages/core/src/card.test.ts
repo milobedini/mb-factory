@@ -274,7 +274,17 @@ describe('workItemCard', () => {
       input(
         {
           runs: [run(), run({ agent: 'implement' }), run({ agent: 'review' })],
-          next: [{ identifier: 'TAS-31', title: 'Enamel part 3', url: 'https://linear.app/t/TAS-31', size: 'M' }]
+          next: [
+            {
+              identifier: 'TAS-31',
+              title: 'Enamel part 3',
+              url: 'https://linear.app/t/TAS-31',
+              size: 'M',
+              project: 'Platform',
+              projectUrl: 'https://linear.app/t/project/platform',
+              milestone: null
+            }
+          ]
         },
         { stage: 'done', prNumber: 36 }
       )
@@ -285,7 +295,7 @@ describe('workItemCard', () => {
     const next = attachment(card).blocks.find((block) => block.accessory !== undefined);
     expect(next?.text).toEqual({
       type: 'mrkdwn',
-      text: '*Next:* <https://linear.app/t/TAS-31|TAS-31> Enamel part 3 · :tb-size-m: Medium · ready to delegate'
+      text: '*Next:* <https://linear.app/t/TAS-31|TAS-31> Enamel part 3 · :tb-size-m: Medium · <https://linear.app/t/project/platform|Platform> · ready to delegate'
     });
     expect(next?.accessory).toMatchObject({ value: JSON.stringify({ d: ['TAS-31'] }) });
   });
@@ -311,7 +321,7 @@ describe('workItemCard', () => {
     );
     expect(texts(attachment(card).blocks)).toEqual(
       expect.arrayContaining([
-        '✓ Next: <https://l/31|TAS-31> Part 3 · delegated by Milo, 10:40',
+        '✓ Next: <https://l/31|TAS-31> Part 3 · Unsized · delegated by Milo, 10:40',
         'Next: ~<https://l/32|TAS-32> Part 4 · :tb-size-s: Small~ · no longer ready'
       ])
     );

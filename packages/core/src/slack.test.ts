@@ -462,12 +462,14 @@ describe('ready messages', () => {
     title,
     url: `https://linear.app/tastebook/issue/${identifier}`,
     project: 'Platform',
-    size: 'unsized',
+    projectUrl: 'https://linear.app/tastebook/project/platform',
+    milestone: identifier === 'TAS-26' ? 'Checks' : null,
+    size: identifier === 'TAS-26' ? 'M' : 'unsized',
     assignee: null,
     blockedBy: [],
     waitingOn: []
   });
-  const options = { alias: 'Tastebook', consoleUrl: 'https://console.example' };
+  const options = { alias: 'Tastebook', consoleUrl: 'https://console.example', emojiPrefix: 'tb' };
   const issues = [ready('TAS-25', 'Report errors to Sentry'), ready('TAS-26', 'Check <every> preview')];
   const at = new Date('2026-10-26T16:42:10Z');
 
@@ -483,7 +485,7 @@ describe('ready messages', () => {
     expect(message.blocks[2]).toMatchObject({
       block_id: 'ready:TAS-26',
       text: {
-        text: '<https://linear.app/tastebook/issue/TAS-26|TAS-26> Check &lt;every&gt; preview · Platform · unsized'
+        text: '<https://linear.app/tastebook/issue/TAS-26|TAS-26> Check &lt;every&gt; preview · :tb-size-m: Medium · <https://linear.app/tastebook/project/platform|Platform> › Checks'
       }
     });
     expect(buttonsOf(message.blocks).map(({ action_id, text, value }) => [action_id, text.text, value])).toEqual([
@@ -529,7 +531,7 @@ describe('ready messages', () => {
       block_id: 'ready:TAS-25',
       text: {
         type: 'mrkdwn',
-        text: '✓ <https://linear.app/tastebook/issue/TAS-25|TAS-25> Report errors to Sentry · Platform · unsized · delegated by Milo, 16:42'
+        text: '✓ <https://linear.app/tastebook/issue/TAS-25|TAS-25> Report errors to Sentry · Unsized · <https://linear.app/tastebook/project/platform|Platform> · delegated by Milo, 16:42'
       }
     });
     expect(settled[2]).toMatchObject({ text: { text: expect.stringMatching(/^~.*~ · no longer ready$/) } });

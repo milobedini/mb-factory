@@ -186,6 +186,8 @@ describe('homeView', () => {
         title: 'Filter by diet',
         url: 'https://l/47',
         project: 'Real recipes',
+        projectUrl: 'https://l/real-recipes',
+        milestone: 'Finding',
         size: 'M',
         assignee: null,
         blockedBy: [],
@@ -194,7 +196,7 @@ describe('homeView', () => {
     ];
     const view = homeView(input({ ready }));
     expect(rowsUnder(view.blocks, 'Ready to delegate')[0]).toBe(
-      '<https://l/47|TAS-47> Filter by diet\n:tb-size-m: Medium · Real recipes'
+      '<https://l/47|TAS-47> Filter by diet\n:tb-size-m: Medium · <https://l/real-recipes|Real recipes> › Finding'
     );
     expect(texts(homeView(input({ ready: null })).blocks)).toContain(
       'I couldn’t read Linear just now. Refresh in a minute.'

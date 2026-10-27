@@ -10,7 +10,17 @@ import { queuedThought } from './router';
 import type { RunTrigger } from './runs';
 import { formatRunTime, isOpenRun, runTotals } from './runs';
 import type { SlackBlock, SlackMessage } from './slack';
-import { button, escapeSlack, SPEC_APPROVE, SPEC_CHANGE, specUrl } from './slack';
+import {
+  button,
+  escapeSlack,
+  issueMetaText,
+  projectText,
+  SPEC_APPROVE,
+  SPEC_CHANGE,
+  sizeText,
+  slackEmoji,
+  specUrl
+} from './slack';
 import type { AgentRole, Stage } from './stages';
 
 // A work item's thread starts with a card, edited in place as the work moves: a title, then a coloured attachment with
@@ -38,6 +48,10 @@ const nextIssueSchema = z.object({
   title: z.string(),
   url: z.string().min(1),
   size: z.string(),
+  // Where it sits in Linear; left out of what cards stored before 27 Oct.
+  project: z.string().nullish(),
+  projectUrl: z.string().nullish(),
+  milestone: z.string().nullish(),
   delegatedBy: z.string().nullish(),
   delegatedAt: z.iso.datetime().nullish(),
   notReady: z.boolean().nullish()
@@ -104,9 +118,6 @@ export const CARD_COLOURS: Record<CardStatus, string> = {
   merged: '#6b6f76',
   canceled: '#6b6f76'
 };
-
-// Custom emoji uploaded to the workspace (sources in `slack-assets/emoji`), named after the project's prefix.
-export const slackEmoji = (prefix: string, name: string): string => `:${prefix}-${name}:`;
 
 export const STATUS_EMOJI: Record<CardStatus, string> = {
   running: 'running',
@@ -325,32 +336,13 @@ const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | un
   }
 };
 
-const SIZE_WORDS: Record<string, string> = {
-  XS: 'Extra small',
-  S: 'Small',
-  M: 'Medium',
-  L: 'Large',
-  XL: 'Extra large'
-};
-
-// The size as its bars emoji and the word, since a letter alone isn't clear.
-export const sizeText = (label: string, prefix: string): string | undefined => {
-  const word = SIZE_WORDS[label];
-  return word ? `${slackEmoji(prefix, `size-${label.toLowerCase()}`)} ${word}` : undefined;
-};
-
 const metaText = (input: CardInput): string | undefined => {
   const { workItem, runs } = input;
   const { project, milestone } = workItem;
   const totals = runTotals(runs);
-  const projectText = project
-    ? `${project.url ? `<${project.url}|${escapeSlack(project.name)}>` : escapeSlack(project.name)}${
-        milestone ? ` › ${escapeSlack(milestone)}` : ''
-      }`
-    : undefined;
   const parts = [
     sizeText(sizeLabel(workItem.estimate), input.emojiPrefix),
-    projectText,
+    projectText(project, milestone),
     workItem.assignee ? escapeSlack(workItem.assignee) : undefined,
     totals.runs > 0 ? plural(totals.runs, 'run') : undefined,
     totals.durationMs > 0 ? formatRunTime(totals.durationMs) : undefined,
@@ -413,8 +405,7 @@ const section = (text: string): SlackBlock => ({ type: 'section', text: { type: 
 const context = (text: string): SlackBlock => ({ type: 'context', elements: [{ type: 'mrkdwn', text }] });
 
 const nextBlock = (issue: NextIssue, { timeZone, emojiPrefix }: CardInput): SlackBlock => {
-  const size = sizeText(issue.size, emojiPrefix);
-  const row = `<${issue.url}|${escapeSlack(issue.identifier)}> ${escapeSlack(issue.title)}${size ? ` · ${size}` : ''}`;
+  const row = `<${issue.url}|${escapeSlack(issue.identifier)}> ${escapeSlack(issue.title)} · ${issueMetaText(issue, emojiPrefix)}`;
   if (issue.delegatedBy) {
     const at = issue.delegatedAt ? `, ${clock(new Date(issue.delegatedAt), timeZone)}` : '';
     return context(`✓ Next: ${row} · delegated by ${escapeSlack(issue.delegatedBy)}${at}`);
