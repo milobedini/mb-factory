@@ -2036,8 +2036,9 @@ const lockfileOnlyMerge = async (
 };
 
 // When an earlier verify run on the work item met every criterion, as the thread shows the time.
+// Only the latest verify run counts: one that met everything before a later run found something not met proves nothing.
 const verifiedAt = async (project: FactoryConfig, workItemId: string): Promise<string | undefined> => {
-  const done = await getDb()
+  const [latest] = await getDb()
     .select({ report: runs.report, finishedAt: runs.finishedAt })
     .from(runs)
     .where(
@@ -2048,16 +2049,20 @@ const verifiedAt = async (project: FactoryConfig, workItemId: string): Promise<s
         eq(runs.outcome, 'done')
       )
     )
-    .orderBy(desc(runs.finishedAt));
-  const verified = done.find(({ report }) => metEveryCriterion(report));
-  return verified?.finishedAt ? formatReleaseAt(verified.finishedAt, new Date(), project.timeZone) : undefined;
+    .orderBy(desc(runs.finishedAt))
+    .limit(1);
+  return latest?.finishedAt && metEveryCriterion(latest.report)
+    ? formatReleaseAt(latest.finishedAt, new Date(), project.timeZone)
+    : undefined;
 };
 
-// Whether a delivered PR is verified, from GitHub's list of its files, the implement run's report and any earlier
-// verify run. When GitHub can't say, it's verified: a run spent for nothing costs less than a change nobody looked at.
+// Whether a delivered PR is verified, from GitHub's list of its files, the implement run's report and, for a revision
+// that fixes review findings, the last verify run: any other revision (a reply asking for a change, a CI or conflict
+// fix) is verified again. When GitHub can't say, it's verified: a run spent for nothing costs less than a change nobody
+// looked at.
 const needsVerify = async (
   project: FactoryConfig,
-  run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null; report: unknown },
+  run: { agent: AgentRole; trigger: RunTrigger; status: RunStatus; outcome: RunOutcome | null; report: unknown },
   workItem: WorkItem
 ): Promise<VerifyDecision> => {
   const { prNumber, repository } = workItem;
@@ -2071,7 +2076,10 @@ const needsVerify = async (
     return { verify: false };
   }
   try {
-    const [files, verified] = await Promise.all([pullFiles(repository, prNumber), verifiedAt(project, workItem.id)]);
+    const [files, verified] = await Promise.all([
+      pullFiles(repository, prNumber),
+      run.trigger === 'review_findings' ? verifiedAt(project, workItem.id) : undefined
+    ]);
     return decideVerify(project.verify.paths, files, run.report, verified);
   } catch (error) {
     log('warn', 'verify check failed', { issue: workItem.issueIdentifier, pr: prNumber, error: errorMessage(error) });
