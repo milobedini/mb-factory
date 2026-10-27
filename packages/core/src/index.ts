@@ -81,6 +81,8 @@ export {
   PROBLEM_RETENTION_DAYS,
   problemHour
 } from './health';
+export type { HomeCheck, HomeInput, HomeView } from './home';
+export { homeNotAllowedView, homeView, MAX_HOME_ROWS } from './home';
 export type { ChecksState, InboxEntry, InboxKind, InboxQuestion, InboxRun } from './inbox';
 export { checksState, INBOX_KINDS, inboxEntry } from './inbox';
 export type {
@@ -241,6 +243,7 @@ export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
 export type {
   CardQuestion,
+  HomeAction,
   ReadyOutcome,
   SlackAction,
   SlackBlock,
@@ -253,6 +256,7 @@ export {
   delegateFailedText,
   emptyMentionText,
   escapeSlack,
+  HOME_ACTIONS,
   isAllowedSlackUser,
   isReadyRequest,
   linearSlackReplyText,
@@ -261,6 +265,7 @@ export {
   notAllowedToStartText,
   nothingReadyText,
   notReadyText,
+  parseAppHomeOpened,
   parseSlackAction,
   parseSlackMention,
   parseSlackThreadReply,

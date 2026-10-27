@@ -61,6 +61,11 @@ export const updateSlackMessage = async ({
   await callSlack('chat.update', { channel, ts, text, blocks, attachments });
 };
 
+// Publishes a person's view of the app's Home tab.
+export const publishHomeView = async (userId: string, view: { type: 'home'; blocks: SlackBlock[] }): Promise<void> => {
+  await callSlack('views.publish', { user_id: userId, view });
+};
+
 // A message only one person sees, such as why their reply wasn't taken.
 export const postSlackEphemeral = async ({
   channel,

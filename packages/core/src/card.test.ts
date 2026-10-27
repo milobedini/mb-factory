@@ -49,6 +49,7 @@ const input = (overrides: Partial<CardInput> = {}, workItem: Partial<CardInput['
   next: [],
   now: at(30),
   timeZone: 'Europe/London',
+  emojiPrefix: 'tb',
   ...overrides
 });
 
@@ -274,6 +275,14 @@ describe('workItemCard', () => {
       ':tb-done: Triage   :tb-skipped: ~Spec~   :tb-canceled: *Implement*   :tb-canceled: Verify   :tb-canceled: Review   :tb-canceled: Merge'
     );
     expect(status(card)).toBe(':tb-canceled: *Canceled* at 10:30');
+  });
+
+  it('names the emoji after the project’s prefix', () => {
+    const card = workItemCard(input({ emojiPrefix: 'mbf' }));
+    expect(track(card)).toMatch(/^:mbf-needs-you: \*Triage\*/);
+    expect(texts(attachment(card).blocks)).toContain(
+      ':mbf-size-m: Medium · <https://linear.app/tastebook/project/real-recipes|Real recipes> › Structured recipes · 1 run · 1 min · $0.25'
+    );
   });
 
   it('escapes what people wrote', () => {

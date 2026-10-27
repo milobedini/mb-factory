@@ -147,6 +147,7 @@ import {
   sendStageDispatch
 } from './github-api';
 import { fileGuards } from './guards';
+import { publishHome } from './home';
 import { findJob, jobBriefFor, jobTitleOf, postJobMessage } from './job-runs';
 import type { AgentActivityContent } from './linear-api';
 import {
@@ -163,7 +164,7 @@ import {
   setBlockedLabel
 } from './linear-api';
 import { log } from './log';
-import { currentPause } from './pause';
+import { currentPause, pauseFactory, resumeFactory } from './pause';
 import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
 import { loadReadyList, postReadyMessage } from './ready';
 import type { RunWithWorkItem } from './runs';
@@ -1565,8 +1566,10 @@ const handleDelegateTap = async (
   action: Extract<SlackAction, { kind: 'delegate' }>,
   tellTapper: (text: string) => Promise<void>
 ): Promise<void> => {
-  const project = action.channelId ? findProjectBySlackChannel(action.channelId) : undefined;
-  if (!project || !action.channelId) {
+  // A tap in the App Home has no channel: the issues' team says whose they are.
+  const teamKey = action.identifiers[0]?.split('-')[0] ?? '';
+  const project = action.channelId ? findProjectBySlackChannel(action.channelId) : findProjectByTeamKey(teamKey);
+  if (!project) {
     return;
   }
   if (!isAllowedSlackUser(project, action.userId)) {
@@ -1609,16 +1612,17 @@ const handleDelegateTap = async (
     results.filter(({ result }) => result === wanted).map(({ identifier }) => identifier);
   const [notReady, failed] = [withResult('not_ready'), withResult('failed')];
   const { message, channelId } = action;
-  const [card] = message
-    ? await getDb()
-        .select({ id: workItems.id, nextReady: workItems.nextReady })
-        .from(workItems)
-        .where(and(eq(workItems.slackChannelId, channelId), eq(workItems.slackThreadTs, message.ts)))
-        .limit(1)
-    : [];
+  const [card] =
+    message && channelId
+      ? await getDb()
+          .select({ id: workItems.id, nextReady: workItems.nextReady })
+          .from(workItems)
+          .where(and(eq(workItems.slackChannelId, channelId), eq(workItems.slackThreadTs, message.ts)))
+          .limit(1)
+      : [];
   await Promise.all([
     card && outcomes.length > 0 ? settleNextOnCard(card, outcomes) : undefined,
-    !card && message && outcomes.length > 0
+    !card && message && channelId && outcomes.length > 0
       ? attempt('slack edit', { issues: action.identifiers }, () =>
           updateSlackMessage({
             channel: channelId,
@@ -1730,8 +1734,52 @@ export const handleSlackAction = withCards(async (payload: unknown): Promise<voi
   if (!action) {
     return;
   }
+  const { responseUrl } = action;
+  // A tap in the App Home has no response URL, so the answer goes to the app's messages with the tapper.
   const tellTapper = (text: string) =>
-    attempt('slack action response', { user: action.userId }, () => respondToSlackAction(action.responseUrl, text));
+    attempt('slack action response', { user: action.userId }, () =>
+      responseUrl
+        ? respondToSlackAction(responseUrl, text)
+        : postSlackMessage({ channel: action.userId, text }).then(() => undefined)
+    );
+  try {
+    await handleTap(action, tellTapper);
+  } finally {
+    if (action.fromHome) {
+      await publishHome(action.userId);
+    }
+  }
+});
+
+const handleHomeTap = async (
+  action: Extract<SlackAction, { kind: 'home' }>,
+  tellTapper: (text: string) => Promise<void>
+): Promise<void> => {
+  if (action.action === 'refresh') {
+    return;
+  }
+  const project = allProjects().find((candidate) => isAllowedSlackUser(candidate, action.userId));
+  if (!project) {
+    await tellTapper('Only the factory’s people can pause or resume it.');
+    return;
+  }
+  const by = `${await slackUserName(action.userId).catch(() => action.userId)} in Slack`;
+  if (action.action === 'pause') {
+    await pauseFactory(by);
+    log('info', 'factory paused', { login: by });
+    return;
+  }
+  if (await resumeFactory(by)) {
+    log('info', 'factory resumed', { login: by });
+    await releaseQueue();
+  }
+};
+
+const handleTap = async (action: SlackAction, tellTapper: (text: string) => Promise<void>): Promise<void> => {
+  if (action.kind === 'home') {
+    await handleHomeTap(action, tellTapper);
+    return;
+  }
   if (action.kind === 'delegate') {
     await handleDelegateTap(action, tellTapper);
     return;
@@ -1772,7 +1820,7 @@ export const handleSlackAction = withCards(async (payload: unknown): Promise<voi
   }
   const name = await slackUserName(action.userId).catch(() => action.userId);
   await handleReply(project, workItem, action.body, { via: 'slack', name });
-});
+};
 
 // After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a
 // limit-hit run, free its slot.

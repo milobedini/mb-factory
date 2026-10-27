@@ -32,6 +32,11 @@ const context = (text: string): SlackBlock => ({ type: 'context', elements: [{ t
 // A ready message lists at most this many issues; the Inbox has the rest.
 export const MAX_READY_ROWS = 10;
 
+// The App Home's own buttons.
+export const HOME_ACTIONS = ['refresh', 'pause', 'resume'] as const;
+
+export type HomeAction = (typeof HOME_ACTIONS)[number];
+
 // What a button sends back: the question or work item it belongs to and the reply it stands for, or the ready issues
 // it delegates.
 const buttonValueSchema = z.union([
@@ -39,6 +44,7 @@ const buttonValueSchema = z.union([
   z.object({ w: z.uuid(), a: z.string().min(1) }),
   z.object({ g: z.uuid(), a: z.string().min(1) }),
   z.object({ r: z.uuid() }),
+  z.object({ h: z.enum(HOME_ACTIONS) }),
   z.object({
     d: z
       .array(z.string().regex(/^[A-Z][A-Z0-9]*-\d+$/))
@@ -312,7 +318,9 @@ const actionPayloadSchema = z.looseObject({
       blocks: z.array(z.record(z.string(), z.unknown())).nullish()
     })
     .nullish(),
-  response_url: z.url({ protocol: /^https$/ }),
+  // A tap in the App Home has no response URL, only the view it sits in.
+  response_url: z.url({ protocol: /^https$/ }).nullish(),
+  view: z.looseObject({ type: z.string() }).nullish(),
   actions: z.array(z.looseObject({ value: z.string().nullish(), action_ts: z.string().min(1) })).min(1)
 });
 
@@ -322,14 +330,17 @@ export type TappedMessage = { ts: string; text: string; blocks: SlackBlock[] };
 export type SlackAction = {
   userId: string;
   channelId: string | null;
-  responseUrl: string;
+  responseUrl: string | null;
   actionTs: string;
+  // Tapped in the App Home, which is redrawn for the tapper afterwards.
+  fromHome: boolean;
 } & (
   | { kind: 'question'; questionId: string; body: string }
   | { kind: 'spec_gate'; workItemId: string; body: string }
   | { kind: 'gate'; workItemId: string; body: string }
   | { kind: 'delegate'; identifiers: string[]; message: TappedMessage | null }
   | { kind: 'rerun'; runId: string }
+  | { kind: 'home'; action: HomeAction }
 );
 
 const parseValue = (value: string | null | undefined): ButtonValue | undefined => {
@@ -351,8 +362,9 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
   const base = {
     userId: parsed.user.id,
     channelId: parsed.channel?.id ?? null,
-    responseUrl: parsed.response_url,
-    actionTs: action.action_ts
+    responseUrl: parsed.response_url ?? null,
+    actionTs: action.action_ts,
+    fromHome: parsed.view?.type === 'home'
   };
   if ('d' in value) {
     const { message } = parsed;
@@ -363,6 +375,9 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
       message: message ? { ts: message.ts, text: message.text ?? '', blocks: message.blocks ?? [] } : null
     };
   }
+  if ('h' in value) {
+    return { ...base, kind: 'home', action: value.h };
+  }
   if ('r' in value) {
     return { ...base, kind: 'rerun', runId: value.r };
   }
@@ -372,6 +387,17 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
   return 'q' in value
     ? { ...base, kind: 'question', questionId: value.q, body: value.a }
     : { ...base, kind: 'spec_gate', workItemId: value.w, body: value.a };
+};
+
+const homeOpenedSchema = z.looseObject({
+  type: z.literal('event_callback'),
+  event: z.looseObject({ type: z.literal('app_home_opened'), user: z.string().min(1), tab: z.string() })
+});
+
+// Who opened the app's Home tab; the Messages tab and anything else is undefined.
+export const parseAppHomeOpened = (payload: unknown): { userId: string } | undefined => {
+  const event = homeOpenedSchema.safeParse(payload).data?.event;
+  return event?.tab === 'home' ? { userId: event.user } : undefined;
 };
 
 const mentionEventSchema = z.looseObject({

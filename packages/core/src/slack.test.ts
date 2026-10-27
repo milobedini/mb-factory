@@ -14,6 +14,7 @@ import {
   linearSlackReplyText,
   nothingReadyText,
   notReadyText,
+  parseAppHomeOpened,
   parseSlackAction,
   parseSlackMention,
   parseSlackThreadReply,
@@ -270,7 +271,26 @@ describe('parseSlackAction', () => {
       userId: 'U0CBS3FN806',
       channelId: 'C0CBSE2Q6FQ',
       responseUrl: 'https://hooks.slack.com/actions/A1/2/x',
-      actionTs: '1792947200.1'
+      actionTs: '1792947200.1',
+      fromHome: false
+    });
+  });
+
+  it('reads a tap in the App Home, which has no channel or response URL', () => {
+    const {
+      channel: _channel,
+      message: _message,
+      response_url: _url,
+      ...home
+    } = payload(JSON.stringify({ h: 'pause' }));
+    expect(parseSlackAction({ ...home, view: { type: 'home', id: 'V1' } })).toEqual({
+      kind: 'home',
+      action: 'pause',
+      userId: 'U0CBS3FN806',
+      channelId: null,
+      responseUrl: null,
+      actionTs: '1792947200.1',
+      fromHome: true
     });
   });
 
@@ -561,5 +581,18 @@ describe('slackGateMessage', () => {
     const { blocks } = slackGateSettled(gate, 'Create them', 'by Milo');
     expect(blocks.some((block) => block.type === 'actions')).toBe(false);
     expect(blocks.at(-1)).toEqual({ type: 'context', elements: [{ type: 'mrkdwn', text: '✓ Create them, by Milo.' }] });
+  });
+});
+
+describe('parseAppHomeOpened', () => {
+  const opened = (tab: string) => ({
+    type: 'event_callback',
+    event: { type: 'app_home_opened', user: 'U0CBS3FN806', channel: 'D1', tab, event_ts: '1.2' }
+  });
+
+  it('reads who opened the Home tab, not the Messages tab', () => {
+    expect(parseAppHomeOpened(opened('home'))).toEqual({ userId: 'U0CBS3FN806' });
+    expect(parseAppHomeOpened(opened('messages'))).toBeUndefined();
+    expect(parseAppHomeOpened({ type: 'event_callback', event: { type: 'message' } })).toBeUndefined();
   });
 });

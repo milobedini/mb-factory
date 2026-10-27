@@ -33,6 +33,7 @@ slack:
   channelId: C0CBSE2Q6FQ
   allowedUserIds:
     - U0CBS3FN806 # Milo
+  emojiPrefix: tb
 
 models:
   triage: sonnet

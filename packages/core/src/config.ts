@@ -93,7 +93,12 @@ export const factoryConfigSchema = z
         channel: z.string().min(1),
         channelId: z.string().regex(/^[CG][A-Z0-9]+$/),
         // Slack members who may answer questions and gates, and steer the work, from a thread.
-        allowedUserIds: z.array(z.string().regex(/^[UW][A-Z0-9]+$/)).default([])
+        allowedUserIds: z.array(z.string().regex(/^[UW][A-Z0-9]+$/)).default([]),
+        // The workspace's custom emoji for cards and the App Home are named `<emojiPrefix>-done` and so on.
+        emojiPrefix: z
+          .string()
+          .regex(/^[a-z0-9][a-z0-9_-]*$/)
+          .default('mbf')
       })
       .optional(),
     models: z.object({

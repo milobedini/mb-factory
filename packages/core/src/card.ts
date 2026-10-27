@@ -82,6 +82,8 @@ export type CardInput = {
   next: NextIssue[];
   now: Date;
   timeZone: string;
+  // The workspace's custom emoji are named `<prefix>-done`, `<prefix>-size-m`, and so on.
+  emojiPrefix: string;
 };
 
 export type SlackCard = SlackMessage & { attachments: { color: string; blocks: SlackBlock[] }[] };
@@ -96,26 +98,28 @@ export const CARD_COLOURS: Record<CardStatus, string> = {
   canceled: '#6b6f76'
 };
 
-// Custom emoji uploaded to the workspace, from `projects/<name>/slack-assets/emoji`.
-const STATUS_EMOJI: Record<CardStatus, string> = {
-  running: 'tb-running',
-  queued: 'tb-queued',
-  waiting: 'tb-needs-you',
-  blocked: 'tb-blocked',
-  ready: 'tb-done',
-  merged: 'tb-merged',
-  canceled: 'tb-canceled'
+// Custom emoji uploaded to the workspace (sources in `slack-assets/emoji`), named after the project's prefix.
+export const slackEmoji = (prefix: string, name: string): string => `:${prefix}-${name}:`;
+
+export const STATUS_EMOJI: Record<CardStatus, string> = {
+  running: 'running',
+  queued: 'queued',
+  waiting: 'needs-you',
+  blocked: 'blocked',
+  ready: 'done',
+  merged: 'merged',
+  canceled: 'canceled'
 };
 
 const STEP_EMOJI: Record<StepState, string> = {
-  done: 'tb-done',
-  running: 'tb-running',
-  queued: 'tb-queued',
-  waiting: 'tb-needs-you',
-  blocked: 'tb-blocked',
-  todo: 'tb-todo',
-  skipped: 'tb-skipped',
-  canceled: 'tb-canceled'
+  done: 'done',
+  running: 'running',
+  queued: 'queued',
+  waiting: 'needs-you',
+  blocked: 'blocked',
+  todo: 'todo',
+  skipped: 'skipped',
+  canceled: 'canceled'
 };
 
 const STATUS_WORDS: Record<CardStatus, string> = {
@@ -311,12 +315,13 @@ const SIZE_WORDS: Record<string, string> = {
 };
 
 // The size as its bars emoji and the word, since a letter alone isn't clear.
-const sizeText = (label: string): string | undefined => {
+export const sizeText = (label: string, prefix: string): string | undefined => {
   const word = SIZE_WORDS[label];
-  return word ? `:tb-size-${label.toLowerCase()}: ${word}` : undefined;
+  return word ? `${slackEmoji(prefix, `size-${label.toLowerCase()}`)} ${word}` : undefined;
 };
 
-const metaText = ({ workItem, runs }: CardInput): string | undefined => {
+const metaText = (input: CardInput): string | undefined => {
+  const { workItem, runs } = input;
   const { project, milestone } = workItem;
   const totals = runTotals(runs);
   const projectText = project
@@ -325,7 +330,7 @@ const metaText = ({ workItem, runs }: CardInput): string | undefined => {
       }`
     : undefined;
   const parts = [
-    sizeText(sizeLabel(workItem.estimate)),
+    sizeText(sizeLabel(workItem.estimate), input.emojiPrefix),
     projectText,
     totals.runs > 0 ? plural(totals.runs, 'run') : undefined,
     totals.durationMs > 0 ? formatRunTime(totals.durationMs) : undefined,
@@ -334,7 +339,7 @@ const metaText = ({ workItem, runs }: CardInput): string | undefined => {
   return parts.length > 0 ? parts.join(' · ') : undefined;
 };
 
-const linkButton = (actionId: string, text: string, url: string, primary = false): SlackBlock => ({
+export const linkButton = (actionId: string, text: string, url: string, primary = false): SlackBlock => ({
   type: 'button',
   action_id: actionId,
   text: { type: 'plain_text', text },
@@ -379,8 +384,8 @@ const section = (text: string): SlackBlock => ({ type: 'section', text: { type: 
 
 const context = (text: string): SlackBlock => ({ type: 'context', elements: [{ type: 'mrkdwn', text }] });
 
-const nextBlock = (issue: NextIssue, timeZone: string): SlackBlock => {
-  const size = sizeText(issue.size);
+const nextBlock = (issue: NextIssue, { timeZone, emojiPrefix }: CardInput): SlackBlock => {
+  const size = sizeText(issue.size, emojiPrefix);
   const row = `<${issue.url}|${escapeSlack(issue.identifier)}> ${escapeSlack(issue.title)}${size ? ` · ${size}` : ''}`;
   if (issue.delegatedBy) {
     const at = issue.delegatedAt ? `, ${clock(new Date(issue.delegatedAt), timeZone)}` : '';
@@ -395,19 +400,26 @@ const nextBlock = (issue: NextIssue, timeZone: string): SlackBlock => {
   };
 };
 
-export const workItemCard = (input: CardInput): SlackCard => {
-  const { workItem, runs, round, timeZone } = input;
-  const latest = runs.at(-1);
+export type CardSummary = { status: CardStatus; entry: InboxEntry | undefined; line: string; buttons: SlackBlock[] };
+
+// What a work item's card says about it now, for the card and for the App Home's rows.
+export const cardSummary = (input: CardInput): CardSummary => {
+  const { workItem, runs, round } = input;
   const entry = inboxEntry(workItem, runs, round);
-  const status = cardStatus(workItem.stage, latest, entry, input.hold !== null);
+  const status = cardStatus(workItem.stage, runs.at(-1), entry, input.hold !== null);
+  return { status, entry, line: statusText(input, status, entry), buttons: cardButtons(input, status, entry) };
+};
+
+export const workItemCard = (input: CardInput): SlackCard => {
+  const { workItem, runs, emojiPrefix } = input;
+  const { status, entry, line, buttons } = cardSummary(input);
   const track = trackSteps(workItem.stage, runs, entry, status)
     .map(
       ({ name, state, current }) =>
-        `:${STEP_EMOJI[state]}: ${current ? `*${name}*` : state === 'skipped' ? `~${name}~` : name}`
+        `${slackEmoji(emojiPrefix, STEP_EMOJI[state])} ${current ? `*${name}*` : state === 'skipped' ? `~${name}~` : name}`
     )
     .join('   ');
   const meta = metaText(input);
-  const buttons = cardButtons(input, status, entry);
   const title = workItem.title ? ` ${escapeSlack(workItem.title)}` : '';
   return {
     text: `${escapeSlack(workItem.identifier)}${title}: ${STATUS_WORDS[status]}`,
@@ -417,8 +429,8 @@ export const workItemCard = (input: CardInput): SlackCard => {
         color: CARD_COLOURS[status],
         blocks: [
           context(track),
-          section(`:${STATUS_EMOJI[status]}: ${statusText(input, status, entry)}`),
-          ...input.next.map((issue) => nextBlock(issue, timeZone)),
+          section(`${slackEmoji(emojiPrefix, STATUS_EMOJI[status])} ${line}`),
+          ...input.next.map((issue) => nextBlock(issue, input)),
           ...(meta ? [context(meta)] : []),
           ...(buttons.length > 0 ? [{ type: 'actions', elements: buttons }] : [])
         ]

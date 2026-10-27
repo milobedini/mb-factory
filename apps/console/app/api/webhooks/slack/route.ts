@@ -3,6 +3,7 @@ import { after } from 'next/server';
 
 import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
+import { handleAppHomeOpened } from '@/lib/home';
 import { log } from '@/lib/log';
 import { handleSlackMention, handleSlackMessage, releaseQueueOnActivity } from '@/lib/router';
 
@@ -21,11 +22,12 @@ const routeEvent = async (payload: SlackPayload, handle: (payload: unknown) => P
   }
 };
 
-// Thread replies steer work and top-level mentions start it. A mention in a thread arrives as both; the `message`
+// Thread replies steer work, top-level mentions start it, and opening the app's Home tab shows the hub. A mention in a thread arrives as both; the `message`
 // is the one acted on, and the mention handler ignores it.
 const HANDLERS: Record<string, (payload: unknown) => Promise<void>> = {
   message: handleSlackMessage,
-  app_mention: handleSlackMention
+  app_mention: handleSlackMention,
+  app_home_opened: handleAppHomeOpened
 };
 
 export const POST = async (request: Request) => {
