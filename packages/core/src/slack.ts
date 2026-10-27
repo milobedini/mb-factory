@@ -276,6 +276,10 @@ const findingPlace = ({ path, line }: ReviewFinding, { repository, branch }: Fin
     return '';
   }
   const label = escapeSlack(`${path}${line ? `:${line}` : ''}`);
+  // Review names things that aren't files too ("PR description"): those stay plain text.
+  if (/\s/.test(path)) {
+    return ` ${label}`;
+  }
   return branch
     ? ` <https://github.com/${repository}/blob/${encodeURI(branch)}/${encodeURI(path)}${line ? `#L${line}` : ''}|${label}>`
     : ` \`${label}\``;

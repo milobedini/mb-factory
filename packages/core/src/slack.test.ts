@@ -609,6 +609,16 @@ describe('slackFindingsMessage', () => {
     });
   });
 
+  it('links only a finding’s file, not something else it names', () => {
+    const { blocks } = slackFindingsMessage(
+      { id: runId, round: 1 },
+      [{ tier: 'blocking', path: 'PR description', summary: 'It is empty.' }],
+      place,
+      false
+    );
+    expect(sectionTexts(blocks)[1]).toBe('*Blocking* PR description\nIt is empty.');
+  });
+
   it('lists a revision round’s findings without boxes or buttons', () => {
     const { blocks } = slackFindingsMessage({ id: runId, round: 1 }, findings, place, false);
     expect(blocks.some((block) => 'accessory' in block || block.type === 'actions')).toBe(false);
