@@ -189,6 +189,7 @@ export {
   shouldMoveIssue,
   shouldResume,
   shouldRetry,
+  showsOnScreen,
   slackFinishedText,
   slackReplyText,
   slackStartedText,

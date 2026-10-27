@@ -34,6 +34,10 @@ on:
         required: false
       FACTORY_APP_PRIVATE_KEY:
         required: false
+      # A read-write token for the project's public Blob store of verify evidence. Only the evidence job reads it: the
+      # stage job, where the agent runs with sudo, never references it.
+      EVIDENCE_BLOB_READ_WRITE_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -48,6 +52,8 @@ jobs:
     environment: factory
     concurrency:
       group: factory-run-${{ inputs.run_id }}
+    outputs:
+      agent: ${{ steps.start.outputs.agent }}
     permissions:
       contents: read
       # Authenticates to the console and to the Claude GitHub App token exchange.
@@ -117,6 +123,20 @@ jobs:
           permission-checks: read
           permission-statuses: read
 
+      - name: Prepare the evidence folder
+        # Verify records its screenshots and video here and writes their URLs into the PR; the evidence job uploads them
+        # after this job ends. The URLs are fixed by the store, the repo and the run, so no token is needed to know them.
+        if: steps.start.outputs.agent == 'verify'
+        env:
+          STORE: ${{ vars.EVIDENCE_BLOB_STORE_ID }}
+        run: |
+          [[ "$STORE" =~ ^[A-Za-z0-9]+$ ]] || { echo "::error::EVIDENCE_BLOB_STORE_ID is not set in the factory environment"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/evidence"
+          {
+            echo "EVIDENCE_DIR=$RUNNER_TEMP/evidence"
+            echo "EVIDENCE_URL_PREFIX=https://$STORE.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/"
+          } >> "$GITHUB_ENV"
+
       - name: Run the stage
         id: claude
         timeout-minutes: 50
@@ -131,7 +151,7 @@ jobs:
             --plugin-dir ${{ runner.temp }}/mb-factory/plugin
             --allowedTools Agent,Bash,Read,Edit,Write,Glob,Grep,Skill,TodoWrite
 
-      - name: Report the run
+      - name: Write the run's report
         if: always() && steps.start.outcome == 'success'
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
@@ -150,8 +170,96 @@ jobs:
           jq -n --arg conclusion "$CONCLUSION" --argjson report "$report" --argjson events "$events" \
             '{conclusion: $conclusion, report: $report, events: $events}' > "$RUNNER_TEMP/run-report.json"
 
+      - name: Report the run
+        # A verify run reports from the evidence job, once its files are up, so review never meets broken links.
+        if: always() && steps.start.outcome == 'success' && steps.start.outputs.agent != 'verify'
+        run: |
           audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
           oidc=$(curl -sS --fail-with-body --retry 3 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
           echo "::add-mask::$oidc"
           curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
             --data @"$RUNNER_TEMP/run-report.json" "$CONSOLE_URL/api/runs/$RUN_ID/report"
+
+      - name: Keep the report and evidence for the evidence job
+        if: always() && steps.start.outcome == 'success' && steps.start.outputs.agent == 'verify'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verify-${{ inputs.run_id }}
+          path: |
+            ${{ runner.temp }}/run-report.json
+            ${{ runner.temp }}/evidence/
+          retention-days: 1
+
+  # Uploads a verify run's evidence on a fresh runner the agent never touched: nothing it wrote to the stage job's
+  # environment, and no process it left running, can reach the store's token. Then reports the run.
+  evidence:
+    needs: stage
+    if: always() && needs.stage.outputs.agent == 'verify'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: factory
+    permissions:
+      contents: read
+      # Authenticates to the console, as the stage job does.
+      id-token: write
+    env:
+      RUN_ID: ${{ inputs.run_id }}
+      CONSOLE_URL: ${{ inputs.console_url }}
+    steps:
+      - name: Get the report and evidence
+        id: download
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: verify-${{ inputs.run_id }}
+          path: ${{ runner.temp }}/verify
+
+      - name: Upload the evidence
+        id: upload
+        if: steps.download.outcome == 'success'
+        env:
+          EVIDENCE_TOKEN: ${{ secrets.EVIDENCE_BLOB_READ_WRITE_TOKEN }}
+          STORE: ${{ vars.EVIDENCE_BLOB_STORE_ID }}
+        run: |
+          store=$(cut -d_ -f4 <<< "$EVIDENCE_TOKEN")
+          [[ -n "$store" && "$store" == "$STORE" ]] || { echo "::error::EVIDENCE_BLOB_READ_WRITE_TOKEN is missing or isn't for the store in EVIDENCE_BLOB_STORE_ID"; exit 1; }
+          evidence="$RUNNER_TEMP/verify/evidence"
+          mapfile -t files < <([[ -d "$evidence" ]] && find "$evidence" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
+          (( ${#files[@]} <= 20 )) || { echo "::error::verify recorded ${#files[@]} files; at most 20 are uploaded"; exit 1; }
+          for name in "${files[@]}"; do
+            file="$evidence/$name"
+            [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,62}\.(png|webm|mp4)$ ]] || { echo "::error::$name is not a named image or video"; exit 1; }
+            [[ -f "$file" && ! -L "$file" ]] || { echo "::error::$name is not a regular file"; exit 1; }
+            (( $(stat -c %s "$file") <= 50000000 )) || { echo "::error::$name is over 50 MB"; exit 1; }
+            case "${name##*.}" in png) type=image/png ;; webm) type=video/webm ;; mp4) type=video/mp4 ;; esac
+            pathname=$(jq -rn --arg path "$GITHUB_REPOSITORY/$RUN_ID/$name" '$path | @uri')
+            curl -sS --fail-with-body --retry 3 -o /dev/null -X PUT --data-binary @"$file" \
+              -H "authorization: Bearer $EVIDENCE_TOKEN" -H 'x-api-version: 13' -H "x-vercel-blob-store-id: $store" \
+              -H 'x-vercel-blob-access: public' -H 'x-add-random-suffix: 0' -H 'x-allow-overwrite: 1' \
+              -H "x-content-type: $type" "https://vercel.com/api/blob/?pathname=$pathname"
+            echo "Uploaded https://$store.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/$name"
+          done
+
+      - name: Report the run
+        if: always()
+        env:
+          UPLOADED: ${{ steps.upload.outcome }}
+        run: |
+          report="$RUNNER_TEMP/verify/run-report.json"
+          # The stage job ended before writing its report: the console records a run that never started.
+          if ! jq -e . "$report" > /dev/null 2>&1; then
+            mkdir -p "$(dirname "$report")"
+            jq -n '{conclusion: "failure", report: null, events: []}' > "$report"
+          fi
+          # The PR already links the files, so a failed upload fails the run rather than leaving review broken links.
+          if [[ "$UPLOADED" != success ]]; then
+            note=" The evidence didn’t upload, so the PR’s links to it are broken."
+            jq --arg note "$note" 'if (.report | type) == "object"
+              then .report.outcome = "failed" | .report.summary = ((.report.summary // "") + $note) else . end' \
+              "$report" > "$report.tmp" && mv "$report.tmp" "$report"
+          fi
+
+          audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
+          oidc=$(curl -sS --fail-with-body --retry 3 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          echo "::add-mask::$oidc"
+          curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
+            --data @"$report" "$CONSOLE_URL/api/runs/$RUN_ID/report"

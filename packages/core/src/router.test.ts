@@ -32,6 +32,7 @@ import {
   shouldMoveIssue,
   shouldResume,
   shouldRetry,
+  showsOnScreen,
   slackFinishedText,
   slackReplyText,
   slackStartedText,
@@ -316,9 +317,30 @@ describe('modelFor', () => {
     expect(modelFor(config, 'spec', false, 'Slice Real recipes')).toBe('opus');
   });
 
+  it('uses the verify model, and says so when factory.yaml has none', () => {
+    expect(modelFor(config, 'verify', false)).toBe('sonnet');
+    const { verify: _, ...models } = config.models;
+    expect(() => modelFor({ ...config, models }, 'verify', false)).toThrow(/no model for the verify stage/);
+  });
+
   it('falls back to the triage model for slicing when none is set', () => {
     const { slicing: _, ...models } = config.models;
     expect(modelFor({ ...config, models }, 'triage', false, 'Slice Real recipes')).toBe('sonnet');
+  });
+});
+
+describe('showsOnScreen', () => {
+  it('matches files under a listed directory, with or without its slash, and listed files', () => {
+    expect(showsOnScreen(['frontend/'], ['backend/api.py', 'frontend/src/app.tsx'])).toBe(true);
+    expect(showsOnScreen(['frontend'], ['frontend/index.html'])).toBe(true);
+    expect(showsOnScreen(['./frontend/'], ['frontend/index.html'])).toBe(true);
+    expect(showsOnScreen(['vercel.json'], ['vercel.json'])).toBe(true);
+  });
+
+  it('ignores files outside them, including ones that only share a prefix', () => {
+    expect(showsOnScreen(['frontend/'], ['backend/api.py', 'docs/design.md'])).toBe(false);
+    expect(showsOnScreen(['frontend/'], ['frontend-tools/build.ts'])).toBe(false);
+    expect(showsOnScreen(['frontend/'], [])).toBe(false);
   });
 });
 
@@ -428,6 +450,21 @@ describe('nextStepAfterRun', () => {
       stage: 'in_review',
       request: { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null }
     });
+  });
+
+  it('sends a delivered PR that shows on screen to verify first, and a verified PR on to review', () => {
+    const delivered = { ...loop, hasPr: true };
+    expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, { ...delivered, verify: true })).toEqual(
+      {
+        stage: 'in_review',
+        request: { agent: 'verify', trigger: 'delivered', priority: 'in_flight', prompt: null }
+      }
+    );
+    expect(nextStepAfterRun({ ...finished, agent: 'verify', report: null }, delivered)).toEqual({
+      stage: 'in_review',
+      request: { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null }
+    });
+    expect(nextStepAfterRun({ ...finished, agent: 'verify', outcome: 'blocked', report: null }, delivered)).toEqual({});
   });
 
   it('sends a PR back to the gate when its conflict fix changed only lockfiles, and to review otherwise', () => {

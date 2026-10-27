@@ -259,6 +259,22 @@ export const compareFiles = async (
     : undefined;
 };
 
+const PULL_FILES_PAGE = 100;
+// GitHub lists at most 3,000 of a PR's files.
+const PULL_FILES_PAGES = 30;
+
+// The paths a PR changes, page by page until a short page.
+export const pullFiles = async (repository: string, prNumber: number, page = 1): Promise<string[]> => {
+  const files = await githubGet<{ filename: string }[]>(
+    `/repos/${repository}/pulls/${prNumber}/files?per_page=${PULL_FILES_PAGE}&page=${page}`,
+    'pull request files'
+  );
+  const names = files.map(({ filename }) => filename);
+  return files.length < PULL_FILES_PAGE || page >= PULL_FILES_PAGES
+    ? names
+    : [...names, ...(await pullFiles(repository, prNumber, page + 1))];
+};
+
 export type PullRequestInfo = {
   author: string;
   title: string;

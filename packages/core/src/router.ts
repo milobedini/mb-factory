@@ -245,8 +245,7 @@ export const governDispatch = ({ workItemBusy, paused, allowUsage, ...request }:
 
 export type ModelledAgent = Exclude<keyof FactoryConfig['models'], 'slicing'>;
 
-const isModelled = (agent: AgentRole): agent is ModelledAgent =>
-  agent !== 'verify' && !(JOB_AGENTS as readonly AgentRole[]).includes(agent);
+const isModelled = (agent: AgentRole): agent is ModelledAgent => !(JOB_AGENTS as readonly AgentRole[]).includes(agent);
 
 // Triage slices a project instead when its issue is titled `Slice <project>` (plugin/agents/triage.md).
 export const isSlicingTitle = (title: string | null | undefined): boolean => /^slice\s+\S/i.test(title?.trim() ?? '');
@@ -262,7 +261,18 @@ export const modelFor = (
     throw new Error(`factory.yaml has no model for the ${agent} stage`);
   }
   const key = agent === 'triage' && isSlicingTitle(title) ? 'slicing' : agent;
-  return (downshift ? config.usage.downshift[key] : undefined) ?? config.models[key] ?? config.models[agent];
+  const model = (downshift ? config.usage.downshift[key] : undefined) ?? config.models[key] ?? config.models[agent];
+  if (!model) {
+    throw new Error(`factory.yaml has no model for the ${agent} stage`);
+  }
+  return model;
+};
+
+// Whether a PR's changed files touch a path that shows on screen: a directory (with or without its trailing slash)
+// or a single file.
+export const showsOnScreen = (paths: string[], changedFiles: string[]): boolean => {
+  const prefixes = paths.map((path) => path.replace(/^\.?\/+/, '').replace(/\/+$/, ''));
+  return changedFiles.some((file) => prefixes.some((prefix) => file === prefix || file.startsWith(`${prefix}/`)));
 };
 
 type StatusKey = keyof FactoryConfig['linear']['statuses'];
@@ -569,7 +579,12 @@ const afterReview = (report: unknown, { reviewRounds, maxReviewRounds }: ReviewL
 // A delivered PR goes to review; the review's verdict sends it to the human merge gate or back for a revision.
 export const nextStepAfterRun = (
   run: { agent: AgentRole; trigger?: RunTrigger; status: RunStatus; outcome: RunOutcome | null; report: unknown },
-  { hasPr, lockfileOnlyMerge = false, ...loop }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean }
+  {
+    hasPr,
+    lockfileOnlyMerge = false,
+    verify = false,
+    ...loop
+  }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean; verify?: boolean }
 ): NextStep => {
   const questions = run.status === 'finished' && run.outcome === 'needs_input' ? readQuestions(run.report) : [];
   const asking = questions.length > 0 ? { questions } : {};
@@ -584,6 +599,15 @@ export const nextStepAfterRun = (
     if (hasPr && run.trigger === 'conflict' && lockfileOnlyMerge) {
       return { stage: 'awaiting_merge' };
     }
+    // A PR that changes what shows on screen is verified in the app first; verify always hands on to review.
+    return hasPr
+      ? {
+          stage: 'in_review',
+          request: { agent: verify ? 'verify' : 'review', trigger: 'delivered', priority: 'in_flight', prompt: null }
+        }
+      : {};
+  }
+  if (run.agent === 'verify') {
     return hasPr
       ? { stage: 'in_review', request: { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null } }
       : {};

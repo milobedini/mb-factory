@@ -33,7 +33,13 @@ models:
   slicing: opus
   spec: opus
   implement: opus
+  verify: sonnet
   review: opus
+
+# A PR that changes anything here is verified in the app (Playwright in the runner) before review.
+verify:
+  paths:
+    - frontend/
 
 review:
   maxRounds: 2

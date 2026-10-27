@@ -9,6 +9,7 @@ import type {
   Question,
   ReadyIssue,
   ReadyOutcome,
+  RunOutcome,
   RunRequest,
   RunStatus,
   RunTrigger,
@@ -87,6 +88,7 @@ import {
   shouldMoveIssue,
   shouldResume,
   shouldRetry,
+  showsOnScreen,
   slackFiledText,
   slackFinishedText,
   slackIssueFromRequest,
@@ -121,6 +123,7 @@ import {
   commitParents,
   compareFiles,
   defaultBranch,
+  pullFiles,
   pullHead,
   pullMergeState,
   pullRequestInfo,
@@ -1734,6 +1737,31 @@ const lockfileOnlyMerge = async (
   }
 };
 
+// Whether a delivered PR changes what shows on screen, from GitHub's list of its files. When GitHub can't say, it's
+// verified: a run spent for nothing costs less than a change nobody looked at.
+const needsVerify = async (
+  project: FactoryConfig,
+  run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null },
+  workItem: WorkItem
+): Promise<boolean> => {
+  const { prNumber, repository } = workItem;
+  if (
+    !project.verify ||
+    run.agent !== 'implement' ||
+    run.status !== 'finished' ||
+    run.outcome !== 'done' ||
+    !prNumber
+  ) {
+    return false;
+  }
+  try {
+    return showsOnScreen(project.verify.paths, await pullFiles(repository, prNumber));
+  } catch (error) {
+    log('warn', 'verify check failed', { issue: workItem.issueIdentifier, pr: prNumber, error: errorMessage(error) });
+    return true;
+  }
+};
+
 export const handleRunFinished = async (runId: string): Promise<void> => {
   const found = await findRun(runId);
   const project = found && findProject(found.workItem.project);
@@ -1760,6 +1788,7 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
   const next = nextStepAfterRun(run, {
     hasPr: workItem.prNumber !== null,
     lockfileOnlyMerge: await lockfileOnlyMerge(run, workItem),
+    verify: await needsVerify(project, run, workItem),
     reviewRounds: workItem.reviewRounds,
     maxReviewRounds: project.review.maxRounds
   });
