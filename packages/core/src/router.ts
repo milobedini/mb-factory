@@ -277,6 +277,20 @@ export const showsOnScreen = (paths: string[], changedFiles: string[]): boolean 
   return changedFiles.some((file) => prefixes.some((prefix) => file === prefix || file.startsWith(`${prefix}/`)));
 };
 
+const notOnScreenSchema = z.looseObject({ notOnScreen: z.string().trim().min(1).max(300).nullish().catch(null) });
+
+export type VerifyDecision = { verify: boolean; skipped?: string };
+
+// Whether a delivered PR is verified in the app: when it touches a path that shows on screen, unless the implement
+// run said why nothing a person sees changed. Without that reason it's verified, as it always was.
+export const decideVerify = (paths: string[], changedFiles: string[], report: unknown): VerifyDecision => {
+  if (!showsOnScreen(paths, changedFiles)) {
+    return { verify: false };
+  }
+  const reason = notOnScreenSchema.safeParse(report).data?.notOnScreen?.replace(/\s+/g, ' ');
+  return reason ? { verify: false, skipped: reason } : { verify: true };
+};
+
 type StatusKey = keyof FactoryConfig['linear']['statuses'];
 
 const STATUS_KEYS: Record<Stage, StatusKey> = {

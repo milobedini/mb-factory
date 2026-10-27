@@ -18,7 +18,8 @@ import type {
   SlackAction,
   SlackMessage,
   Stage,
-  StopCause
+  StopCause,
+  VerifyDecision
 } from '@mb-factory/core';
 import {
   afterAnswers,
@@ -38,11 +39,13 @@ import {
   decideCiFailure,
   decideConflict,
   decideIssueUpdate,
+  decideVerify,
   delegateFailedText,
   dependencyIssue,
   dependencyTakenText,
   dispatchLapsesAt,
   emptyMentionText,
+  escapeSlack,
   GATE_CHANGES_QUESTION,
   GATE_GONE,
   governDispatch,
@@ -93,7 +96,6 @@ import {
   shouldMoveIssue,
   shouldResume,
   shouldRetry,
-  showsOnScreen,
   slackFiledText,
   slackFinishedText,
   slackGateMessage,
@@ -1769,13 +1771,13 @@ const lockfileOnlyMerge = async (
   }
 };
 
-// Whether a delivered PR changes what shows on screen, from GitHub's list of its files. When GitHub can't say, it's
-// verified: a run spent for nothing costs less than a change nobody looked at.
+// Whether a delivered PR is verified, from GitHub's list of its files and the implement run's report. When GitHub
+// can't say, it's verified: a run spent for nothing costs less than a change nobody looked at.
 const needsVerify = async (
   project: FactoryConfig,
-  run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null },
+  run: { agent: AgentRole; status: RunStatus; outcome: RunOutcome | null; report: unknown },
   workItem: WorkItem
-): Promise<boolean> => {
+): Promise<VerifyDecision> => {
   const { prNumber, repository } = workItem;
   if (
     !project.verify ||
@@ -1784,13 +1786,13 @@ const needsVerify = async (
     run.outcome !== 'done' ||
     !prNumber
   ) {
-    return false;
+    return { verify: false };
   }
   try {
-    return showsOnScreen(project.verify.paths, await pullFiles(repository, prNumber));
+    return decideVerify(project.verify.paths, await pullFiles(repository, prNumber), run.report);
   } catch (error) {
     log('warn', 'verify check failed', { issue: workItem.issueIdentifier, pr: prNumber, error: errorMessage(error) });
-    return true;
+    return { verify: true };
   }
 };
 
@@ -1817,10 +1819,11 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
     : [];
   // A run whose agent never started is tried once more by itself; nobody need be watching.
   const retrying = shouldRetry(run, parent);
+  const verifying = await needsVerify(project, run, workItem);
   const next = nextStepAfterRun(run, {
     hasPr: workItem.prNumber !== null,
     lockfileOnlyMerge: await lockfileOnlyMerge(run, workItem),
-    verify: await needsVerify(project, run, workItem),
+    verify: verifying.verify,
     reviewRounds: workItem.reviewRounds,
     maxReviewRounds: project.review.maxRounds
   });
@@ -1847,7 +1850,9 @@ export const handleRunFinished = async (runId: string): Promise<void> => {
       { ...run, prUrl, actionsRunUrl: run.actionsRunUrl },
       { questions: next.questions?.length, specReview: next.stage === 'spec_review', gate: next.gate !== undefined }
     ),
-    ...(skippedReview ? [LOCKFILE_GATE_TEXT] : [])
+    ...(skippedReview ? [LOCKFILE_GATE_TEXT] : []),
+    // Said where people look, so a wrong call can be challenged: review sees the same reason in the PR's Evidence.
+    ...(verifying.skipped ? [`Skipped verify: ${escapeSlack(verifying.skipped)}`] : [])
   ].join('\n');
   const rerunnable =
     run.status === 'finished' &&

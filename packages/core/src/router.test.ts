@@ -14,6 +14,7 @@ import {
   currentMergeable,
   decideCiFailure,
   decideConflict,
+  decideVerify,
   findingsPrompt,
   formatReleaseAt,
   governDispatch,
@@ -326,6 +327,29 @@ describe('modelFor', () => {
   it('falls back to the triage model for slicing when none is set', () => {
     const { slicing: _, ...models } = config.models;
     expect(modelFor({ ...config, models }, 'triage', false, 'Slice Real recipes')).toBe('sonnet');
+  });
+});
+
+describe('decideVerify', () => {
+  const screen = ['frontend/'];
+  const reason = 'Only changes where browser errors are sent';
+
+  it('verifies a PR that touches the screen when the implement run gave no reason not to', () => {
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], { next: 'review' })).toEqual({ verify: true });
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], null)).toEqual({ verify: true });
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], { notOnScreen: '   ' })).toEqual({ verify: true });
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], { notOnScreen: 42 })).toEqual({ verify: true });
+  });
+
+  it('skips verify, with the reason, when the implement run said nothing a person sees changed', () => {
+    expect(decideVerify(screen, ['frontend/vite.config.ts'], { notOnScreen: `  ${reason}\n` })).toEqual({
+      verify: false,
+      skipped: reason
+    });
+  });
+
+  it('says nothing about a PR that never touches the screen', () => {
+    expect(decideVerify(screen, ['backend/api.py'], { notOnScreen: reason })).toEqual({ verify: false });
   });
 });
 

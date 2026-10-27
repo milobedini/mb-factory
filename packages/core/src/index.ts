@@ -156,7 +156,8 @@ export type {
   RunRequest,
   SessionEvent,
   SessionIssue,
-  SpecReply
+  SpecReply,
+  VerifyDecision
 } from './router';
 export {
   BLOCKING_OUTCOMES,
@@ -172,6 +173,7 @@ export {
   currentMergeable,
   decideCiFailure,
   decideConflict,
+  decideVerify,
   FACTORY_REVIEWER_LOGIN,
   findingsPrompt,
   formatReleaseAt,

@@ -27,7 +27,7 @@ Triggered when an issue sized for direct implementation is delegated, when a spe
    - **Commits** as each logical unit is done, per `git-text`, after the checks that unit touches pass. Never commit scratch scripts, logs or evidence files.
 5. **Verify** with the repo's own commands from `AGENTS.md`: lint, types, the tests for what you touched, and the build. Confirm the original symptom is gone on the real path when you can. Never claim a check you didn't run.
 6. **Self-review** the whole diff against `ground-rules` and every criterion. Remove debug code and anything out of scope. Re-run checks if you changed behaviour.
-7. **Deliver.** Push, then write the PR title and description per `git-text`, replacing the spec PR's placeholder text, and mark it ready for review. Open the PR yourself when no spec PR exists, with the `factory` label. Link it on the session. A user-facing change recommends `next: verify`; otherwise `next: review`.
+7. **Deliver.** Push, then write the PR title and description per `git-text`, replacing the spec PR's placeholder text, and mark it ready for review. Open the PR yourself when no spec PR exists, with the `factory` label. Link it on the session. A user-facing change recommends `next: verify`; otherwise `next: review`. When the PR touches the screen paths but nothing a person sees changes, report `notOnScreen` (see `factory-run`) and put the same reason in the Evidence section, in place of `Recorded by the verify stage.`: `Not verified on screen: <why>.`
 
 ## Revising
 
@@ -47,7 +47,7 @@ A revision changes the delivered work on the same branch and PR. The brief's `pr
 - For `trigger: answered` after a review: the prompt holds the human's decisions on the findings the review left for them. Make the change each decision asks for, leave the PR as it is where a decision says so, and answer every decision in one PR comment, in order.
 - For a CI failure: read the failing job's log, fix the cause, not the symptom. Post one PR comment: the failing job, the cause, and the commit that fixes it.
 - For a conflict: merge `origin/<base>` into the branch (never rebase or force-push) and resolve each conflict so both sides' behaviour holds. When they can't both hold, that's a design deviation: a question in `questions` with your suggestion, `needs_input`, nothing pushed. Run the full checks, not only the touched ones: the other side's change may have broken yours. Post one PR comment: the files that conflicted and how each was resolved, in a line each. Regenerate a conflicted lockfile with its package manager from the merged manifests, never by hand, and make the merge the only commit, so the console can see that nothing reviewed changed.
-- Re-run the checks the change touches, update the PR description where it became false, and report `next: review` (or `verify` if visible behaviour changed). The router caps review and revise at two rounds.
+- Re-run the checks the change touches, update the PR description where it became false, and report `next: review` (or `verify` if visible behaviour changed; `notOnScreen` if the PR touches the screen paths but still changes nothing visible). The router caps review and revise at two rounds.
 
 ## Exit
 
