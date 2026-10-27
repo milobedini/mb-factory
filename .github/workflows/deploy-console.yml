@@ -16,7 +16,10 @@ on:
   # To deploy by hand, such as after Vercel's daily limit rejected one.
   workflow_dispatch:
 
-permissions: {}
+# Reads the commit's statuses, where Vercel says whether the deploy built or was rate limited.
+permissions:
+  contents: read
+  statuses: read
 
 concurrency:
   group: deploy-console
@@ -25,10 +28,36 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       # The hook builds main's latest commit; anyone with its URL can start a deploy, so it's a secret.
       - name: Trigger the console's deploy hook
+        id: hook
         env:
           DEPLOY_HOOK: ${{ secrets.CONSOLE_DEPLOY_HOOK }}
-        run: curl --fail-with-body --silent --show-error --request POST "$DEPLOY_HOOK"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" >> "$GITHUB_OUTPUT"
+          # A little before now, in case the runner's clock is ahead of GitHub's.
+          echo "since=$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          curl --fail-with-body --silent --show-error --request POST "$DEPLOY_HOOK"
+
+      # Vercel accepts the hook before it decides, so a deploy its daily limit refuses would otherwise pass unseen. A
+      # failed run here means the console didn't deploy: run this workflow again once Vercel allows it.
+      - name: Wait for Vercel to build it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.hook.outputs.sha }}
+          SINCE: ${{ steps.hook.outputs.since }}
+        run: |
+          for _ in $(seq 48); do
+            sleep 10
+            status=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/statuses" \
+              --jq "[.[] | select(.context == \"Vercel\" and .created_at >= \"$SINCE\")][0] | \"\(.state) \(.description)\"")
+            case "$status" in
+              success*) echo "Vercel: ${status#* }"; exit 0 ;;
+              failure* | error*) echo "::error::Vercel didn't deploy ${SHA:0:7}: ${status#* }"; exit 1 ;;
+            esac
+          done
+          echo "::error::Vercel reported nothing finished for ${SHA:0:7} in 8 minutes"
+          exit 1
