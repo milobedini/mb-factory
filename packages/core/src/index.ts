@@ -171,6 +171,7 @@ export {
   closedLine,
   connectGitHubMessage,
   MERGE_ACTION,
+  mergeButton,
   mergedLine,
   mergeNotSetUpText,
   mergeRefusal,

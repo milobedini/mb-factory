@@ -352,12 +352,14 @@ const moreFindings = (findings: ReviewFinding[]): SlackBlock[] =>
 const FIX_OPTION = { text: { type: 'plain_text', text: 'Fix' }, value: 'fix' };
 
 // Review findings left for a person (Nits, Could cut, and any a revision round can't take): each with a Fix box,
-// ticked to start, then Fix ticked or Merge as it is. A revision round's own findings are listed without them.
+// ticked to start, then Fix ticked or Approve and merge (`merge`, when the PR is ready to merge; Merge as it is, which
+// only leaves them, otherwise). A revision round's own findings are listed without them.
 export const slackFindingsMessage = (
   run: { id: string; round: number },
   findings: ReviewFinding[],
   place: FindingsPlace,
-  choosable: boolean
+  choosable: boolean,
+  merge?: SlackBlock
 ): SlackMessage => {
   const shown = findings.slice(0, MAX_FINDINGS_SHOWN);
   const heading = choosable
@@ -389,7 +391,7 @@ export const slackFindingsMessage = (
               type: 'actions',
               elements: [
                 button('findings_fix', 'Fix ticked', { f: run.id, a: 'fix' }, true),
-                button('findings_keep', 'Merge as it is', { f: run.id, a: 'keep' })
+                merge ?? button('findings_keep', 'Merge as it is', { f: run.id, a: 'keep' })
               ]
             }
           ]

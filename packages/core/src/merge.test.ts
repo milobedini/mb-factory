@@ -4,6 +4,7 @@ import type { PullForMerge } from './merge';
 import {
   closedLine,
   connectGitHubMessage,
+  mergeButton,
   mergedLine,
   mergeRefusal,
   mergeRefusedText,
@@ -14,7 +15,7 @@ import {
   withConnectInstead
 } from './merge';
 import type { SlackBlock } from './slack';
-import { parseSlackAction } from './slack';
+import { parseSlackAction, slackFindingsMessage } from './slack';
 
 const workItemId = '22222222-2222-4222-8222-222222222222';
 const accepted = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
@@ -214,5 +215,52 @@ describe('connecting GitHub', () => {
     expect(swapped[0]?.accessory).toMatchObject({ action_id: 'github_connect', url });
     expect(swapped[0]?.accessory).not.toHaveProperty('style');
     expect(swapped[1]).toBe(blocks[1]);
+  });
+});
+
+// TAS-45, 27 Oct: Approve and merge above the findings and Merge as it is (which only left them) below were confusing.
+describe('Approve and merge beside the findings', () => {
+  const notes = { beforeMerging: undefined, mergeEffect: 'deploys it to production', findingsLeft: 2 };
+  const runId = '33333333-3333-4333-8333-333333333333';
+  const findings = [
+    { tier: 'nit', path: 'backend/recipes/models.py', line: 284, summary: 'Case-sensitive', fix: 'Lower the name' },
+    { tier: 'nit', summary: 'No admin test' }
+  ];
+  const place = { repository: 'o/r', branch: 'tas-45-search' };
+  const message = slackFindingsMessage(
+    { id: runId, round: 1 },
+    findings,
+    place,
+    true,
+    mergeButton(workItemId, 46, notes, false)
+  );
+
+  it('leaves the accepted message above with Open PR only', () => {
+    const above = slackAcceptedMessage('Accepted with two Nits.', {
+      workItemId,
+      prNumber: 46,
+      prUrl: 'https://github.com/o/r/pull/46',
+      ...notes
+    });
+    expect(elements(above.blocks).map((element) => (element.text as { text: string }).text)).toEqual(['Open PR #46']);
+  });
+
+  it('offers Fix ticked or Approve and merge, whose confirm says the findings stay as they are', () => {
+    const [fix, merge] = elements(message.blocks);
+    expect(fix).toMatchObject({ text: { text: 'Fix ticked' }, style: 'primary' });
+    expect(merge).toMatchObject({ action_id: 'merge', text: { text: 'Approve and merge' } });
+    expect(merge?.style).toBeUndefined();
+    expect((merge?.confirm as { text: { text: string } } | undefined)?.text.text).toBe(
+      'You’ll approve PR #46 on GitHub as yourself and merge it, which deploys it to production. Review’s 2 findings stay as they are, ticked or not.'
+    );
+  });
+
+  it('settles without the buttons or the Fix boxes once merged', () => {
+    const settled = slackMergeSettled(message.blocks, '✓ Merged by Milo Bedini at 21:10');
+    expect(settled.some((block) => block.type === 'actions' || 'accessory' in block)).toBe(false);
+    expect(settled.at(-1)).toEqual({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '✓ Merged by Milo Bedini at 21:10' }
+    });
   });
 });

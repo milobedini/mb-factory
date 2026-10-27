@@ -33,13 +33,20 @@ const BEFORE_MERGING = '*Before merging:* ';
 
 export const beforeMergingLine = (note: string): string => `${BEFORE_MERGING}${escapeSlack(note)}`;
 
-// What the confirm says besides the PR: review's note, and what merging sets off (the project's `mergeEffect`).
-export type MergeNotes = { beforeMerging: string | undefined; mergeEffect: string | undefined };
+// What the confirm says besides the PR: review's note, what merging sets off (the project's `mergeEffect`), and how
+// many of review's findings merging leaves as they are, when the button sits under them.
+export type MergeNotes = { beforeMerging: string | undefined; mergeEffect: string | undefined; findingsLeft?: number };
 
 // Slack's own confirm dialog, shown before anything is sent to GitHub. Plain text: the dialog shows mrkdwn's asterisks.
-export const mergeConfirm = (prNumber: number, { beforeMerging, mergeEffect }: MergeNotes): SlackBlock => {
+export const mergeConfirm = (
+  prNumber: number,
+  { beforeMerging, mergeEffect, findingsLeft }: MergeNotes
+): SlackBlock => {
   const effect = mergeEffect ? `, which ${mergeEffect}` : '';
-  const base = `You’ll approve PR #${prNumber} on GitHub as yourself and merge it${effect}.`;
+  const left = findingsLeft
+    ? ` Review’s ${findingsLeft === 1 ? 'finding stays' : `${findingsLeft} findings stay`} as ${findingsLeft === 1 ? 'it is' : 'they are'}, ticked or not.`
+    : '';
+  const base = `You’ll approve PR #${prNumber} on GitHub as yourself and merge it${effect}.${left}`;
   const text = beforeMerging ? `${base}\n\nBefore merging: ${beforeMerging}` : base;
   return {
     title: { type: 'plain_text', text: `Merge PR #${prNumber}?` },
@@ -50,8 +57,8 @@ export const mergeConfirm = (prNumber: number, { beforeMerging, mergeEffect }: M
   };
 };
 
-export const mergeButton = (workItemId: string, prNumber: number, notes: MergeNotes): SlackBlock => ({
-  ...button(MERGE_ACTION, MERGE_BUTTON, { m: workItemId }, true),
+export const mergeButton = (workItemId: string, prNumber: number, notes: MergeNotes, primary = true): SlackBlock => ({
+  ...button(MERGE_ACTION, MERGE_BUTTON, { m: workItemId }, primary),
   confirm: mergeConfirm(prNumber, notes)
 });
 
@@ -64,7 +71,8 @@ const openPrButton = (prNumber: number, prUrl: string): SlackBlock => ({
 
 export type AcceptedPr = { workItemId: string; prNumber: number; prUrl: string } & MergeNotes;
 
-// Review's finished message when the PR is ready to merge: what it said, what to check first, and the buttons.
+// Review's finished message when the PR is ready to merge: what it said, what to check first, and the buttons. With
+// findings left to choose, Approve and merge sits beside Fix ticked under them instead, so there's one place to decide.
 export const slackAcceptedMessage = (finishedText: string, pr: AcceptedPr): SlackMessage => {
   const note = pr.beforeMerging ? beforeMergingLine(pr.beforeMerging) : undefined;
   return {
@@ -74,7 +82,10 @@ export const slackAcceptedMessage = (finishedText: string, pr: AcceptedPr): Slac
       ...(note ? [section(note)] : []),
       {
         type: 'actions',
-        elements: [mergeButton(pr.workItemId, pr.prNumber, pr), openPrButton(pr.prNumber, pr.prUrl)]
+        elements: [
+          ...(pr.findingsLeft ? [] : [mergeButton(pr.workItemId, pr.prNumber, pr)]),
+          openPrButton(pr.prNumber, pr.prUrl)
+        ]
       }
     ]
   };
@@ -85,10 +96,15 @@ const isMergeActions = (block: SlackBlock): boolean =>
   Array.isArray(block.elements) &&
   block.elements.some((element: { action_id?: unknown }) => element.action_id === MERGE_ACTION);
 
-// The accepted message once its PR is merged or closed, as Slack sends it back: the buttons go, a line says what
-// happened.
+// The message carrying Approve and merge once its PR is merged, closed or moved on, as Slack sends it back: the buttons
+// and any findings' Fix boxes go, a line says what happened.
 export const slackMergeSettled = (blocks: SlackBlock[], line: string): SlackBlock[] => [
-  ...blocks.filter((block) => !isMergeActions(block)),
+  ...blocks
+    .filter((block) => !isMergeActions(block))
+    .map((block) => {
+      const { accessory, ...rest } = block;
+      return (accessory as { type?: unknown } | undefined)?.type === 'checkboxes' ? rest : block;
+    }),
   section(line)
 ];
 
