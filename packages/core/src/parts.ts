@@ -5,15 +5,28 @@ import { ESTIMATES, SIZES } from './sizes';
 const MAX_PARTS = 5;
 const MAX_TITLE = 80;
 const MAX_SCOPE = 2000;
+const MAX_BLOCKERS = 5;
+const ISSUE_IDENTIFIER = /^[A-Z][A-Z0-9]*-[1-9]\d*$/;
 
 const partSchema = z.looseObject({
   title: z.string().trim().min(1).max(MAX_TITLE),
   // What this part builds and how it's checked, from the spec; becomes the sub-issue's description.
   scope: z.string().trim().min(1).max(MAX_SCOPE),
-  size: z.enum(SIZES).nullish().catch(null)
+  size: z.enum(SIZES).nullish().catch(null),
+  // Issues outside the split this part also builds on (TAS-66 on TAS-60's filter panel); the part before is implied.
+  blockedBy: z.array(z.unknown()).nullish().catch(null)
 });
 
-export type SpecPart = { title: string; scope: string; estimate: number | null };
+export type SpecPart = { title: string; scope: string; estimate: number | null; blockedBy: string[] };
+
+const blockersOf = (listed: unknown[] | null | undefined): string[] =>
+  [
+    ...new Set(
+      (listed ?? []).flatMap((identifier) =>
+        typeof identifier === 'string' && ISSUE_IDENTIFIER.test(identifier.trim()) ? [identifier.trim()] : []
+      )
+    )
+  ].slice(0, MAX_BLOCKERS);
 
 const reportPartsSchema = z.looseObject({ parts: z.array(z.unknown()).nullish() });
 
@@ -29,7 +42,8 @@ export const readSpecParts = (report: unknown): SpecPart[] => {
           {
             title: read.data.title,
             scope: read.data.scope,
-            estimate: read.data.size ? ESTIMATES[read.data.size] : null
+            estimate: read.data.size ? ESTIMATES[read.data.size] : null,
+            blockedBy: blockersOf(read.data.blockedBy)
           }
         ]
       : [];

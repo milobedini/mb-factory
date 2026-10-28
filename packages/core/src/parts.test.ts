@@ -12,15 +12,31 @@ describe('readSpecParts', () => {
         ]
       })
     ).toEqual([
-      { title: 'Enamel part 2: the components', scope: 'Every component on /styleguide.', estimate: 5 },
-      { title: 'Enamel part 3: the pages', scope: 'Move the four pages.', estimate: null }
+      { title: 'Enamel part 2: the components', scope: 'Every component on /styleguide.', estimate: 5, blockedBy: [] },
+      { title: 'Enamel part 3: the pages', scope: 'Move the four pages.', estimate: null, blockedBy: [] }
     ]);
+  });
+
+  // TAS-47, 27 Oct: part 2 builds on TAS-60's filter panel, outside the split, so it was filed blocked only by TAS-47.
+  it('reads blockers outside the split, keeping only issue identifiers', () => {
+    expect(
+      readSpecParts({
+        parts: [
+          {
+            title: 'Diet and ingredient filters, part 2',
+            scope: 'The page.',
+            size: 'L',
+            blockedBy: ['TAS-60', ' TAS-60 ', 'the filter panel', 42, 'tas-61']
+          }
+        ]
+      })[0]?.blockedBy
+    ).toEqual(['TAS-60']);
   });
 
   it('stops at a malformed part, since each builds on the one before', () => {
     expect(
       readSpecParts({ parts: [{ title: 'Part 2', scope: 'x' }, { title: '' }, { title: 'Part 4', scope: 'y' }] })
-    ).toEqual([{ title: 'Part 2', scope: 'x', estimate: null }]);
+    ).toEqual([{ title: 'Part 2', scope: 'x', estimate: null, blockedBy: [] }]);
     expect(readSpecParts({ summary: 'One PR.' })).toEqual([]);
   });
 });
@@ -31,7 +47,7 @@ describe('latestSpecParts', () => {
   // TAS-47, 27 Oct: the revision after "Change something" left `parts` out, and approval filed nothing.
   it('keeps the split from an earlier report when a revision leaves parts out', () => {
     expect(latestSpecParts([{ summary: 'Recorded the choice in the spec.' }, split, { questions: [] }])).toEqual([
-      { title: 'Diet and ingredient filters, part 2', scope: 'The page.', estimate: 5 }
+      { title: 'Diet and ingredient filters, part 2', scope: 'The page.', estimate: 5, blockedBy: [] }
     ]);
   });
 
@@ -45,7 +61,7 @@ describe('part text', () => {
   it('points the sub-issue at the approved spec and sends triage to implement', () => {
     const description = partDescription(
       { identifier: 'TAS-29' },
-      { title: 'Part 2', scope: 'Every component.', estimate: 5 },
+      { title: 'Part 2', scope: 'Every component.', estimate: 5, blockedBy: [] },
       { number: 2, total: 3 }
     );
     expect(description).toContain('Part 2 of 3 of TAS-29. The spec is approved: `specs/TAS-29.md` on `main`');

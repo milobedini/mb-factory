@@ -1538,6 +1538,7 @@ const fileSpecParts = async (project: FactoryConfig, workItem: WorkItem): Promis
     parts.map((part, index) => ({
       title: part.title,
       estimate: part.estimate,
+      blockedBy: part.blockedBy.filter((identifier) => identifier !== workItem.issueIdentifier),
       description: partDescription(parent, part, { number: index + 2, total: parts.length + 1 })
     }))
   );

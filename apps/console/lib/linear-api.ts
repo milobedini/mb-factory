@@ -7,6 +7,7 @@ import { linearInstallations } from '@/db/schema';
 import { requireEnv } from './env';
 import type { LinearTokenResponse } from './linear-oauth';
 import { normaliseScopes } from './linear-oauth';
+import { log } from './log';
 
 const TOKEN_URL = 'https://api.linear.app/oauth/token';
 const GRAPHQL_URL = 'https://api.linear.app/graphql';
@@ -354,6 +355,36 @@ export const fileTriageIssue = async (
   return issueCreate.issue;
 };
 
+// An outside blocker that's missing or can't be linked is logged and skipped: the part is filed either way, and its
+// scope names what it waits on.
+const blockByOthers = async (organizationId: string, part: CreatedIssue, identifiers: string[]): Promise<void> => {
+  await identifiers.reduce<Promise<void>>(async (done, identifier) => {
+    await done;
+    try {
+      const { issue } = await linearGraphql<{ issue: { id: string } | null }>(
+        organizationId,
+        'query Blocker($id: String!) { issue(id: $id) { id } }',
+        { id: identifier }
+      );
+      if (!issue) {
+        log('warn', 'part blocker not found', { part: part.identifier, blocker: identifier });
+        return;
+      }
+      await linearGraphql(
+        organizationId,
+        'mutation PartBlockedByOther($input: IssueRelationCreateInput!) { issueRelationCreate(input: $input) { success } }',
+        { input: { issueId: issue.id, relatedIssueId: part.id, type: 'blocks' } }
+      );
+    } catch (error) {
+      log('warn', 'part blocker failed', {
+        part: part.identifier,
+        blocker: identifier,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }, Promise.resolve());
+};
+
 type ParentForParts = {
   issue: {
     id: string;
@@ -365,11 +396,12 @@ type ParentForParts = {
   issueLabels: TeamForFiling['issueLabels'];
 };
 
-export type SubIssue = { title: string; description: string; estimate: number | null };
+// `blockedBy`: issues outside the split the part also waits on, by identifier.
+export type SubIssue = { title: string; description: string; estimate: number | null; blockedBy: string[] };
 
 // The later parts of a split issue, as its sub-issues in its project and Backlog, each blocked by the part before (the first by
-// the issue itself), undelegated so each is delegated when it's ready. Nothing is filed when the issue already has
-// sub-issues, so approving the same spec twice files them once.
+// the issue itself) and by any issue outside the split it names, undelegated so each is delegated when it's ready.
+// Nothing is filed when the issue already has sub-issues, so approving the same spec twice files them once.
 export const fileSubIssues = async (
   organizationId: string,
   parentId: string,
@@ -389,7 +421,7 @@ export const fileSubIssues = async (
   const labelIds = await labelIdsFor(organizationId, parent.team.id, ['factory'], issueLabels.nodes);
   const stateId = partStateId(parent.team.states.nodes);
   // One after another: each part's blocker is the one filed before it.
-  return parts.reduce<Promise<CreatedIssue[]>>(async (filing, { title, description, estimate }) => {
+  return parts.reduce<Promise<CreatedIssue[]>>(async (filing, { title, description, estimate, blockedBy }) => {
     const filed = await filing;
     const { issueCreate } = await linearGraphql<{ issueCreate: { issue: CreatedIssue | null } }>(
       organizationId,
@@ -415,6 +447,7 @@ export const fileSubIssues = async (
       'mutation PartBlocked($input: IssueRelationCreateInput!) { issueRelationCreate(input: $input) { success } }',
       { input: { issueId: filed.at(-1)?.id ?? parent.id, relatedIssueId: issueCreate.issue.id, type: 'blocks' } }
     );
+    await blockByOthers(organizationId, issueCreate.issue, blockedBy);
     return [...filed, issueCreate.issue];
   }, Promise.resolve([]));
 };
