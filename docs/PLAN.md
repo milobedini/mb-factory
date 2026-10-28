@@ -14,9 +14,9 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** check Thursday 29 Oct's morning items under [To see live](#to-see-live), then write the Accounts and households PRD with the user.
+**Next:** check whether the console can start a claude.ai/code routine session with its own credentials (the open point under [Design stage and Dino](#design-stage-and-dino)), then audit Tastebook's components against Enamel with the user; check Thursday 29 Oct's morning items under [To see live](#to-see-live) that morning.
 
-**Direction, in order:** the Accounts and households PRD, then slicing it (the next big Tastebook project); close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
+**Direction, in order:** the design stage and the Dino project (below), so the Accounts and households PRD is the first feature designed through it; then that PRD and slicing it; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
 ## Decisions
 
@@ -88,6 +88,20 @@ Choices whose reasons aren't in the code. Where the code says why, it isn't repe
 **Tastebook**
 
 - **Rate limiting (TAS-58, parked):** now, a Vercel Firewall rule on production `/api` by IP, done by hand. Later, per-email and per-account limits on sign-in through allauth on a Postgres cache table: **put this in the Accounts and households PRD**. Details on the issue.
+
+### Design stage and Dino
+
+Agreed 28 Oct 2026; not built yet.
+
+- **Dino** is Tastebook's component library: the components in `frontend/src/ui/`, built to the Enamel rules in `docs/design.md`. A claude.ai **Design System** artifact for Dino seeds every design canvas.
+- **The design stage** follows Spec Review: `triage → spec → Spec Review → design → Design Review → implement`. The spec decides `design: needed` or `design: skip (<why>)`. Skip it when the change reuses existing components with no visual change, or it's a small UI change within the rules. It's needed for a new screen or flow, a new or changed Dino component, or a visible layout change.
+- **A person in the loop on a claude.ai Design canvas:** the router starts a claude.ai/code session (a routine); it drafts the canvas from the spec and Dino, then posts the link to the card and Linear. The user iterates in that session and approves from there or from Slack.
+- **Handoff by export:** stage runs can't read claude.ai, so on approval the session commits `specs/<ID>/design/` (the artboards as HTML, plus notes) to the spec branch. Implement builds from that; the canvas link stays on the issue for people.
+- **Primitives first:** whenever a reusable Dino component fits better than one-off UI, the design stage proposes it, with the variants and states it should grow into. Each new or changed component is its own issue labelled `dino`, blocking the feature, and lands first with its stories. This replaces `AGENTS.md`'s rule of three for UI components; the rule still applies to code abstractions.
+- **The `dino` label** goes on every PR touching Dino, applied by a labeler workflow; review loads a Dino rubric when it's present.
+- **Storybook replaces `/styleguide`:** stories per component and state, the accessibility addon, interaction tests through Vitest; verify can screenshot stories.
+- **First project, Dino:** audit the existing components against Enamel, build the Dino Design System artifact, redesign them with the user on a canvas, then file a Linear project: Storybook first, then an issue per component or group.
+- **Open:** whether the console can start a routine session with its own credentials (not the user's login); where Dino lives (default: rename `src/ui` to `src/dino`, so the labeler and rubric key off one path).
 
 ## Concepts mapped from Warp
 
