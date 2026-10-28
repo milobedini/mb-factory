@@ -1,11 +1,6 @@
----
-name: close-phase
-description: Close a factory phase and prune docs/PLAN.md back to direction, decisions and lessons. Use when a phase's exit criteria may be met, or the user asks to close a phase or prune the plan.
----
-
 # Close a phase
 
-The plan holds direction, not state (see `CLAUDE.md`). A phase close is when it gets pruned: everything between closes only edits the section a decision or lesson belongs to. Work through the steps in order; each ends on its criterion.
+Reached from the wrap-up skill's step 4. A phase close is when the plan gets pruned as a whole: wrap-ups between closes only edit the sections a session touched. Work through the steps in order; each ends on its criterion.
 
 ## 1. Check the exit criteria
 
