@@ -57,8 +57,13 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
     });
   }
   if (!workItem) {
-    // A job reports only to the console, so its run gets no Linear token.
-    log('info', 'run started', { runId: id, actionsRunId: check.claims.run_id, job: found.run.job });
+    // A job, or a size run (its brief has the issue's text), reports only to the console, so it gets no Linear token.
+    log('info', 'run started', {
+      runId: id,
+      actionsRunId: check.claims.run_id,
+      job: found.run.job ?? undefined,
+      agent: found.run.agent
+    });
     return Response.json({ agent: found.run.agent, linearAccessToken: null, agentSessionId: null });
   }
 

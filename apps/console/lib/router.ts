@@ -217,6 +217,7 @@ import {
   findUserIdByEmail,
   hasClosingActivity,
   issueAssigneeEmail,
+  issueToSize,
   issueToStart,
   moveIssueToStatus,
   setBlockedLabel
@@ -228,6 +229,7 @@ import { loadReadyList, postReadyMessage, readyMessage } from './ready';
 import { touchCard, withCards } from './redraw';
 import type { RunWithWorkItem } from './runs';
 import { findAnyRun, findRun } from './runs';
+import { sizeOnAccept } from './sizing';
 import {
   addSlackReaction,
   postSlackEphemeral,
@@ -697,6 +699,68 @@ const startJobRun = async (project: FactoryConfig, run: Run, now: Date): Promise
   return 'started';
 };
 
+// A size run: its brief is the issue's text, read now. An issue someone sized or delegated meanwhile isn't sized.
+const startSizeRun = async (project: FactoryConfig, run: Run, now: Date): Promise<StartResult> => {
+  const settle = async (outcome: 'declined' | 'failed', summary: string): Promise<StartResult> => {
+    await getDb()
+      .update(runs)
+      .set({ status: 'finished', outcome, summary, finishedAt: now })
+      .where(eq(runs.id, run.id));
+    await getDb()
+      .update(queue)
+      .set({ releasedAt: now })
+      .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)));
+    log('info', 'size run settled before dispatch', { runId: run.id, outcome, summary });
+    return 'skipped';
+  };
+  const issue = run.prompt
+    ? await issueToSize(requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID'), run.prompt).catch((error: unknown) => {
+        log('warn', 'size run issue read failed', { runId: run.id, error: errorMessage(error) });
+        return undefined;
+      })
+    : null;
+  if (issue === undefined) {
+    return settle('failed', 'Linear could not be read.');
+  }
+  if (!issue) {
+    return settle('failed', 'Linear has no such issue.');
+  }
+  if (issue.estimate !== null || issue.delegate) {
+    return settle('declined', issue.delegate ? 'Delegated before it was sized.' : 'Sized before the run started.');
+  }
+  const model = modelFor(project, 'size', false);
+  if (!(await claimRun(project, run, model, now))) {
+    return 'not_claimed';
+  }
+  await getDb()
+    .update(queue)
+    .set({ releasedAt: now })
+    .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)));
+  const payload = buildDispatchPayload({
+    runId: run.id,
+    model,
+    brief: {
+      agent: 'size',
+      trigger: run.trigger,
+      issue: { identifier: issue.identifier, url: issue.url },
+      title: issue.title,
+      description: issue.description ?? ''
+    }
+  });
+  try {
+    await sendStageDispatch(repositoryOf(project), payload);
+  } catch (error) {
+    log('error', 'run dispatch failed', { runId: run.id, issue: issue.identifier, error: errorMessage(error) });
+    await getDb()
+      .update(runs)
+      .set({ status: 'finished', outcome: 'failed', summary: 'GitHub rejected the stage dispatch.', finishedAt: now })
+      .where(eq(runs.id, run.id));
+    return 'skipped';
+  }
+  log('info', 'run dispatched', { runId: run.id, issue: issue.identifier, agent: 'size', model });
+  return 'started';
+};
+
 // A question's run: its brief is the question and who asked it; the card says it's being looked into.
 const startAskRun = async (project: FactoryConfig, run: Run, now: Date): Promise<StartResult> => {
   const ask = await findAskByRun(run.id);
@@ -778,6 +842,9 @@ export const dispatchRun = withCards(async (project: FactoryConfig, runId: strin
         Promise.all([postActivity(workItem, { type: 'thought', body: text }), replyInThread(project, workItem, text)])
       );
     }
+    if (run.agent === 'size') {
+      return holdRun(run, held, () => Promise.resolve());
+    }
     if (run.agent === 'ask') {
       return holdRun(run, held, async () => {
         const ask = await findAskByRun(run.id);
@@ -797,7 +864,9 @@ export const dispatchRun = withCards(async (project: FactoryConfig, runId: strin
     ? await startRun(project, { run, workItem }, decision.downshift, now)
     : run.agent === 'ask'
       ? await startAskRun(project, run, now)
-      : await startJobRun(project, run, now);
+      : run.agent === 'size'
+        ? await startSizeRun(project, run, now)
+        : await startJobRun(project, run, now);
   if (started === 'started') {
     // Wakes the console in case the run's workflow never reaches it, so the run isn't left dispatched.
     await bookWake(dispatchLapsesAt(now), 'run dispatched');
@@ -2885,8 +2954,15 @@ export const handleIssueUpdate = withCards(async (payload: unknown): Promise<voi
     .from(workItems)
     .where(and(eq(workItems.linearIssueId, update.issueId), eq(workItems.linearOrganizationId, update.organizationId)))
     .limit(1);
-  const project = workItem && findProject(workItem.project);
-  if (!workItem || !project) {
+  if (!workItem) {
+    // Issues the factory isn't working on: one accepted without a size gets one.
+    await attempt('size on accept', { issue: update.identifier }, async () =>
+      sizeOnAccept(update, await findAppUserId(update.organizationId))
+    );
+    return;
+  }
+  const project = findProject(workItem.project);
+  if (!project) {
     return;
   }
   const linearFields = {

@@ -246,8 +246,22 @@ describe('parseIssueUpdate', () => {
       estimate: null,
       project: null,
       milestone: null,
+      delegated: true,
       state: { name: 'Awaiting Merge', type: 'started' }
     });
+  });
+
+  it('reads a new issue as one whose status was just set', () => {
+    const created = {
+      ...issueUpdate({ data: { delegateId: null, state: { name: 'Backlog', type: 'backlog' } } }),
+      action: 'create',
+      updatedFrom: undefined
+    };
+    expect(parseIssueUpdate(created)).toMatchObject({
+      delegated: false,
+      state: { name: 'Backlog', type: 'backlog' }
+    });
+    expect(parseIssueUpdate(created)?.delegate).toEqual({ from: null, to: null });
   });
 
   it('reads the project and milestone whatever changed', () => {
@@ -280,7 +294,7 @@ describe('parseIssueUpdate', () => {
   });
 
   it('ignores other actions and types', () => {
-    expect(parseIssueUpdate({ ...issueUpdate({}), action: 'create' })).toBeUndefined();
+    expect(parseIssueUpdate({ ...issueUpdate({}), action: 'remove' })).toBeUndefined();
     expect(parseIssueUpdate({ ...issueUpdate({}), type: 'Comment' })).toBeUndefined();
   });
 });

@@ -24,6 +24,7 @@ import { log } from './log';
 import { allProjects, findProject, repositoryOf } from './projects';
 import { dispatchRun, handleRunFinished, releaseQueue } from './router';
 import { findAnyRun } from './runs';
+import { handleSizeRunFinished } from './sizing';
 
 type Run = typeof runs.$inferSelect;
 
@@ -270,7 +271,9 @@ export const endLapsedDispatches = async (now: Date): Promise<void> => {
           ? handleRunFinished(id)
           : agent === 'ask'
             ? handleAskRunFinished(id)
-            : handleJobRunFinished(id));
+            : agent === 'size'
+              ? handleSizeRunFinished(id)
+              : handleJobRunFinished(id));
       } catch (error) {
         log('error', 'run follow-up failed', { runId: id, error: errorMessage(error) });
       }

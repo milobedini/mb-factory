@@ -135,8 +135,8 @@ jobs:
           fi
 
       - name: Set up the project
-        # A question only reads the code, so it skips installing the toolchains and starting Postgres.
-        if: hashFiles('.github/actions/factory-setup/action.yml') != '' && steps.start.outputs.agent != 'ask'
+        # A question or a size run only reads the code, so it skips installing the toolchains and starting Postgres.
+        if: hashFiles('.github/actions/factory-setup/action.yml') != '' && steps.start.outputs.agent != 'ask' && steps.start.outputs.agent != 'size'
         uses: ./.github/actions/factory-setup
 
       - name: Get the factory app's token

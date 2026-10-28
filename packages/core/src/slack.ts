@@ -120,7 +120,8 @@ const STAGE_NAMES: Record<AgentRole, string> = {
   verify: 'Verify',
   security: 'Security check',
   docs: 'Docs check',
-  ask: 'Question'
+  ask: 'Question',
+  size: 'Sizing'
 };
 
 const MAX_TYPED_ANSWER_SHOWN = 200;

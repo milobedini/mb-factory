@@ -554,3 +554,44 @@ export const issueToStart = async (organizationId: string, issueId: string): Pro
     }
   );
 };
+
+export type IssueToSize = {
+  identifier: string;
+  url: string;
+  title: string;
+  description: string | null;
+  estimate: number | null;
+  delegate: { id: string } | null;
+};
+
+// What a size run reads: the issue's text, and whether it still needs a size.
+export const issueToSize = async (organizationId: string, issueId: string): Promise<IssueToSize | null> => {
+  const { issue } = await linearGraphql<{ issue: IssueToSize | null }>(
+    organizationId,
+    'query IssueToSize($id: String!) { issue(id: $id) { identifier url title description estimate delegate { id } } }',
+    { id: issueId }
+  );
+  return issue;
+};
+
+export const commentOnIssue = async (organizationId: string, issueId: string, body: string): Promise<void> => {
+  await linearGraphql(
+    organizationId,
+    'mutation IssueComment($input: CommentCreateInput!) { commentCreate(input: $input) { success } }',
+    { input: { issueId, body } }
+  );
+};
+
+// A size run's answer: the estimate, then a comment saying why.
+export const sizeIssue = async (
+  organizationId: string,
+  issueId: string,
+  { estimate, comment }: { estimate: number; comment: string }
+): Promise<void> => {
+  await linearGraphql(
+    organizationId,
+    'mutation IssueSize($id: String!, $estimate: Int!) { issueUpdate(id: $id, input: { estimate: $estimate }) { success } }',
+    { id: issueId, estimate }
+  );
+  await commentOnIssue(organizationId, issueId, comment);
+};

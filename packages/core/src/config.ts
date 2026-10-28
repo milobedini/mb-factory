@@ -122,7 +122,9 @@ export const factoryConfigSchema = z
       // Needed when `verify` is set.
       verify: z.string().min(1).optional(),
       // Answers questions asked with the slash command.
-      ask: z.string().min(1).default('sonnet')
+      ask: z.string().min(1).default('sonnet'),
+      // Sizes an issue accepted out of Triage without one.
+      size: z.string().min(1).default('sonnet')
     }),
     // Paths whose changes show on screen. A delivered PR that touches any of them is verified in the app before review;
     // without this, PRs go straight to review.

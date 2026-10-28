@@ -20,7 +20,8 @@ const TRIGGER_COPY: Record<RunTrigger, string> = {
   console: 're-run from the console',
   answered: 'answers',
   scheduled: 'scheduled',
-  asked: 'a question'
+  asked: 'a question',
+  accepted: 'accepted without a size'
 };
 
 const STAGE_STYLES: Partial<Record<Stage, string>> = {

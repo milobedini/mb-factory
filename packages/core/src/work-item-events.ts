@@ -194,7 +194,8 @@ export const stageAfterPrClosed = (stage: Stage, merged: boolean): Stage | undef
 // Linear's Issue webhook (action `update`): `updatedFrom` holds the previous value of each field that changed.
 const issueUpdateSchema = z.looseObject({
   type: z.literal('Issue'),
-  action: z.literal('update'),
+  // A new issue reads as one whose status was just set, so one written straight into Backlog is sized too.
+  action: z.enum(['create', 'update']),
   organizationId: z.string().min(1),
   actor: z.looseObject({ id: z.string().min(1) }).nullish(),
   data: z.looseObject({
@@ -222,6 +223,8 @@ export type IssueUpdate = {
   estimate: number | null;
   project: { name: string; url: string | null } | null;
   milestone: string | null;
+  // Whether the issue is delegated now, whether or not this update changed it.
+  delegated: boolean;
   // Set only when this update changed the field.
   state?: LinearState;
   delegate?: { from: string | null; to: string | null };
@@ -232,9 +235,9 @@ export const parseIssueUpdate = (payload: unknown): IssueUpdate | undefined => {
   if (!parsed.success) {
     return undefined;
   }
-  const { organizationId, actor, data, updatedFrom } = parsed.data;
+  const { organizationId, actor, action, data, updatedFrom } = parsed.data;
   const changed = (field: string): boolean =>
-    updatedFrom !== null && updatedFrom !== undefined && Object.hasOwn(updatedFrom, field);
+    action === 'create' || (updatedFrom !== null && updatedFrom !== undefined && Object.hasOwn(updatedFrom, field));
   return {
     organizationId,
     issueId: data.id,
@@ -244,6 +247,7 @@ export const parseIssueUpdate = (payload: unknown): IssueUpdate | undefined => {
     estimate: data.estimate ?? null,
     project: data.project ? { name: data.project.name, url: data.project.url ?? null } : null,
     milestone: data.projectMilestone?.name ?? null,
+    delegated: (data.delegateId ?? null) !== null,
     ...(changed('stateId') ? { state: { name: data.state.name, type: data.state.type } } : {}),
     ...(changed('delegateId')
       ? { delegate: { from: updatedFrom?.delegateId ?? null, to: data.delegateId ?? null } }

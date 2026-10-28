@@ -265,7 +265,7 @@ export const modelFor = (
   const key = agent === 'triage' && isSlicingTitle(title) ? 'slicing' : agent;
   // Questions are never downshifted: the governor's throttle doesn't hold them either.
   const model =
-    (downshift && key !== 'ask' ? config.usage.downshift[key] : undefined) ??
+    (downshift && key !== 'ask' && key !== 'size' ? config.usage.downshift[key] : undefined) ??
     config.models[key] ??
     config.models[agent];
   if (!model) {

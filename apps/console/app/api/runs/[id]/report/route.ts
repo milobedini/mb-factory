@@ -7,6 +7,7 @@ import { handleJobRunFinished } from '@/lib/jobs';
 import { log } from '@/lib/log';
 import { handleRunFinished } from '@/lib/router';
 import { findAnyRun, recordRunReport, runRepository } from '@/lib/runs';
+import { handleSizeRunFinished } from '@/lib/sizing';
 
 export const POST = async (request: Request, context: RouteContext<'/api/runs/[id]/report'>) => {
   const { id } = await context.params;
@@ -51,7 +52,9 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
         ? handleRunFinished(id)
         : found.run.agent === 'ask'
           ? handleAskRunFinished(id)
-          : handleJobRunFinished(id));
+          : found.run.agent === 'size'
+            ? handleSizeRunFinished(id)
+            : handleJobRunFinished(id));
     } catch (error) {
       log('error', 'run follow-up failed', {
         runId: id,

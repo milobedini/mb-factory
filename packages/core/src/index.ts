@@ -22,7 +22,7 @@ export {
   readAskReport,
   slackToMarkdown
 } from './ask';
-export type { AskBrief, Brief, DispatchPayload, JobBrief } from './brief';
+export type { AskBrief, Brief, DispatchPayload, JobBrief, SizeBrief } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
 export type { CardInput, CardRun, CardStatus, NextIssue, SlackCard } from './card';
 export { CARD_COLOURS, cardStatus, readNextIssues, workItemCard } from './card';
@@ -317,6 +317,8 @@ export { isSignedWake, jobSlotSoon, nextWake, probeMoments, signWake, WAKE_TOPIC
 export { decryptSecret, deriveKey, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
+export type { SizeReport } from './sizing';
+export { needsSizing, readSizeReport, sizedComment, unsizedComment } from './sizing';
 export type {
   CardQuestion,
   FiledIssue,

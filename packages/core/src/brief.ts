@@ -39,6 +39,15 @@ export type AskBrief = {
   team: string;
 };
 
+// An issue accepted out of Triage with no size: its text, read from Linear when the run is dispatched.
+export type SizeBrief = {
+  agent: 'size';
+  trigger: RunTrigger;
+  issue: { identifier: string; url: string };
+  title: string;
+  description: string;
+};
+
 // The `client_payload` of the repository_dispatch; the caller workflow passes each field to stage.yml.
 export type DispatchPayload = {
   run_id: string;
@@ -91,19 +100,37 @@ const renderAskBrief = ({ agent, trigger, question, asker, team }: AskBrief): st
     `question: |\n${indent(question)}`
   ].join('\n');
 
-const isJobBrief = (brief: Brief | JobBrief | AskBrief): brief is JobBrief => 'job' in brief;
+const MAX_DESCRIPTION = 8000;
 
-const isAskBrief = (brief: Brief | JobBrief | AskBrief): brief is AskBrief => 'question' in brief;
+const renderSizeBrief = ({ agent, trigger, issue, title, description }: SizeBrief): string =>
+  [
+    `stage: ${agent}`,
+    `trigger: ${trigger}`,
+    `issue: ${oneLine(issue.identifier)} ${oneLine(issue.url)}`,
+    `title: ${oneLine(title)}`,
+    `description: |\n${indent(description.trim() ? description.slice(0, MAX_DESCRIPTION) : '(none)')}`
+  ].join('\n');
 
-const renderAnyBrief = (brief: Brief | JobBrief | AskBrief): string => {
+type AnyBrief = Brief | JobBrief | AskBrief | SizeBrief;
+
+const isJobBrief = (brief: AnyBrief): brief is JobBrief => 'job' in brief;
+
+const isAskBrief = (brief: AnyBrief): brief is AskBrief => 'question' in brief;
+
+const isSizeBrief = (brief: AnyBrief): brief is SizeBrief => brief.agent === 'size';
+
+const renderAnyBrief = (brief: AnyBrief): string => {
   if (isAskBrief(brief)) {
     return renderAskBrief(brief);
+  }
+  if (isSizeBrief(brief)) {
+    return renderSizeBrief(brief);
   }
   return isJobBrief(brief) ? renderJobBrief(brief) : renderBrief(brief);
 };
 
 // Skills in an agent's `skills:` are only preloaded when it runs as a subagent, so the main thread just hands over.
-export const renderStagePrompt = (brief: Brief | JobBrief | AskBrief): string =>
+export const renderStagePrompt = (brief: AnyBrief): string =>
   [
     'You are the dispatcher for one mb-factory stage run. Do not do the stage work yourself.',
     '',
@@ -122,5 +149,5 @@ export const buildDispatchPayload = ({
 }: {
   runId: string;
   model: string;
-  brief: Brief | JobBrief | AskBrief;
+  brief: AnyBrief;
 }): DispatchPayload => ({ run_id: runId, model, prompt: renderStagePrompt(brief) });

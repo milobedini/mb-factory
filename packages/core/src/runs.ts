@@ -16,7 +16,9 @@ export const RUN_TRIGGERS = [
   'answered',
   'scheduled',
   // A question asked from Slack.
-  'asked'
+  'asked',
+  // An issue accepted out of Triage with no size, sized by itself.
+  'accepted'
 ] as const;
 
 export type RunTrigger = (typeof RUN_TRIGGERS)[number];
