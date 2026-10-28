@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** go through the Dino Design System artifact with the user and change what they want, then redesign the existing components and the seven missing primitives from the audit on a Design canvas (see [Design stage and Dino](#design-stage-and-dino)); check Thursday 29 Oct's morning items under [To see live](#to-see-live) that morning.
+**Next:** settle the first round on the [Dino redesign canvas](https://claude.ai/artifact/2pr8dPicMYTsmPJdYvhExz) with the user (buttons, chips and toggles, the segmented control, a sheet and Undo, the card rim), then the seven missing primitives there (see [Design stage and Dino](#design-stage-and-dino)); check Thursday 29 Oct's morning items under [To see live](#to-see-live) that morning.
 
 **Direction, in order:** the design stage and the Dino project (below), so the Accounts and households PRD is the first feature designed through it; then that PRD and slicing it; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
