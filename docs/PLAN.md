@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** settle the first round on the [Dino redesign canvas](https://claude.ai/artifact/2pr8dPicMYTsmPJdYvhExz) with the user (buttons, chips and toggles, the segmented control, a sheet and Undo, the card rim), then the seven missing primitives there (see [Design stage and Dino](#design-stage-and-dino)); check Thursday 29 Oct's morning items under [To see live](#to-see-live) that morning.
+**Next:** check Thursday 29 Oct's morning items under [To see live](#to-see-live), then get the user's calls on round one of the [Dino redesign canvas](https://claude.ai/artifact/2pr8dPicMYTsmPJdYvhExz) (card rim A, B or C; disabled buttons explain or stay enabled; four hover and pressed tokens; a spinner exception to the motion rule; Undo, which needs recipes deleted softly) and design the seven missing primitives there (see [Design stage and Dino](#design-stage-and-dino)).
 
 **Direction, in order:** the design stage and the Dino project (below), so the Accounts and households PRD is the first feature designed through it; then that PRD and slicing it; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
@@ -94,6 +94,7 @@ Choices whose reasons aren't in the code. Where the code says why, it isn't repe
 Agreed 28 Oct 2026; not built yet.
 
 - **Dino** is Tastebook's component library: the components in `frontend/src/ui/`, built to the Enamel rules in `docs/design.md`. The [Dino Design System artifact](https://claude.ai/artifact/Log29Ws2J3fTumoXaxVr1C) seeds every design canvas: tokens from `enamel.css`, the bundled fonts, and the app's real components (a Vite library build of `src/ui` with React left to the page's React 18, and the token declarations stripped from its CSS so the artifact's tokens win), each with a live preview and guidelines. It was built by hand on 28 Oct from `main@2de6da7`; keeping it in step with the code is still to design (a script in Tastebook, or a factory job after `dino` PRs merge).
+- **Two artifacts, two jobs:** the Design System artifact is the reference, drawn by claude.ai's own page, so Claude can't see it rendered; review happens on Design canvases Claude writes (the user asked why Chrome was being used to look at the system: don't). A canvas installs a copy of Dino under `project/ds/dino/` (tokens, bundle, fonts) with a `designSystems` record, and mounts the real components with `<x-import component-from-global-scope="Dino.Button">`; after Dino changes, copy its files again and bump the record's version. Design work opens in dark (the user's call, 29 Oct), with light one tweak away; Tastebook itself still follows the phone.
 - **Slicing hints at design (proposed):** slicing marks each slice it thinks needs design, and files the new Dino components a project needs as their own slices ahead of the features that use them. The spec still decides. The Accounts and households PRD is the first test.
 - **The design stage** follows Spec Review: `triage → spec → Spec Review → design → Design Review → implement`. The spec decides `design: needed` or `design: skip (<why>)`. Skip it when the change reuses existing components with no visual change, or it's a small UI change within the rules. It's needed for a new screen or flow, a new or changed Dino component, or a visible layout change.
 - **A person in the loop on a claude.ai Design canvas:** the router starts a claude.ai/code session (a routine); it drafts the canvas from the spec and Dino, then posts the link to the card and Linear. The user iterates in that session and approves from there or from Slack.
@@ -251,6 +252,7 @@ The factory runs on the same Max 20x limits as the user's own Claude use. The de
 - **Neon (Tastebook):** the `neon` plugin, project `tastebook` (`green-resonance-43539979`), branch `production` (`br-shy-butterfly-za1yk0b6`), database `neondb`. Read-only unless asked; ask before anything destructive; never fetch connection strings through it. A restore trial uses a throwaway branch from production (never a preview branch, which is already a copy).
 - **Tastebook's local clone** (`~/Documents/git/tastebook`) is linked to Vercel; its `.env.local` holds the photos Blob token and an OIDC token. Stage runs have no Vercel token, so Vercel changes (firewall, settings) are a person's step.
 - **Usage token** for the status-line reporter: `~/.config/mb-factory/usage-token`.
+- **Rebuilding Dino's artifact files** (28 Oct, by hand): a Vite library build (`iife`, global `Dino`) of an entry that re-exports `@/ui`, run from `tastebook/frontend` with the scratch folder's `node_modules` symlinked to the frontend's; `react` and `react-dom` external as `React`/`ReactDOM`, and `react/jsx-runtime` aliased to a shim over `React.createElement` (React 18's UMD build has none); RecipeCard wrapped in a `MemoryRouter`; Lucide icons exported as `Dino.icons`. Strip the `--color-*`, `--radius-*`, `--font-display`, `--font-body`, `--spacing`, `--cuisine-*` and `--plate` declarations from the built CSS so `tokens.json` wins, prefix the bundle with its `@ds-bundle` header, and render each preview in jsdom before publishing. The scripts lived in a session scratchpad: rebuild from this note until the sync is designed.
 - **Onboarding sessions** ran with the `mattpocock-skills:grilling` skill: rounds of numbered questions, each with a recommended answer; Claude looks facts up itself, summarises, and asks before writing; the write-up goes where its readers look. Design directions were private claude.ai artifacts ([Enamel](https://claude.ai/artifact/BD7Up5iuWptCLTcsAD67Qm), [style guide](https://claude.ai/artifact/8XJh3x55GzARA7uFBHspxc)), copied into the repo since agents can't read claude.ai.
 
 ## Gotchas
@@ -293,6 +295,12 @@ Learnt the hard way; each would bite again.
 - A Python service must name its `entrypoint`; set `regions` at the top level (default `iad1`).
 - Queues deduplicates on `idempotencyKey`, but wakes booked for different moments can arrive in a burst.
 - The first wake after a deploy fires the day's missed slot as a catch-up, which reports itself late.
+
+**claude.ai artifacts and routines**
+
+- An artifact publish refuses a `.ts` file: send it with `contentType: "text/plain"`. A publish over a file the user has edited on the page is refused: read it, redo the change on their version, publish again.
+- Apple's HIG pages are empty without JavaScript; fetch `developer.apple.com/tutorials/data/design/human-interface-guidelines/<page>.json` instead.
+- `RemoteTrigger` can disable a routine but not delete it (the user deletes it at claude.ai/code/routines).
 
 **Neon, Drizzle, Next**
 
