@@ -243,6 +243,7 @@ describe('parseIssueUpdate', () => {
       identifier: 'TAS-9',
       teamKey: 'TAS',
       actorId: HUMAN,
+      actorType: 'user',
       estimate: null,
       project: null,
       milestone: null,

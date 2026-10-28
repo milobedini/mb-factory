@@ -1,7 +1,7 @@
 ---
 name: size
 description: Factory sizing. Sizes one Linear issue a person accepted out of Triage without a size, from its text and the code on the default branch, read-only. Dispatched by the mb-factory router.
-disallowedTools: Edit, Write, NotebookEdit
+tools: Read, Grep, Glob
 skills:
   - mb-factory:factory-run
 ---
@@ -15,15 +15,16 @@ Your brief has no session or job. It carries `stage: size`, `trigger: accepted`,
 ## What's different from a stage run
 
 - **No session and no Linear token.** Everything you need from Linear is in the brief; don't call Linear.
-- **Read-only.** No commits, pushes, PRs, comments or `gh` calls that write. The project's dependencies aren't installed, so don't run its tests, builds or app: read the code.
+- **Read-only, with no shell.** You have Read, Grep and Glob only: you read text nobody delegated, so you can run nothing. The project's dependencies aren't installed anyway.
+- **The report is your reply.** `factory-run` says to write it to a file; you can't, so your last message is the report's JSON, and the dispatcher writes the file.
 - **Quick.** A size, not a triage brief: read until you can place it on the scale, then stop. A few minutes at most.
 
 ## Procedure
 
 1. **Read the issue** in the brief. Note what it asks for and what's out of scope.
-2. **Find what it touches:** `AGENTS.md` and `docs/` for where things live, then `git grep` and the files themselves. Count the files and the layers (API, page, tests, migrations, CI) the change reaches, and look for prior art it can follow.
+2. **Find what it touches:** `AGENTS.md` and `docs/` for where things live, then Grep and the files themselves. Count the files and the layers (API, page, tests, migrations, CI) the change reaches, and look for prior art it can follow.
 3. **Size it** on the team's scale, as triage does: XS or S when it's local and obvious, with low risk; M when it spans several files with bounded uncertainty; L or XL when it's cross-cutting, risky or a full feature. When unsure between two, take the larger.
-4. **Report,** as below. Write the JSON with Bash (`cat > "$FACTORY_REPORT_PATH" <<'JSON'`), then stop.
+4. **Report,** as below: your last message is the JSON and nothing else, and the dispatcher writes it to the report file. Then stop.
 
 ## The report
 

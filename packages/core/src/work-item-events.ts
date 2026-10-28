@@ -197,7 +197,7 @@ const issueUpdateSchema = z.looseObject({
   // A new issue reads as one whose status was just set, so one written straight into Backlog is sized too.
   action: z.enum(['create', 'update']),
   organizationId: z.string().min(1),
-  actor: z.looseObject({ id: z.string().min(1) }).nullish(),
+  actor: z.looseObject({ id: z.string().min(1), type: z.string().nullish() }).nullish(),
   data: z.looseObject({
     id: z.string().min(1),
     identifier: z.string().min(1),
@@ -219,6 +219,8 @@ export type IssueUpdate = {
   identifier: string;
   teamKey: string | null;
   actorId: string | null;
+  // `user` for a person (or the factory's own app user); `integration` for GitHub and the like; null when Linear names none.
+  actorType: string | null;
   // The issue's current estimate, project and milestone, whether or not this update changed them.
   estimate: number | null;
   project: { name: string; url: string | null } | null;
@@ -244,6 +246,7 @@ export const parseIssueUpdate = (payload: unknown): IssueUpdate | undefined => {
     identifier: data.identifier,
     teamKey: data.team?.key ?? null,
     actorId: actor?.id ?? null,
+    actorType: actor?.type ?? null,
     estimate: data.estimate ?? null,
     project: data.project ? { name: data.project.name, url: data.project.url ?? null } : null,
     milestone: data.projectMilestone?.name ?? null,

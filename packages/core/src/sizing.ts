@@ -8,9 +8,12 @@ import type { IssueUpdate } from './work-item-events';
 const SIZING_STATES = ['backlog', 'unstarted'];
 const MAX_WHY = 500;
 
-// A person moved an unsized issue nobody has delegated into Backlog or Todo: accepting it out of Triage, most often.
-// Triage sizes a delegated issue itself, and the factory's own moves are its own.
+// A person moved an unsized issue nobody has delegated into Backlog or Todo (accepting it out of Triage, most often), or
+// wrote one there. A person, because the run starts an agent on the issue's text without a Delegate tap: never for an
+// integration's issue or one Linear names no actor for. Triage sizes a delegated issue itself, and the factory's own
+// moves are its own.
 export const needsSizing = (update: IssueUpdate, appUserId: string): boolean =>
+  update.actorType === 'user' &&
   update.actorId !== appUserId &&
   update.state !== undefined &&
   SIZING_STATES.includes(update.state.type) &&

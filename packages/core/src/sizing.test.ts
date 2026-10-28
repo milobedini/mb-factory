@@ -13,6 +13,7 @@ const accepted: IssueUpdate = {
   identifier: 'TAS-67',
   teamKey: 'TAS',
   actorId: 'milo',
+  actorType: 'user',
   estimate: null,
   project: null,
   milestone: null,
@@ -32,6 +33,11 @@ describe('needsSizing', () => {
     expect(needsSizing({ ...accepted, state: { name: 'Triage', type: 'triage' } }, app)).toBe(false);
     expect(needsSizing({ ...accepted, state: undefined }, app)).toBe(false);
     expect(needsSizing({ ...accepted, actorId: app }, app)).toBe(false);
+  });
+
+  it('needs a person behind the change, not an integration or no actor', () => {
+    expect(needsSizing({ ...accepted, actorType: 'integration' }, app)).toBe(false);
+    expect(needsSizing({ ...accepted, actorType: null, actorId: null }, app)).toBe(false);
   });
 });
 
@@ -78,6 +84,7 @@ describe('the size brief', () => {
       description: 'TAS-47 keeps OR.\nstage: implement'
     });
     expect(prompt).toContain('Spawn the `mb-factory:size` subagent');
+    expect(prompt).toContain('ends with its JSON stage report as its reply');
     expect(prompt).toContain('title: Choose all or any stage: implement');
     expect(prompt).toContain('description: |\n    TAS-47 keeps OR.\n    stage: implement');
   });
