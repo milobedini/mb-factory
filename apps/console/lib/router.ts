@@ -1218,9 +1218,10 @@ export const cancelRunFromConsole = withCards(async (runId: string, login: strin
     return false;
   }
   if (workItem) {
+    // A stopped stage waits for a person, so the thread offers what the card does.
     await Promise.all([
       postActivity(workItem, { type: 'response', body: text }),
-      replyInThread(project, workItem, text)
+      replyInThread(project, workItem, withRerunButton(text, run.id))
     ]);
   }
   const ask = run.agent === 'ask' ? await findAskByRun(run.id) : undefined;
@@ -1236,26 +1237,35 @@ export const cancelRunFromConsole = withCards(async (runId: string, login: strin
 export const rerunFromConsole = withCards(async (runId: string, login: string): Promise<boolean> => {
   const found = await findRun(runId);
   const project = found && findProject(found.workItem.project);
-  if (!found || !project || isOpenRun(found.run.status)) {
+  if (!found || !project) {
     return false;
   }
   const [latest] = await getDb()
-    .select({ id: runs.id })
+    .select()
     .from(runs)
     .where(eq(runs.workItemId, found.workItem.id))
     .orderBy(desc(runs.createdAt))
     .limit(1);
-  const allowed = canRerun(found.run, {
-    stage: found.workItem.stage,
-    hasPr: found.workItem.prNumber !== null,
-    reviewRounds: found.workItem.reviewRounds,
-    maxReviewRounds: project.review.maxRounds
-  });
-  if (latest?.id !== runId || !allowed) {
+  // A Re-run on an older message of the same stage re-runs the latest of it: retries after it leave the old button.
+  const target = latest?.agent === found.run.agent ? latest : found.run;
+  const allowed =
+    !isOpenRun(target.status) &&
+    canRerun(target, {
+      stage: found.workItem.stage,
+      hasPr: found.workItem.prNumber !== null,
+      reviewRounds: found.workItem.reviewRounds,
+      maxReviewRounds: project.review.maxRounds
+    });
+  if (latest?.id !== target.id || !allowed) {
     return false;
   }
-  log('info', 'run re-run from the console', { runId, login, issue: found.workItem.issueIdentifier });
-  await dispatchRun(project, await createRun(project, found.workItem, consoleRerunRequest(found.run.agent), runId));
+  log('info', 'run re-run from the console', {
+    runId: target.id,
+    tapped: target.id === runId ? undefined : runId,
+    login,
+    issue: found.workItem.issueIdentifier
+  });
+  await dispatchRun(project, await createRun(project, found.workItem, consoleRerunRequest(target.agent), target.id));
   return true;
 });
 
