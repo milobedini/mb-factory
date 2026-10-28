@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { filedFollowUpsText, followUpIssue } from './follow-ups';
+import type { RequestedIssue } from './follow-ups';
+import { filedFollowUpsText, followUpIssue, readRequestedIssues, requestedIssue } from './follow-ups';
 import type { AskedQuestion } from './questions';
 import { chosenFollowUps, readQuestions } from './questions';
 
@@ -96,5 +97,51 @@ describe('review follow-ups', () => {
     expect(filedFollowUpsText(filed, 'markdown')).toMatch(
       /^Filed the follow-up in Triage: \[TAS-61\]\(https:\/\/linear.app\/t\/TAS-61\) /
     );
+  });
+});
+
+describe('issues a person asked for', () => {
+  // TAS-47, 27 Oct: "Maybe we should file the ability to choose and or or for that dilemma?" at the spec gate was only
+  // recorded in the spec.
+  const issue: RequestedIssue = {
+    title: 'Choose whether included ingredients must all match or any',
+    body: 'TAS-47 keeps OR for included ingredients. Add a toggle for AND.',
+    size: 'S'
+  };
+  const report = { stage: 'spec', outcome: 'needs_input', summary: 'Recorded it.', issues: [issue, { title: '' }] };
+
+  it('reads them from a run a person prompted, skipping malformed ones', () => {
+    expect(readRequestedIssues({ trigger: 'prompted', report })).toEqual([issue]);
+    expect(readRequestedIssues({ trigger: 'spec_approved', report })).toEqual([issue]);
+  });
+
+  it('ignores them on a run no person prompted, so a repeat from the session is not filed twice', () => {
+    expect(readRequestedIssues({ trigger: 'delivered', report })).toEqual([]);
+    expect(readRequestedIssues({ trigger: 'prompted', report: { summary: 'Nothing asked.' } })).toEqual([]);
+  });
+
+  it('files it sized and linked to the reply that asked for it, with the agent’s text made inert', () => {
+    const filed = requestedIssue(
+      { ...issue, body: 'See [this](https://evil.example).' },
+      {
+        issueIdentifier: 'TAS-47',
+        issueUrl: 'https://linear.app/tastebook/issue/TAS-47',
+        prUrl: 'https://github.com/milobedini/tastebook/pull/48',
+        runUrl: 'https://github.com/milobedini/tastebook/actions/runs/1',
+        request: 'Maybe we should file the ability to choose <and> or or?'
+      }
+    );
+    expect(filed).toEqual({
+      title: 'Choose whether included ingredients must all match or any',
+      description: [
+        'See \\[this\\](https://evil.example).',
+        '',
+        '---',
+        '',
+        'Asked for in [TAS-47](https://linear.app/tastebook/issue/TAS-47) ([its PR](https://github.com/milobedini/tastebook/pull/48)): “Maybe we should file the ability to choose \\<and\\> or or?” ([run log](https://github.com/milobedini/tastebook/actions/runs/1)).'
+      ].join('\n'),
+      priority: 0,
+      estimate: 2
+    });
   });
 });

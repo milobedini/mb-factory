@@ -36,6 +36,11 @@ export const readSpecParts = (report: unknown): SpecPart[] => {
   });
 };
 
+// The parts of the newest spec report that lists them, from reports newest first: a revision that only changed the
+// spec's text may leave `parts` out, which keeps the split, while `parts: []` drops it.
+export const latestSpecParts = (reportsNewestFirst: unknown[]): SpecPart[] =>
+  readSpecParts(reportsNewestFirst.find((report) => Array.isArray(reportPartsSchema.safeParse(report).data?.parts)));
+
 // A sub-issue for one later part. Triage reads the first lines and sends it straight to implement.
 export const partDescription = (
   parent: { identifier: string },

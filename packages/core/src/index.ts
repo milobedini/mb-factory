@@ -80,8 +80,8 @@ export {
 } from './dashboard';
 export type { Bump, DependencyPr, DependencyWork } from './dependencies';
 export { DEPENDABOT_LOGIN, dependencyIssue, dependencyTakenText, isMajorBump, readBump } from './dependencies';
-export type { FollowUpContext } from './follow-ups';
-export { filedFollowUpsText, followUpIssue } from './follow-ups';
+export type { FollowUpContext, RequestedContext, RequestedIssue } from './follow-ups';
+export { filedFollowUpsText, followUpIssue, readRequestedIssues, requestedIssue } from './follow-ups';
 export type { Gate } from './gates';
 export { GATE_CHANGES_QUESTION, GATE_GONE, onlyAsksForChanges, readGate } from './gates';
 export type {
@@ -192,7 +192,7 @@ export {
   STAGE_WORKFLOW
 } from './oidc';
 export type { SpecPart } from './parts';
-export { partDescription, partStateId, partsFiledText, readSpecParts } from './parts';
+export { latestSpecParts, partDescription, partStateId, partsFiledText, readSpecParts } from './parts';
 export type {
   AfterAnswers,
   AnswerResult,

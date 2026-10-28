@@ -33,7 +33,7 @@ The router reads the answer, not you: an approval (with or without suggestions) 
 
 ## Revising
 
-The committed file is the source of truth, and a human may edit it directly. Re-read the file, its PR comments and the session before changing anything. Commit the revision to the same branch and PR, never a second spec PR. Reply in each PR review thread you addressed, one line each. Then ask for approval again.
+The committed file is the source of truth, and a human may edit it directly. Re-read the file, its PR comments and the session before changing anything. Commit the revision to the same branch and PR, never a second spec PR. If the work is split, report the whole `parts` list again with any changes (`[]` if it no longer splits). If the reply asks for something to be filed as its own issue, report it in `issues` (see `factory-run`) and record it in the spec's Out of scope as a follow-up. Reply in each PR review thread you addressed, one line each. Then ask for approval again.
 
 ## Exit
 

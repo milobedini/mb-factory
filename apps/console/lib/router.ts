@@ -75,6 +75,7 @@ import {
   isOpenRun,
   isReadyRequest,
   keptText,
+  latestSpecParts,
   linearSlackReplyText,
   linearStatusFor,
   MAX_READY_ROWS,
@@ -123,7 +124,6 @@ import {
   readGate,
   readNextIssues,
   readQuestions,
-  readSpecParts,
   resumeRequestFor,
   retryText,
   reverifiesOnRequest,
@@ -179,7 +179,7 @@ import {
   runOf
 } from './ask-runs';
 import { requireEnv } from './env';
-import { fileFollowUps } from './follow-ups';
+import { fileFollowUps, fileRequestedIssues } from './follow-ups';
 import {
   approvePull,
   branchChecks,
@@ -1507,13 +1507,12 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
 // A spec that split its work: once approved, its later parts become sub-issues, each posted to delegate when the one
 // before it merges.
 const fileSpecParts = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
-  const [spec] = await getDb()
+  const specs = await getDb()
     .select({ report: runs.report })
     .from(runs)
     .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'spec'), eq(runs.status, 'finished')))
-    .orderBy(desc(runs.createdAt))
-    .limit(1);
-  const parts = readSpecParts(spec?.report);
+    .orderBy(desc(runs.createdAt));
+  const parts = latestSpecParts(specs.map(({ report }) => report));
   if (parts.length === 0) {
     return;
   }
@@ -2782,6 +2781,14 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       ? moveWorkItem(project, workItem, next.stage, { asking: Boolean(next.questions || next.gate) })
       : undefined
   ]);
+  // Filed before any gate or question below, so the thread's last message is still the one waiting on a person.
+  const requested = await fileRequestedIssues(project, found);
+  if (requested.length > 0) {
+    await Promise.all([
+      replyInThread(project, workItem, filedFollowUpsText(requested)),
+      postActivity(workItem, { type: 'thought', body: filedFollowUpsText(requested, 'markdown') })
+    ]);
+  }
   if (readyToMerge && replyTs && !mergeNotes.findingsLeft) {
     await getDb().update(workItems).set({ mergeSlackTs: replyTs }).where(eq(workItems.id, workItem.id));
   }

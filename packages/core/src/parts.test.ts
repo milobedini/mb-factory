@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { partDescription, partStateId, partsFiledText, readSpecParts } from './parts';
+import { latestSpecParts, partDescription, partStateId, partsFiledText, readSpecParts } from './parts';
 
 describe('readSpecParts', () => {
   it('reads the later parts in order, with their sizes as Linear estimates', () => {
@@ -22,6 +22,22 @@ describe('readSpecParts', () => {
       readSpecParts({ parts: [{ title: 'Part 2', scope: 'x' }, { title: '' }, { title: 'Part 4', scope: 'y' }] })
     ).toEqual([{ title: 'Part 2', scope: 'x', estimate: null }]);
     expect(readSpecParts({ summary: 'One PR.' })).toEqual([]);
+  });
+});
+
+describe('latestSpecParts', () => {
+  const split = { parts: [{ title: 'Diet and ingredient filters, part 2', scope: 'The page.', size: 'L' }] };
+
+  // TAS-47, 27 Oct: the revision after "Change something" left `parts` out, and approval filed nothing.
+  it('keeps the split from an earlier report when a revision leaves parts out', () => {
+    expect(latestSpecParts([{ summary: 'Recorded the choice in the spec.' }, split, { questions: [] }])).toEqual([
+      { title: 'Diet and ingredient filters, part 2', scope: 'The page.', estimate: 5 }
+    ]);
+  });
+
+  it('drops the split when the newest report lists no parts', () => {
+    expect(latestSpecParts([{ parts: [] }, split])).toEqual([]);
+    expect(latestSpecParts([{ summary: 'One PR.' }])).toEqual([]);
   });
 });
 
