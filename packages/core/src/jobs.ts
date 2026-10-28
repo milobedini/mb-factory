@@ -195,11 +195,15 @@ export const readJobReport = (report: unknown, agent: JobAgent): JobReport => {
 
 export type CoveredRun = { head: string; fingerprints: string[] };
 
-// Where the next check starts: after the newest run (runs come newest first) whose findings all reached Linear, so one
-// Linear refused is found again rather than lost. Past the runs given, the oldest one's head, so a check that can't
-// file for days still moves on.
-export const coveredHead = (runs: CoveredRun[], filed: ReadonlySet<string>): string | undefined =>
-  (runs.find(({ fingerprints }) => fingerprints.every((fingerprint) => filed.has(fingerprint))) ?? runs.at(-1))?.head;
+// Where the next check starts (runs come newest first): before the oldest run with a finding Linear refused, so it's
+// found again rather than lost, even after a later run filed everything it found. Past the runs given, the oldest one's
+// head, so a check that can't file for days still moves on.
+export const coveredHead = (runs: CoveredRun[], filed: ReadonlySet<string>): string | undefined => {
+  const unfiled = runs.findLastIndex(
+    ({ fingerprints }) => !fingerprints.every((fingerprint) => filed.has(fingerprint))
+  );
+  return (unfiled === -1 ? runs[0] : (runs[unfiled + 1] ?? runs.at(-1)))?.head;
+};
 
 // The latest issue filed for a fingerprint, with its Linear state type, or null when it can't be read.
 export type FiledBefore = { identifier: string; url: string; stateType: string | null };

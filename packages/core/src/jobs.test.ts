@@ -210,6 +210,21 @@ describe('coveredHead', () => {
     ).toBe('c2');
   });
 
+  // The docs check, 28 Oct: 27 Oct's finding was refused and today's was filed, so the next check would have started
+  // after today's and never found 27 Oct's again.
+  it('holds back past an older refused run even when a newer one filed everything', () => {
+    expect(
+      coveredHead(
+        [
+          { head: 'c3', fingerprints: ['docs:README.md:setup'] },
+          { head: 'c2', fingerprints: ['docs:docs/architecture.md:styling-planned'] },
+          { head: 'c1', fingerprints: [] }
+        ],
+        filed
+      )
+    ).toBe('c1');
+  });
+
   it('moves on from the oldest run given when none of them filed everything', () => {
     expect(
       coveredHead(
