@@ -122,7 +122,6 @@ import {
   readBump,
   readFixableFindings,
   readGate,
-  readNextIssues,
   readQuestions,
   resumeRequestFor,
   retryText,
@@ -1397,7 +1396,16 @@ const startWork = async (project: FactoryConfig, event: Extract<SessionEvent, { 
     log('info', 'agent session already started', { issue: event.issue.identifier });
     return;
   }
-  await openSlackThread(project, workItem, event.issue.title);
+  const delegated: ReadyOutcome = {
+    identifier: event.issue.identifier,
+    kind: 'delegated',
+    by: event.requester ?? 'Linear',
+    at: new Date()
+  };
+  await Promise.all([
+    openSlackThread(project, workItem, event.issue.title),
+    attempt('next offers settle', { issue: event.issue.identifier }, () => settleNextOffers(project.name, delegated))
+  ]);
   await dispatchRun(project, await createRun(project, workItem, request));
 };
 
@@ -2061,13 +2069,18 @@ const handleDelegateTap = async (
   const [card] =
     message && channelId
       ? await getDb()
-          .select({ id: workItems.id, nextReady: workItems.nextReady })
+          .select({ id: workItems.id })
           .from(workItems)
           .where(and(eq(workItems.slackChannelId, channelId), eq(workItems.slackThreadTs, message.ts)))
           .limit(1)
       : [];
   await Promise.all([
-    card && outcomes.length > 0 ? settleNextOnCard(card, outcomes) : undefined,
+    // Delegated issues were settled as their work started.
+    ...outcomes
+      .filter(({ kind }) => kind === 'not_ready')
+      .map((outcome) =>
+        attempt('next offers settle', { issue: outcome.identifier }, () => settleNextOffers(project.name, outcome))
+      ),
     // Slack doesn't send an ephemeral message back, so it's redrawn from the list it was drawn from.
     action.ephemeral && responseUrl && outcomes.length > 0
       ? attempt('slack ephemeral edit', { issues: action.identifiers }, () => {
@@ -2094,19 +2107,36 @@ const handleDelegateTap = async (
   ]);
 };
 
-// The Next rows a Delegate tap settled on a work item's card: who delegated each, or that it wasn't ready any more.
-const settleNextOnCard = async (card: { id: string; nextReady: unknown }, outcomes: ReadyOutcome[]): Promise<void> => {
-  const next = readNextIssues(card.nextReady).map((issue): NextIssue => {
-    const outcome = outcomes.find(({ identifier }) => identifier === issue.identifier);
-    if (!outcome) {
-      return issue;
-    }
-    return outcome.kind === 'delegated'
-      ? { ...issue, delegatedBy: outcome.by, delegatedAt: outcome.at.toISOString() }
-      : { ...issue, notReady: true };
-  });
-  await getDb().update(workItems).set({ nextReady: next }).where(eq(workItems.id, card.id));
-  touchCard(card.id);
+// An issue's Next row on every card that offers it: who delegated it, or that it wasn't ready any more. However it
+// was delegated (a card's button, the ready list, the App Home or Linear), each card offering it says so. One
+// statement per issue, so a "Delegate all" settling rows of the same card at once can't lose one; a row already
+// delegated stays as it is.
+const settleNextOffers = async (projectName: string, outcome: ReadyOutcome): Promise<void> => {
+  const settled: Partial<NextIssue> =
+    outcome.kind === 'delegated'
+      ? { delegatedBy: outcome.by, delegatedAt: outcome.at.toISOString() }
+      : { notReady: true };
+  const cards = await getDb()
+    .update(workItems)
+    .set({
+      nextReady: sql`(
+        select jsonb_agg(
+          case when offer->>'identifier' = ${outcome.identifier} and offer->>'delegatedBy' is null
+            then offer || ${JSON.stringify(settled)}::jsonb else offer end
+          order by place)
+        from jsonb_array_elements(${workItems.nextReady}) with ordinality as offers(offer, place)
+      )`
+    })
+    .where(
+      and(
+        eq(workItems.project, projectName),
+        sql`${workItems.nextReady} @> ${JSON.stringify([{ identifier: outcome.identifier }])}::jsonb`
+      )
+    )
+    .returning({ id: workItems.id });
+  for (const { id } of cards) {
+    touchCard(id);
+  }
 };
 
 // An issue finishing (done or canceled) can unblock others, each offered with a Delegate button so the news arrives

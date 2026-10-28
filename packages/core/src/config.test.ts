@@ -54,10 +54,12 @@ describe('parseFactoryConfig', () => {
 
 describe('verify', () => {
   it('reads the paths that show on screen, and needs a verify model with them', () => {
-    expect(parseFactoryConfig(tastebookConfig).verify).toEqual({ paths: ['frontend/'] });
+    expect(parseFactoryConfig(tastebookConfig).verify).toEqual({
+      paths: ['frontend/', 'backend/recipes/catalogue.json']
+    });
     expect(() => parseFactoryConfig(tastebookConfig.replace('  verify: sonnet\n', ''))).toThrow(/models\.verify/);
     const without = tastebookConfig
-      .replace(/\nverify:\n {2}paths:\n {4}- frontend\/\n/, '\n')
+      .replace(/\nverify:\n {2}paths:\n( {4}- .+\n)+/, '\n')
       .replace('  verify: sonnet\n', '');
     expect(parseFactoryConfig(without).verify).toBeUndefined();
   });

@@ -52,10 +52,12 @@ models:
   # Answers `/tastebook ask`.
   ask: sonnet
 
-# A PR that changes anything here is verified in the app (Playwright in the runner) before review.
+# A PR that changes anything here is verified in the app (Playwright in the runner) before review. The catalogue is
+# data, but every recipe in it shows on screen.
 verify:
   paths:
     - frontend/
+    - backend/recipes/catalogue.json
 
 review:
   maxRounds: 2
