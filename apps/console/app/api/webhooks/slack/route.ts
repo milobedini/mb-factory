@@ -9,7 +9,11 @@ import { handleSlackMention, handleSlackMessage, releaseQueueOnActivity } from '
 
 type SlackPayload =
   | { type: 'url_verification'; challenge: string }
-  | { type: 'event_callback'; event_id: string; event: { type: string; channel?: string; user?: string } };
+  | {
+      type: 'event_callback';
+      event_id: string;
+      event: { type: string; channel?: string; user?: string; subtype?: string; bot_id?: string };
+    };
 
 const routeEvent = async (payload: SlackPayload, handle: (payload: unknown) => Promise<void>): Promise<void> => {
   try {
@@ -64,7 +68,10 @@ export const POST = async (request: Request) => {
     retry: request.headers.get('x-slack-retry-num')
   });
 
-  after(() => releaseQueueOnActivity('slack webhook'));
+  // A person doing something, not the app's own posts and edits: each card redraw is an edit Slack reports back.
+  if (!payload.event.bot_id && !payload.event.subtype) {
+    after(() => releaseQueueOnActivity('slack webhook'));
+  }
   const handle = HANDLERS[payload.event.type];
   if (isNew && handle) {
     after(() => routeEvent(payload, handle));

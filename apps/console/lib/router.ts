@@ -353,27 +353,42 @@ const holdRun = async (
   decision: Extract<GovernedDecision, { kind: 'hold' }>,
   tell: () => Promise<unknown>
 ): Promise<void> => {
-  touchCard(run.workItemId);
   const db = getDb();
+  const releaseAt = decision.releaseAt ?? null;
   const held = await db
     .insert(queue)
-    .values({ runId: run.id, priority: run.priority, reason: decision.reason, releaseAt: decision.releaseAt })
+    .values({ runId: run.id, priority: run.priority, reason: decision.reason, releaseAt })
     .onConflictDoNothing()
     .returning({ id: queue.id });
-  log('info', 'run held', { runId: run.id, workItemId: run.workItemId, job: run.job, reason: decision.reason });
-  if (decision.releaseAt) {
-    // Wakes the console when the hold should lift, whether or not anything else happens by then.
-    await bookWake(decision.releaseAt, decision.reason);
-  }
-  if (held.length === 0) {
-    // Already waiting: keep the reason current, and don't repeat the message.
-    await db
-      .update(queue)
-      .set({ reason: decision.reason, releaseAt: decision.releaseAt ?? null })
-      .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)));
+  // Already waiting: keep the reason current. Any webhook tries the queue again, and redrawing the card for a hold that
+  // didn't change made Slack's own edit event try it again, about once a second (TAS-40, 27 Oct: 1,082 edits).
+  const changed =
+    held.length > 0 ||
+    (
+      await db
+        .update(queue)
+        .set({ reason: decision.reason, releaseAt })
+        .where(
+          and(
+            eq(queue.runId, run.id),
+            isNull(queue.releasedAt),
+            sql`(${queue.reason} is distinct from ${decision.reason} or ${queue.releaseAt} is distinct from ${releaseAt?.toISOString() ?? null}::timestamptz)`
+          )
+        )
+        .returning({ id: queue.id })
+    ).length > 0;
+  if (!changed) {
     return;
   }
-  await tell();
+  touchCard(run.workItemId);
+  log('info', 'run held', { runId: run.id, workItemId: run.workItemId, job: run.job, reason: decision.reason });
+  if (releaseAt) {
+    // Wakes the console when the hold should lift, whether or not anything else happens by then.
+    await bookWake(releaseAt, decision.reason);
+  }
+  if (held.length > 0) {
+    await tell();
+  }
 };
 
 // The merge gate is the one that waits on GitHub, so its reviewers are asked there.
