@@ -162,7 +162,8 @@ export const runs = pgTable(
     index('runs_job_idx').on(table.project, table.job, table.createdAt).where(sql`${table.job} is not null`),
     check(
       'runs_work_item_job_or_question',
-      sql`(${table.workItemId} is not null)::int + (${table.job} is not null)::int + (${table.agent} = 'ask')::int = 1`
+      // A question (`ask`) and a size run (`size`, its issue in `prompt`) have neither a work item nor a job.
+      sql`(${table.workItemId} is not null)::int + (${table.job} is not null)::int + (${table.agent} in ('ask', 'size'))::int = 1`
     ),
     check('runs_without_work_item_have_project', sql`${table.workItemId} is not null or ${table.project} is not null`)
   ]

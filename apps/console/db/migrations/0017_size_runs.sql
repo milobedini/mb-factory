@@ -1,0 +1,2 @@
+ALTER TABLE "runs" DROP CONSTRAINT "runs_work_item_job_or_question";--> statement-breakpoint
+ALTER TABLE "runs" ADD CONSTRAINT "runs_work_item_job_or_question" CHECK (("runs"."work_item_id" is not null)::int + ("runs"."job" is not null)::int + ("runs"."agent" in ('ask', 'size'))::int = 1);
