@@ -14,7 +14,7 @@ import {
   TERMINAL_STAGES,
   withConnectInstead
 } from '@mb-factory/core';
-import { and, count, countDistinct, desc, eq, gte, inArray, notInArray, sql, sum } from 'drizzle-orm';
+import { and, count, countDistinct, desc, eq, gte, inArray, isNull, notInArray, sql, sum } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
 import { consoleProblems, jobFindings, runs, stageChanges, workItems } from '@/db/schema';
@@ -117,7 +117,13 @@ export const loadHomeInput = async (project: FactoryConfig, now: Date): Promise<
     db
       .select()
       .from(workItems)
-      .where(and(eq(workItems.project, project.name), notInArray(workItems.stage, TERMINAL_STAGES))),
+      .where(
+        and(
+          eq(workItems.project, project.name),
+          notInArray(workItems.stage, TERMINAL_STAGES),
+          isNull(workItems.undelegatedAt)
+        )
+      ),
     latestReadings(),
     currentPause(),
     recentReadyList(project, now).catch((error: unknown) => {

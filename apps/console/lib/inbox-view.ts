@@ -1,6 +1,6 @@
 import type { ChecksState, InboxEntry, ReadyList } from '@mb-factory/core';
 import { inboxEntry, OPEN_RUN_STATUSES, slackMessageUrl, specUrl, TERMINAL_STAGES } from '@mb-factory/core';
-import { asc, inArray, notInArray } from 'drizzle-orm';
+import { and, asc, inArray, isNull, notInArray } from 'drizzle-orm';
 import { connection } from 'next/server';
 
 import { getDb } from '@/db/client';
@@ -84,7 +84,10 @@ export const loadInboxView = async (): Promise<InboxView> => {
   const db = getDb();
   const now = new Date();
   const [items, working, workspaceUrl, ready] = await Promise.all([
-    db.select().from(workItems).where(notInArray(workItems.stage, TERMINAL_STAGES)),
+    db
+      .select()
+      .from(workItems)
+      .where(and(notInArray(workItems.stage, TERMINAL_STAGES), isNull(workItems.undelegatedAt))),
     db.select({ id: runs.id }).from(runs).where(inArray(runs.status, OPEN_RUN_STATUSES)).limit(1),
     slackWorkspaceUrl().catch((error: unknown) => {
       log('warn', 'slack workspace url failed', { error: errorMessage(error) });

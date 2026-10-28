@@ -83,7 +83,8 @@ export const loadCardInput = async (
       updatedAt: workItem.updatedAt,
       project: workItem.projectName ? { name: workItem.projectName, url: workItem.projectUrl } : null,
       milestone: workItem.milestoneName,
-      assignee: assigneeName(project, workItem.assigneeEmail)
+      assignee: assigneeName(project, workItem.assigneeEmail),
+      undelegated: workItem.undelegatedAt !== null
     },
     runs: itemRuns,
     round,

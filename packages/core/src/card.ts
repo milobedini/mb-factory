@@ -22,6 +22,7 @@ import {
   specUrl
 } from './slack';
 import type { AgentRole, Stage } from './stages';
+import { TERMINAL_STAGES } from './stages';
 
 // A work item's thread starts with a card, edited in place as the work moves: a title, then a coloured attachment with
 // the stage track, what's happening now, the size and project, and a button when there's something to do from it.
@@ -83,6 +84,8 @@ export type CardInput = {
     milestone: string | null;
     // Who it's for: the Linear assignee's name, when the project lists them.
     assignee: string | null;
+    // A person took the factory off the issue; delegating it again carries on from here.
+    undelegated?: boolean;
   };
   // Oldest first.
   runs: CardRun[];
@@ -322,6 +325,8 @@ const acceptedText = ({ workItem, runs, timeZone }: CardInput): string => {
 };
 
 // A stop's summary says who or what stopped it ("Stopped from the console by …"), so it's the line, its first word bold.
+const NOT_DELEGATED = '*Not delegated:* delegate it again in Linear to carry on from here.';
+
 const stoppedLine = (run: CardRun | undefined): string => {
   const text = summaryOf(run).trim();
   return text.startsWith('Stopped') ? `*Stopped*${text.slice('Stopped'.length)}` : `*Stopped.*${summaryOf(run)}`;
@@ -344,7 +349,7 @@ const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | un
         ? `*Blocked:*${summaryOf(latest) || ' see the thread.'}`
         : `*The ${latest?.agent ?? 'last'} run failed.*${summaryOf(latest)}`;
     case 'stopped':
-      return stoppedLine(latest);
+      return workItem.undelegated ? NOT_DELEGATED : stoppedLine(latest);
     case 'ready':
       return `*Ready to merge:* ${acceptedText(input)}`;
     case 'merged':
@@ -403,7 +408,9 @@ const cardButtons = (input: CardInput, status: CardStatus, entry: InboxEntry | u
   }
   if (status === 'stopped') {
     return [
-      ...(input.rerunnable && latest ? [button('rerun', 'Re-run', { r: latest.id }, true)] : []),
+      ...(input.rerunnable && latest && !workItem.undelegated
+        ? [button('rerun', 'Re-run', { r: latest.id }, true)]
+        : []),
       ...(prUrl ? [linkButton('pr_open', `PR #${workItem.prNumber}`, prUrl)] : []),
       ...runLog
     ];
@@ -449,8 +456,12 @@ export type CardSummary = { status: CardStatus; entry: InboxEntry | undefined; l
 // What a work item's card says about it now, for the card and for the App Home's rows.
 export const cardSummary = (input: CardInput): CardSummary => {
   const { workItem, runs, round } = input;
-  const entry = inboxEntry(workItem, runs, round);
-  const status = cardStatus(workItem.stage, currentRun(runs), entry, input.hold !== null);
+  const latest = currentRun(runs);
+  // Taken off the factory with nothing still running: nothing waits on anyone until it's delegated again.
+  const parked =
+    workItem.undelegated === true && !TERMINAL_STAGES.includes(workItem.stage) && !(latest && isOpenRun(latest.status));
+  const entry = parked ? undefined : inboxEntry(workItem, runs, round);
+  const status = parked ? 'stopped' : cardStatus(workItem.stage, latest, entry, input.hold !== null);
   return { status, entry, line: statusText(input, status, entry), buttons: cardButtons(input, status, entry) };
 };
 

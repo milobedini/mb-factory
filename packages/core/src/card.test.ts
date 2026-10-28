@@ -235,6 +235,15 @@ describe('workItemCard', () => {
     expect(buttons(card).map(({ text }) => text)).toEqual(['Re-run', 'PR #54', 'Run log']);
   });
 
+  it('says an undelegated work item waits on nobody, without Re-run', () => {
+    const asked = run({ agent: 'spec', outcome: 'needs_input', summary: 'Three decisions before writing the spec.' });
+    const card = workItemCard(input({ runs: [run(), asked], rerunnable: true }, { stage: 'spec', undelegated: true }));
+    expect(attachment(card).color).toBe(CARD_COLOURS.stopped);
+    expect(status(card)).toBe(':tb-canceled: *Not delegated:* delegate it again in Linear to carry on from here.');
+    expect(track(card)).toContain(':tb-canceled: *Spec*');
+    expect(buttons(card).map(({ text }) => text)).toEqual(['Run log']);
+  });
+
   it('says a failed run failed', () => {
     const card = workItemCard(input({ runs: [run({ outcome: 'failed', summary: null })] }, { stage: 'researching' }));
     expect(status(card)).toBe(':tb-blocked: *The triage run failed.*');

@@ -1,0 +1,1 @@
+ALTER TABLE "work_items" ADD COLUMN "undelegated_at" timestamp with time zone;

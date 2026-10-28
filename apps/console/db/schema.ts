@@ -110,6 +110,8 @@ export const workItems = pgTable(
     // Review's "accepted" message in the thread, with Approve and merge, settled once the PR is merged or closed.
     mergeSlackTs: text(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    // When a person took the factory off the issue; cleared when it's delegated again. Nothing waits on it meanwhile.
+    undelegatedAt: timestamp({ withTimezone: true }),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
   },
   (table) => [

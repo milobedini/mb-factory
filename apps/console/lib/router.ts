@@ -1339,6 +1339,7 @@ const upsertWorkItem = async (
     title: event.issue.title,
     agentSessionId: event.sessionId,
     stage,
+    undelegatedAt: null,
     updatedAt: new Date()
   };
   const [workItem] = await getDb()
@@ -2993,6 +2994,10 @@ export const handleIssueUpdate = withCards(async (payload: unknown): Promise<voi
   });
   if (actions.stage) {
     await recordStage(workItem, actions.stage, 'linear status');
+  }
+  if (actions.stop?.kind === 'undelegated') {
+    await getDb().update(workItems).set({ undelegatedAt: new Date() }).where(eq(workItems.id, workItem.id));
+    touchCard(workItem.id);
   }
   if (actions.stop) {
     await stopForCause(project, workItem, actions.stop);
