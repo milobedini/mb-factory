@@ -51,6 +51,13 @@ describe('needsProbe', () => {
   });
   const fresh = { fiveHour: reading(1), sevenDay: { ...reading(1), window: 'sevenDay' as const } };
 
+  it('probes before a scheduled job on stale readings, with nothing held', () => {
+    const stale = { ...fresh, sevenDay: { ...reading(600), window: 'sevenDay' as const } };
+    expect(needsProbe({ readings: stale, waiting: 0, jobSoon: true, staleAfterMinutes: 20, now })).toBe(true);
+    expect(needsProbe({ readings: fresh, waiting: 0, jobSoon: true, staleAfterMinutes: 20, now })).toBe(false);
+    expect(needsProbe({ readings: stale, waiting: 0, staleAfterMinutes: 20, now })).toBe(false);
+  });
+
   it('probes before releasing held work on stale readings', () => {
     expect(needsProbe({ readings: { ...fresh, fiveHour: reading(30) }, waiting: 1, staleAfterMinutes: 20, now })).toBe(
       true

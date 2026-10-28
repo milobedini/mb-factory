@@ -1,10 +1,9 @@
-# Releases held stage runs every 15 minutes, probing usage first only when the console asks (held work, stale readings).
+# Probes usage when the console asks (held work or a scheduled job about to start, on stale readings), then releases
+# held runs. Started only by the console's wake-ups and Refresh: GitHub's schedule dropped or delayed most runs, and the
+# console now wakes itself, with an hourly Vercel cron as the backstop.
 name: Governor
 
 on:
-  schedule:
-    # Off the quarter-hour: GitHub delays scheduled runs most at :00.
-    - cron: "4,19,34,49 * * * *"
   workflow_dispatch:
     inputs:
       probe:

@@ -8,7 +8,7 @@ export const WAKE_TOPIC = 'scheduler-wake';
 const MAX_DELAY_SECONDS = 7 * 24 * 60 * 60;
 // Past the moment itself, so a usage window has reset by the time the governor looks.
 const MARGIN_SECONDS = 30;
-// How long an undelivered wake-up lingers after its moment before it's dropped: the daily backstop covers the rest.
+// How long an undelivered wake-up lingers after its moment before it’s dropped: the hourly backstop covers the rest.
 const LINGER_SECONDS = 60 * 60;
 
 // The earliest moment still to come, if any.
@@ -17,6 +17,17 @@ export const nextWake = (moments: (Date | null)[], now: Date): Date | undefined 
     (next, moment) => (moment && moment > now && (!next || moment < next) ? moment : next),
     undefined
   );
+
+// How long before a scheduled job's slot the console probes stale usage: the governor job posts readings within about a
+// minute, and they're still fresh at the slot.
+const PROBE_LEAD_MS = 8 * 60 * 1000;
+
+// The wake-ups that probe before each job's slot.
+export const probeMoments = (slots: Date[]): Date[] => slots.map((slot) => new Date(slot.getTime() - PROBE_LEAD_MS));
+
+// Whether a job's slot comes within the lead, so a wake-up then probes stale readings before the job dispatches.
+export const jobSlotSoon = (slots: Date[], now: Date): boolean =>
+  slots.some((slot) => slot > now && slot.getTime() - now.getTime() <= PROBE_LEAD_MS);
 
 export type WakeBooking = { delaySeconds: number; retentionSeconds: number; idempotencyKey: string };
 

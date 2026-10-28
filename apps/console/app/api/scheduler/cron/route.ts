@@ -11,7 +11,7 @@ const isVercelCron = (request: Request): boolean => {
   return given.length === expected.length && timingSafeEqual(given, expected);
 };
 
-// The daily backstop (`vercel.json`): Vercel Cron sends `CRON_SECRET` as a bearer token. It books the next wake-up
+// The hourly backstop (`vercel.json`): Vercel Cron sends `CRON_SECRET` as a bearer token. It books the next wake-up
 // again in case a delayed message was lost.
 export const GET = async (request: Request) => {
   await connection();
@@ -19,5 +19,5 @@ export const GET = async (request: Request) => {
     log('warn', 'scheduler cron rejected');
     return new Response('unauthorised', { status: 401 });
   }
-  return Response.json(await wake('daily cron'));
+  return Response.json(await wake('hourly cron'));
 };

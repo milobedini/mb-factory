@@ -4,6 +4,7 @@ import {
   isSignedWake,
   nextSlot,
   nextWake,
+  probeMoments,
   signWake,
   WAKE_TOPIC,
   wakeBooking
@@ -26,7 +27,7 @@ const wakeKey = (): Uint8Array => deriveKey(requireEnv('TOKEN_ENCRYPTION_KEY'), 
 export const isOwnWake = (message: unknown): boolean => isSignedWake(message, wakeKey());
 
 // Books the console's own wake-up at `at`. A moment already booked is dropped by its idempotency key, and a failure is
-// logged: the daily backstop books it again.
+// logged: the hourly backstop books it again.
 export const bookWake = async (at: Date, cause: string): Promise<void> => {
   const booking = wakeBooking(at, new Date());
   try {
@@ -37,8 +38,12 @@ export const bookWake = async (at: Date, cause: string): Promise<void> => {
   }
 };
 
+// Each scheduled job's next slot, across projects; the health check isn't one, as it runs no agent.
+export const nextJobSlots = (now: Date): Date[] =>
+  allProjects().flatMap((project) => project.jobs.map((job) => nextSlot(job, now, project.timeZone)));
+
 // The next moment anything is due: the earliest release time of held work, the moment a dispatched run that hasn't
-// started counts as lost, or the next slot of a scheduled job.
+// started counts as lost, the next slot of a scheduled job, or the probe before it.
 export const bookNextWake = async (cause: string): Promise<Date | undefined> => {
   const now = new Date();
   const [held, dispatched] = await Promise.all([
@@ -55,7 +60,8 @@ export const bookNextWake = async (cause: string): Promise<Date | undefined> => 
     [
       ...held.map(({ releaseAt }) => releaseAt),
       ...dispatched.map(({ dispatchedAt }) => dispatchedAt && dispatchLapsesAt(dispatchedAt)),
-      ...slots
+      ...slots,
+      ...probeMoments(nextJobSlots(now))
     ],
     now
   );
