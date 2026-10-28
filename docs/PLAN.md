@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** check whether the console can start a claude.ai/code routine session with its own credentials (the open point under [Design stage and Dino](#design-stage-and-dino)), then audit Tastebook's components against Enamel with the user; check Thursday 29 Oct's morning items under [To see live](#to-see-live) that morning.
+**Next:** fire a test routine to see whether a cloud session can publish a Design artifact (the open point under [Design stage and Dino](#design-stage-and-dino)), then audit Tastebook's components against Enamel with the user; check Thursday 29 Oct's morning items under [To see live](#to-see-live) that morning.
 
 **Direction, in order:** the design stage and the Dino project (below), so the Accounts and households PRD is the first feature designed through it; then that PRD and slicing it; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
@@ -101,7 +101,8 @@ Agreed 28 Oct 2026; not built yet.
 - **The `dino` label** goes on every PR touching Dino, applied by a labeler workflow; review loads a Dino rubric when it's present.
 - **Storybook replaces `/styleguide`:** stories per component and state, the accessibility addon, interaction tests through Vitest; verify can screenshot stories.
 - **First project, Dino:** audit the existing components against Enamel, build the Dino Design System artifact, redesign them with the user on a canvas, then file a Linear project: Storybook first, then an issue per component or group.
-- **Open:** whether the console can start a routine session with its own credentials (not the user's login); where Dino lives (default: rename `src/ui` to `src/dino`, so the labeler and rubric key off one path).
+- **Starting the session (checked 28 Oct against the [scheduled tasks docs](https://code.claude.com/docs/en/routines)):** a routine with an API trigger has a bearer token scoped to firing that one routine. The console POSTs to its `/fire` endpoint (beta header `experimental-cc-routine-2026-04-01`) with the issue in `text` and gets back the session URL. The token is made on the web only, once, and kept in Vercel. The session runs as the user: commits under their GitHub identity, connectors as their accounts, usage from the same plan, so the governor gates the fire like a dispatch. Fire text arrives as untrusted data, so the saved prompt must opt in to reading it; keep that prompt thin and the behaviour in a plugin skill. Its network is allow-listed, so add the console's host for reporting back. Limits: 30 fires an hour per routine. It's a research preview.
+- **Open:** whether a cloud session can publish a Design artifact (the docs say sessions publish artifacts; the Design type is unchecked); where Dino lives (default: rename `src/ui` to `src/dino`, so the labeler and rubric key off one path).
 
 ## Concepts mapped from Warp
 
