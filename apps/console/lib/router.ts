@@ -832,7 +832,8 @@ export const dispatchRun = withCards(async (project: FactoryConfig, runId: strin
     allowUsage: run.usageOverrideBy !== null
   });
   if (staleWindows.length > 0) {
-    // No probe until Phase 1 step 4: decide on the readings there are, and say so.
+    // The console can't probe inline, so it decides on the readings there are and says so; scheduled jobs are probed
+    // ahead of their slot.
     log('warn', 'governor decided on stale usage readings', { runId, staleWindows, decision: decision.kind });
   }
   const hold = (held: Extract<GovernedDecision, { kind: 'hold' }>) => {

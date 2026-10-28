@@ -1,6 +1,6 @@
-# Deploys the console when its code changes. Its Git deploys are off (apps/console/vercel.json): Vercel counts every
-# push against Hobby's 100 deployments a day, even one the Ignored Build Step cancels, and most pushes here change
-# only the plan.
+# Deploys the console when its code changes. Its Git deploys are off (apps/console/vercel.json): most pushes here change
+# only the plan, the plugin or the workflows, and Vercel would count each as a deployment even when the Ignored Build
+# Step cancels it.
 name: Deploy console
 
 on:

@@ -258,7 +258,8 @@ export type ModelledAgent = Exclude<keyof FactoryConfig['models'], 'slicing'>;
 
 const isModelled = (agent: AgentRole): agent is ModelledAgent => !(JOB_AGENTS as readonly AgentRole[]).includes(agent);
 
-// Triage slices a project instead when its issue is titled `Slice <project>` (plugin/agents/triage.md).
+// Triage slices a project instead when its issue's title starts `Slice ` and a word (plugin/agents/triage.md). Any word
+// counts; if an ordinary "Slice …" issue misfires, match `Slice <the issue's own project>` instead.
 export const isSlicingTitle = (title: string | null | undefined): boolean => /^slice\s+\S/i.test(title?.trim() ?? '');
 
 // Slicing falls back to the triage model when a project sets none for it.
