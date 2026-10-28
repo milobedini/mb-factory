@@ -88,7 +88,7 @@ export const recordRunReport = async (
       cacheReadInputTokens: summary.usage?.cacheReadInputTokens,
       cacheCreationInputTokens: summary.usage?.cacheCreationInputTokens,
       costUsd: summary.usage?.costUsd,
-      durationMs: summary.usage?.durationMs,
+      durationMs: summary.usage?.durationMs ?? summary.stageMs,
       numTurns: summary.usage?.numTurns,
       finishedAt: now
     })

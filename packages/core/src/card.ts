@@ -26,7 +26,7 @@ import type { AgentRole, Stage } from './stages';
 // A work item's thread starts with a card, edited in place as the work moves: a title, then a coloured attachment with
 // the stage track, what's happening now, the size and project, and a button when there's something to do from it.
 
-export type CardStatus = 'queued' | 'running' | 'waiting' | 'blocked' | 'ready' | 'merged' | 'canceled';
+export type CardStatus = 'queued' | 'running' | 'waiting' | 'blocked' | 'stopped' | 'ready' | 'merged' | 'canceled';
 
 type StepState = 'done' | 'running' | 'queued' | 'waiting' | 'blocked' | 'todo' | 'skipped' | 'canceled';
 
@@ -114,6 +114,7 @@ export const CARD_COLOURS: Record<CardStatus, string> = {
   queued: '#9a9da3',
   waiting: '#ecb22e',
   blocked: '#e01e5a',
+  stopped: '#6b6f76',
   ready: '#2eb67d',
   merged: '#6b6f76',
   canceled: '#6b6f76'
@@ -124,6 +125,7 @@ export const STATUS_EMOJI: Record<CardStatus, string> = {
   queued: 'queued',
   waiting: 'needs-you',
   blocked: 'blocked',
+  stopped: 'canceled',
   ready: 'done',
   merged: 'merged',
   canceled: 'canceled'
@@ -145,6 +147,7 @@ const STATUS_WORDS: Record<CardStatus, string> = {
   queued: 'queued',
   waiting: 'waiting on you',
   blocked: 'blocked',
+  stopped: 'stopped',
   ready: 'ready to merge',
   merged: 'merged',
   canceled: 'canceled'
@@ -199,7 +202,8 @@ export const cardStatus = (
     return latest.status === 'queued' && held ? 'queued' : 'running';
   }
   if (!entry) {
-    return 'running';
+    // A person stopped the last run and nothing has started since: it waits for them to re-run it.
+    return latest?.status === 'canceled' ? 'stopped' : 'running';
   }
   return entry.kind === 'run_ended' ? 'blocked' : entry.kind === 'awaiting_merge' ? 'ready' : 'waiting';
 };
@@ -210,6 +214,7 @@ const CURRENT_STEP: Record<CardStatus, StepState> = {
   waiting: 'waiting',
   ready: 'waiting',
   blocked: 'blocked',
+  stopped: 'canceled',
   merged: 'done',
   canceled: 'canceled'
 };
@@ -223,7 +228,10 @@ const trackSteps = (
   const latest = currentRun(runs);
   const runDecides =
     latest !== undefined &&
-    (stage === 'canceled' || isOpenRun(latest.status) || (entry !== undefined && RUN_DECIDES.includes(entry.kind)));
+    (stage === 'canceled' ||
+      status === 'stopped' ||
+      isOpenRun(latest.status) ||
+      (entry !== undefined && RUN_DECIDES.includes(entry.kind)));
   const current = runDecides ? stepOf(latest.agent) : STAGE_STEP[stage];
   const ran = (agent: AgentRole | null): boolean => agent === null || runs.some((run) => run.agent === agent);
   return STEPS.map(({ name, agent }, index) => {
@@ -313,6 +321,12 @@ const acceptedText = ({ workItem, runs, timeZone }: CardInput): string => {
   return `review accepted PR #${workItem.prNumber ?? '?'}${at}.`;
 };
 
+// A stop's summary says who or what stopped it ("Stopped from the console by …"), so it's the line, its first word bold.
+const stoppedLine = (run: CardRun | undefined): string => {
+  const text = summaryOf(run).trim();
+  return text.startsWith('Stopped') ? `*Stopped*${text.slice('Stopped'.length)}` : `*Stopped.*${summaryOf(run)}`;
+};
+
 const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | undefined): string => {
   const { workItem, now, timeZone } = input;
   const latest = currentRun(input.runs);
@@ -329,6 +343,8 @@ const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | un
       return latest?.outcome === 'blocked'
         ? `*Blocked:*${summaryOf(latest) || ' see the thread.'}`
         : `*The ${latest?.agent ?? 'last'} run failed.*${summaryOf(latest)}`;
+    case 'stopped':
+      return stoppedLine(latest);
     case 'ready':
       return `*Ready to merge:* ${acceptedText(input)}`;
     case 'merged':
@@ -384,6 +400,13 @@ const cardButtons = (input: CardInput, status: CardStatus, entry: InboxEntry | u
   }
   if (status === 'blocked') {
     return [...(input.rerunnable && latest ? [button('rerun', 'Re-run', { r: latest.id }, true)] : []), ...runLog];
+  }
+  if (status === 'stopped') {
+    return [
+      ...(input.rerunnable && latest ? [button('rerun', 'Re-run', { r: latest.id }, true)] : []),
+      ...(prUrl ? [linkButton('pr_open', `PR #${workItem.prNumber}`, prUrl)] : []),
+      ...runLog
+    ];
   }
   if (status === 'ready') {
     return prUrl && workItem.prNumber

@@ -35,7 +35,10 @@ export type StageReport = z.infer<typeof stageReportSchema>;
 export const runReportSchema = z.object({
   conclusion: z.string().nullish(),
   report: z.unknown(),
-  events: z.array(z.unknown()).max(1000)
+  events: z.array(z.unknown()).max(1000),
+  // How long the stage step ran, and its time limit; left out by workflows from before 28 Oct.
+  stageSeconds: z.int().nonnegative().nullish(),
+  timeoutMinutes: z.int().positive().nullish()
 });
 
 export type RunReport = z.infer<typeof runReportSchema>;
@@ -104,6 +107,8 @@ export type RunSummary = {
   report: StageReport | null;
   usage: RunUsage | null;
   readings: RunUsageReading[];
+  // How long the stage step ran, for a run Claude Code reported no duration for (one that ran out of time).
+  stageMs: number | null;
 };
 
 const WINDOW_KEYS = { five_hour: 'fiveHour', seven_day: 'sevenDay' } as const;
@@ -161,18 +166,30 @@ export const readingsFromEvents = (events: unknown[], now: Date): RunUsageReadin
 const isRejected = (event: RateLimitEvent | undefined, readings: RunUsageReading[]): boolean =>
   event?.rate_limit_info.status === 'rejected' || readings.some(({ status }) => status === 'rejected');
 
-const missingReportSummary = (result: ResultEvent | undefined, conclusion: string | null | undefined): string => {
+// GitHub stops a step at its limit without saying so to the steps after it, so a step that ran to within a minute of
+// the limit is taken to have been stopped by it.
+const TIMEOUT_MARGIN_SECONDS = 60;
+
+const timedOut = ({ stageSeconds, timeoutMinutes }: RunReport): boolean =>
+  stageSeconds != null && timeoutMinutes != null && stageSeconds >= timeoutMinutes * 60 - TIMEOUT_MARGIN_SECONDS;
+
+const missingReportSummary = (result: ResultEvent | undefined, run: RunReport): string => {
+  if (timedOut(run)) {
+    return `The stage ran out of time: it was stopped at its ${run.timeoutMinutes}-minute limit before it reported.`;
+  }
   const detail = result?.is_error ? ` Claude Code ended with ${result.subtype}.` : '';
-  const failed = conclusion === 'failure' ? ' The workflow step failed.' : '';
+  const failed = run.conclusion === 'failure' ? ' The workflow step failed.' : '';
   return `The stage ended without a valid report.${detail}${failed}`;
 };
 
-export const summariseRun = ({ conclusion, report, events }: RunReport, now: Date): RunSummary => {
+export const summariseRun = (run: RunReport, now: Date): RunSummary => {
+  const { report, events, stageSeconds } = run;
   const stageReport = stageReportSchema.safeParse(report);
   const rateLimit = lastMatch(events, rateLimitEventSchema);
   const result = lastMatch(events, resultEventSchema);
   const readings = toReadings(rateLimit, now);
   const usage = toUsage(result);
+  const stageMs = stageSeconds == null ? null : stageSeconds * 1000;
 
   if (stageReport.success) {
     return {
@@ -181,7 +198,8 @@ export const summariseRun = ({ conclusion, report, events }: RunReport, now: Dat
       summary: stageReport.data.summary,
       report: stageReport.data,
       usage,
-      readings
+      readings,
+      stageMs
     };
   }
   if (isRejected(rateLimit, readings)) {
@@ -191,15 +209,17 @@ export const summariseRun = ({ conclusion, report, events }: RunReport, now: Dat
       summary: 'Hit the usage limit before the stage finished.',
       report: null,
       usage,
-      readings
+      readings,
+      stageMs
     };
   }
   return {
     status: 'finished',
     outcome: 'failed',
-    summary: missingReportSummary(result, conclusion),
+    summary: missingReportSummary(result, run),
     report: null,
     usage,
-    readings
+    readings,
+    stageMs
   };
 };

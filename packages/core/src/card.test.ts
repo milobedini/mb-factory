@@ -220,6 +220,21 @@ describe('workItemCard', () => {
     expect(buttons(workItemCard(input({ runs: [run(), blocked] }))).map(({ text }) => text)).toEqual(['Run log']);
   });
 
+  it('shows a stopped run as stopped, not still going, with Re-run and the PR', () => {
+    const stopped = run({
+      agent: 'implement',
+      status: 'canceled',
+      outcome: null,
+      summary: 'Stopped from the console by milobedini.'
+    });
+    const card = workItemCard(input({ runs: [run(), stopped], rerunnable: true }, { prNumber: 54 }));
+    expect(attachment(card).color).toBe(CARD_COLOURS.stopped);
+    expect(status(card)).toBe(':tb-canceled: *Stopped* from the console by milobedini.');
+    expect(track(card)).toContain(':tb-canceled: *Implement*');
+    expect(track(card)).toContain(':tb-todo: Verify');
+    expect(buttons(card).map(({ text }) => text)).toEqual(['Re-run', 'PR #54', 'Run log']);
+  });
+
   it('says a failed run failed', () => {
     const card = workItemCard(input({ runs: [run({ outcome: 'failed', summary: null })] }, { stage: 'researching' }));
     expect(status(card)).toBe(':tb-blocked: *The triage run failed.*');

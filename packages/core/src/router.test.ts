@@ -835,11 +835,14 @@ describe('retrying a run that never started', () => {
     status: 'finished' as const,
     outcome: 'failed' as const,
     report: null,
-    costUsd: null
+    costUsd: null,
+    durationMs: null
   };
 
   it('knows a run whose agent never started from one that failed while working', () => {
     expect(neverStarted(ended)).toBe(true);
+    expect(neverStarted({ ...ended, durationMs: 90_000 })).toBe(true);
+    expect(neverStarted({ ...ended, durationMs: 50 * 60_000 })).toBe(false);
     expect(neverStarted({ ...ended, costUsd: 0.4 })).toBe(false);
     expect(neverStarted({ ...ended, report: { outcome: 'failed' } })).toBe(false);
     expect(neverStarted({ ...ended, outcome: 'blocked' })).toBe(false);

@@ -117,6 +117,28 @@ describe('summariseRun', () => {
     expect(summary.usage).toBeNull();
   });
 
+  it('says when the stage ran out of time, and how long it ran', () => {
+    const summary = summariseRun(
+      report({ conclusion: 'failure', report: null, events: [], stageSeconds: 6_000, timeoutMinutes: 100 })
+    );
+
+    expect(summary.outcome).toBe('failed');
+    expect(summary.summary).toBe(
+      'The stage ran out of time: it was stopped at its 100-minute limit before it reported.'
+    );
+    expect(summary.stageMs).toBe(6_000_000);
+    expect(summary.usage).toBeNull();
+  });
+
+  it('doesn’t call a step that ended well before its limit out of time', () => {
+    const summary = summariseRun(
+      report({ conclusion: 'failure', report: null, events: [], stageSeconds: 40, timeoutMinutes: 50 })
+    );
+
+    expect(summary.summary).toBe('The stage ended without a valid report. The workflow step failed.');
+    expect(summary.stageMs).toBe(40_000);
+  });
+
   it.each([
     ['a window', rateLimitEvent('rejected')],
     ['the overall status', rateLimitEvent('allowed', 'rejected')]

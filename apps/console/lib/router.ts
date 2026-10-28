@@ -2759,7 +2759,8 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
           status: runs.status,
           outcome: runs.outcome,
           report: runs.report,
-          costUsd: runs.costUsd
+          costUsd: runs.costUsd,
+          durationMs: runs.durationMs
         })
         .from(runs)
         .where(eq(runs.id, run.parentRunId))

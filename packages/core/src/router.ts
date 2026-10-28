@@ -177,12 +177,21 @@ type RunEnd = {
   outcome: RunOutcome | null;
   report: unknown;
   costUsd: number | null;
+  durationMs: number | null;
 };
 
+// Setting up the agent takes a minute or two; a stage step that ran longer than this had the agent working.
+const SETUP_MS = 10 * 60 * 1000;
+
 // A run whose agent never started: a setup step failed (a download, the runner) before Claude ran, so there's no
-// report and no usage. Nothing about the work caused it.
-export const neverStarted = ({ status, outcome, report, costUsd }: RunEnd): boolean =>
-  status === 'finished' && outcome === 'failed' && report === null && costUsd === null;
+// report and no usage, and the step ended soon. Nothing about the work caused it. One stopped at its time limit has
+// no report or usage either, but the agent worked all along.
+export const neverStarted = ({ status, outcome, report, costUsd, durationMs }: RunEnd): boolean =>
+  status === 'finished' &&
+  outcome === 'failed' &&
+  report === null &&
+  costUsd === null &&
+  (durationMs === null || durationMs < SETUP_MS);
 
 // Such a run is tried once more by itself; a retry that fails the same way waits for a person.
 export const shouldRetry = (run: RunEnd, parent: RunEnd | undefined): boolean =>
