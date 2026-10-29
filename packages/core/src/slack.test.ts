@@ -10,6 +10,7 @@ import {
   delegateFailedText,
   emptyMentionText,
   isAllowedSlackUser,
+  isBackToSpec,
   isReadyRequest,
   linearSlackReplyText,
   mentioning,
@@ -21,6 +22,8 @@ import {
   parseSlackThreadReply,
   READY_HEADING,
   settleReadyMessage,
+  slackDesignGateMessage,
+  slackDesignGateSettled,
   slackFiledText,
   slackFindingsMessage,
   slackFindingsSettled,
@@ -150,6 +153,40 @@ describe('slackQuestionCard', () => {
     const blocks = blocksOf(slackQuestionCard('implement', closed, issueUrl));
     expect(blocks[0]?.text?.text).toBe('*Build questions* · no longer needed');
     expect(buttonsOf(blocks)).toEqual([]);
+  });
+});
+
+describe('the design gate', () => {
+  const canvas = 'https://claude.ai/artifact/9ENfcagd6BSq9LgLDHwCtv';
+
+  it('offers Approve, Change something and Back to spec, linking the canvas', () => {
+    const blocks = blocksOf(slackDesignGateMessage(workItemId, { canvasUrl: canvas, issueUrl }));
+    expect(blocks[0]?.text?.text).toBe(
+      `<${canvas}|The design> is ready for review. Approve it to start building, say what should change, or go back to the spec.`
+    );
+    const buttons = blocks.find(({ type }) => type === 'actions')?.elements ?? [];
+    expect(buttons.map(({ value }) => JSON.parse(value ?? '{}'))).toEqual([
+      { w: workItemId, a: 'Approve' },
+      { w: workItemId, a: 'Change something' },
+      { w: workItemId, a: 'Back to spec' }
+    ]);
+  });
+
+  it('says who approved, asked for changes or reopened the spec', () => {
+    expect(blocksOf(slackDesignGateSettled('approved', 'by Milo', canvas))[0]?.text?.text).toBe(
+      `✓ <${canvas}|The design> was approved by Milo. Building starts next.`
+    );
+    expect(blocksOf(slackDesignGateSettled('back_to_spec', 'in Linear', null))[0]?.text?.text).toBe(
+      'The spec was reopened in Linear, from the design.'
+    );
+  });
+
+  it.each(['Back to spec', 'back to spec.', ' BACK TO SPEC '])('reads %j as going back to the spec', (body) => {
+    expect(isBackToSpec(body)).toBe(true);
+  });
+
+  it('reads anything more as a change to the design', () => {
+    expect(isBackToSpec('Back to spec: the household needs an owner')).toBe(false);
   });
 });
 

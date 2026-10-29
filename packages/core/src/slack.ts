@@ -274,6 +274,69 @@ export const slackSpecGateSettled = (
 
 export const SPEC_GATE_GONE = 'The spec isn’t waiting for approval any more.';
 
+// Design Review takes the spec gate's two answers, plus going back to the spec when the design shows it was wrong.
+export const DESIGN_BACK_TO_SPEC = 'Back to spec';
+
+// Read like the gate's options are: the option's own words, on their own.
+export const isBackToSpec = (body: string): boolean =>
+  body
+    .trim()
+    .replace(/[.!]+$/, '')
+    .toLowerCase() === DESIGN_BACK_TO_SPEC.toLowerCase();
+
+export const BACK_TO_SPEC_QUESTION =
+  'What should change in the spec? Reply here and I’ll revise it; the design picks up from the revised spec.';
+
+export const DESIGN_GATE_GONE = 'The design isn’t waiting for approval any more.';
+
+const canvasLink = (url: string | null, label: string): string => (url ? `<${url}|${label}>` : label);
+
+// The design approval gate in the thread, read by the router as strictly as the spec's.
+export const slackDesignGateMessage = (
+  workItemId: string,
+  { canvasUrl, issueUrl }: { canvasUrl: string | null; issueUrl: string }
+): SlackMessage => ({
+  text: 'The design is ready for review.',
+  blocks: [
+    section(
+      `${canvasLink(canvasUrl, 'The design')} is ready for review. Approve it to start building, say what should change, or go back to the spec.`
+    ),
+    {
+      type: 'actions',
+      elements: [
+        button('design_approve', SPEC_APPROVE, { w: workItemId, a: SPEC_APPROVE }, true),
+        button('design_change', SPEC_CHANGE, { w: workItemId, a: SPEC_CHANGE }),
+        button('design_back', DESIGN_BACK_TO_SPEC, { w: workItemId, a: DESIGN_BACK_TO_SPEC })
+      ]
+    },
+    context(
+      `To approve with suggestions, reply \`Approve: <your suggestions>\` in this thread. Comments on the canvas sent to Claude reach the design session while it’s open. Also in <${issueUrl}|Linear>.`
+    )
+  ]
+});
+
+export const slackDesignGateSettled = (
+  outcome: 'approved' | 'changes' | 'back_to_spec',
+  by: string,
+  canvas: string | null
+): SlackMessage => {
+  const text =
+    outcome === 'approved'
+      ? `✓ ${canvasLink(canvas, 'The design')} was approved ${escapeSlack(by)}. Building starts next.`
+      : outcome === 'changes'
+        ? `Changes to ${canvasLink(canvas, 'the design')} were asked for ${escapeSlack(by)}.`
+        : `The spec was reopened ${escapeSlack(by)}, from ${canvasLink(canvas, 'the design')}.`;
+  return {
+    text:
+      outcome === 'approved'
+        ? 'The design was approved.'
+        : outcome === 'changes'
+          ? 'Changes to the design were asked for.'
+          : 'The spec was reopened from the design.',
+    blocks: [section(text)]
+  };
+};
+
 // Slack holds 3,000 characters a section and 50 blocks a message; a gate needs two blocks besides its body.
 const SECTION_LIMIT = 3000;
 const MAX_BODY_SECTIONS = 45;

@@ -351,6 +351,9 @@ export type {
 } from './slack';
 export {
   alreadyStartedText,
+  BACK_TO_SPEC_QUESTION,
+  DESIGN_BACK_TO_SPEC,
+  DESIGN_GATE_GONE,
   delegateFailedText,
   emptyMentionText,
   escapeSlack,
@@ -360,6 +363,7 @@ export {
   filedStartedMessage,
   HOME_ACTIONS,
   isAllowedSlackUser,
+  isBackToSpec,
   isReadyRequest,
   linearSlackReplyText,
   MAX_READY_ROWS,
@@ -381,6 +385,8 @@ export {
   SPEC_CHANGE,
   SPEC_GATE_GONE,
   settleReadyMessage,
+  slackDesignGateMessage,
+  slackDesignGateSettled,
   slackFiledText,
   slackFindingsMessage,
   slackFindingsSettled,

@@ -1,6 +1,7 @@
 import type { CardInput, FactoryConfig } from '@mb-factory/core';
 import {
   canRerun,
+  latestCanvas,
   personFor,
   personName,
   readBeforeMerging,
@@ -87,6 +88,12 @@ export const loadCardInput = async (
       undelegated: workItem.undelegatedAt !== null
     },
     runs: itemRuns,
+    canvas: latestCanvas(
+      itemRuns
+        .filter(({ agent, status }) => agent === 'design' && status === 'finished')
+        .map(({ report }) => report)
+        .reverse()
+    ),
     round,
     hold: hold ?? null,
     gate,

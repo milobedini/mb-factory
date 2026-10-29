@@ -1,5 +1,5 @@
 import type { ChecksState, InboxEntry, ReadyList } from '@mb-factory/core';
-import { inboxEntry, OPEN_RUN_STATUSES, slackMessageUrl, specUrl, TERMINAL_STAGES } from '@mb-factory/core';
+import { inboxEntry, OPEN_RUN_STATUSES, readCanvas, slackMessageUrl, specUrl, TERMINAL_STAGES } from '@mb-factory/core';
 import { and, asc, inArray, isNull, notInArray } from 'drizzle-orm';
 import { connection } from 'next/server';
 
@@ -37,15 +37,23 @@ export type InboxView = { user: ConsoleUser; now: Date; items: InboxItem[]; work
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const actionUrlFor = (workItem: WorkItem, entry: InboxEntry, actionsRunUrl: string | null): string | null => {
+const actionUrlFor = (
+  workItem: WorkItem,
+  entry: InboxEntry,
+  latest: { actionsRunUrl: string | null; report: unknown } | undefined
+): string | null => {
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
   if (entry.kind === 'spec_review') {
     return specUrl(workItem);
   }
+  // Design Review waits on the design run that drew the canvas.
+  if (entry.kind === 'design_review') {
+    return readCanvas(latest?.report);
+  }
   if (entry.kind === 'awaiting_merge') {
     return prUrl ? `${prUrl}/files` : null;
   }
-  return entry.kind === 'run_ended' ? actionsRunUrl : null;
+  return entry.kind === 'run_ended' ? (latest?.actionsRunUrl ?? null) : null;
 };
 
 // One look, without waiting for GitHub to finish working it out: the page refreshes anyway.
@@ -135,7 +143,7 @@ export const loadInboxView = async (): Promise<InboxView> => {
     waiting.map(async ({ workItem, entry, latest }) => ({
       workItem,
       entry,
-      actionUrl: actionUrlFor(workItem, entry, latest?.actionsRunUrl ?? null),
+      actionUrl: actionUrlFor(workItem, entry, latest),
       threadUrl:
         workspaceUrl && workItem.slackChannelId && workItem.slackThreadTs
           ? slackMessageUrl(workspaceUrl, workItem.slackChannelId, workItem.slackThreadTs)

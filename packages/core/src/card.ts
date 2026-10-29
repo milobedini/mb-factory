@@ -12,6 +12,7 @@ import { formatRunTime, isOpenRun, runTotals } from './runs';
 import type { SlackBlock, SlackMessage } from './slack';
 import {
   button,
+  DESIGN_BACK_TO_SPEC,
   escapeSlack,
   issueMetaText,
   projectText,
@@ -89,6 +90,8 @@ export type CardInput = {
   };
   // Oldest first.
   runs: CardRun[];
+  // The design's canvas, once a design run has drawn one.
+  canvas?: string | null;
   // The latest round of questions.
   round: InboxQuestion[];
   // Why the open run is queued, while the governor holds it.
@@ -321,6 +324,9 @@ const waitingText = (input: CardInput, entry: InboxEntry | undefined, latest: Ca
   if (input.workItem.stage === 'spec_review') {
     return '*Waiting on you:* approve the spec.';
   }
+  if (input.workItem.stage === 'design_review') {
+    return '*Waiting on you:* approve the design.';
+  }
   return input.gate
     ? `*Waiting on you:* ${gateLine(input.gate)}`
     : `*Waiting on you:* reply in the thread.${summaryOf(latest)}`;
@@ -405,6 +411,14 @@ const cardButtons = (input: CardInput, status: CardStatus, entry: InboxEntry | u
       button('spec_approve', SPEC_APPROVE, { w: workItem.id, a: SPEC_APPROVE }, true),
       button('spec_change', SPEC_CHANGE, { w: workItem.id, a: SPEC_CHANGE }),
       ...(spec ? [linkButton('spec_open', 'Read the spec', spec)] : [])
+    ];
+  }
+  if (status === 'waiting' && workItem.stage === 'design_review') {
+    return [
+      button('design_approve', SPEC_APPROVE, { w: workItem.id, a: SPEC_APPROVE }, true),
+      button('design_change', SPEC_CHANGE, { w: workItem.id, a: SPEC_CHANGE }),
+      button('design_back', DESIGN_BACK_TO_SPEC, { w: workItem.id, a: DESIGN_BACK_TO_SPEC }),
+      ...(input.canvas ? [linkButton('canvas_open', 'Open canvas', input.canvas)] : [])
     ];
   }
   if (status === 'waiting' && input.gate) {

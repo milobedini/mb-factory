@@ -40,7 +40,7 @@ with `REPORT_URL` and `PASS` from the brief, and `report.json` holding `{ "repor
 
 - `stage`: `"design"`.
 - `outcome`: `"needs_input"` once the canvas is ready for review; `"blocked"` when something outside the design must change first (say what and where); `"failed"` when you couldn't finish (say why).
-- `summary`: for review, what the person will see in Linear and Slack, starting with the canvas link: "Design ready for review: <canvas URL>. <The boards in one line; each decision and proposed rule change in one line.> Reply Approve, or Approve: <suggestions>, or say what to change." Write as one factory: "I've drawn…".
+- `summary`: for review, what the person will see in Linear and Slack, starting with the canvas link: "Design ready for review: <canvas URL>. <The boards in one line; each decision and proposed rule change in one line.> Reply Approve, or Approve: <suggestions>, or say what to change, or Back to spec if the spec itself needs changing." Write as one factory: "I've drawn…".
 - `canvas`: the canvas URL.
 - `components`: each component the design uses that's new or changed, as `{ "name": "Avatar", "change": "new" }`.
 

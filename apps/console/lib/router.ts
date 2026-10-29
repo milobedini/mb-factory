@@ -33,6 +33,7 @@ import {
   approveRefusedText,
   askFailedText,
   askTicketIssue,
+  BACK_TO_SPEC_QUESTION,
   BLOCKING_OUTCOMES,
   briefRound,
   buildDispatchPayload,
@@ -51,6 +52,7 @@ import {
   consoleRerunRequest,
   DEPENDABOT_LOGIN,
   DESIGN_CHANGES_QUESTION,
+  DESIGN_GATE_GONE,
   decideCiFailure,
   decideConflict,
   decideIssueUpdate,
@@ -76,6 +78,7 @@ import {
   GATE_GONE,
   governDispatch,
   isAllowedSlackUser,
+  isBackToSpec,
   isMajorBump,
   isOpenRun,
   isReadyRequest,
@@ -127,6 +130,7 @@ import {
   readAskReport,
   readBeforeMerging,
   readBump,
+  readCanvas,
   readFixableFindings,
   readGate,
   readQuestions,
@@ -144,6 +148,8 @@ import {
   shouldResume,
   shouldRetry,
   slackAcceptedMessage,
+  slackDesignGateMessage,
+  slackDesignGateSettled,
   slackFindingsMessage,
   slackFindingsSettled,
   slackFinishedText,
@@ -1636,11 +1642,18 @@ const settleGate = async (
     return;
   }
   const by = from.via === 'slack' ? `by ${from.name}` : 'in Linear';
-  const gate = workItem.stage === 'spec_review' ? undefined : await reportedGate(workItem);
+  const atStageGate = workItem.stage === 'spec_review' || workItem.stage === 'design_review';
+  const gate = atStageGate ? undefined : await reportedGate(workItem);
   const settled =
     workItem.stage === 'spec_review'
       ? slackSpecGateSettled(request?.trigger === 'spec_approved' ? 'approved' : 'changes', by, specUrl(workItem))
-      : gate && slackGateSettled(gate, body, by);
+      : workItem.stage === 'design_review'
+        ? slackDesignGateSettled(
+            request?.trigger === 'design_approved' ? 'approved' : isBackToSpec(body) ? 'back_to_spec' : 'changes',
+            by,
+            latestCanvas(await finishedReports(workItem, 'design'))
+          )
+        : gate && slackGateSettled(gate, body, by);
   await Promise.all([
     settled ? editInThread(project, workItem, ts, settled) : undefined,
     getDb().update(workItems).set({ gateSlackTs: null }).where(eq(workItems.id, workItem.id))
@@ -1656,12 +1669,22 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
   if (await answerQuestion(project, workItem, body, from)) {
     return;
   }
-  const atReportedGate = workItem.gateSlackTs !== null && workItem.stage !== 'spec_review';
+  const atReportedGate =
+    workItem.gateSlackTs !== null && workItem.stage !== 'spec_review' && workItem.stage !== 'design_review';
   const replied = runRequestFor({ kind: 'prompted', body }, workItem.stage);
   // An approved spec that calls for design goes to the design stage first, when the project has one.
   const reports = replied?.trigger === 'spec_approved' ? await finishedReports(workItem, 'spec') : [];
   const request = replied && afterSpecApproval(replied, latestSpecDesign(reports), designStageOn(project));
   await settleGate(project, workItem, body, request, from);
+  if (workItem.stage === 'design_review' && isBackToSpec(body)) {
+    // The spec waits in Spec Review again: the reply that says what to change revises it, and approving it designs again.
+    await moveWorkItem(project, workItem, 'spec_review');
+    await Promise.all([
+      postActivity(workItem, { type: 'elicitation', body: BACK_TO_SPEC_QUESTION }),
+      replyInThread(project, workItem, BACK_TO_SPEC_QUESTION)
+    ]);
+    return;
+  }
   if (atReportedGate && onlyAsksForChanges(body)) {
     // As at the spec gate: ask what to change rather than start a run that would only ask the same.
     await Promise.all([
@@ -2701,11 +2724,20 @@ const handleTap = async (
     return;
   }
   log('info', 'slack tap', { issue: workItem.issueIdentifier, user: action.userId, kind: action.kind });
-  if (action.kind === 'spec_gate' && workItem.stage !== 'spec_review') {
-    await tellTapper(SPEC_GATE_GONE);
+  // The spec and design gates share their buttons: a tap answers whichever review is open, as an answered gate's message
+  // loses its buttons. Back to spec belongs to Design Review alone.
+  const reviewing = workItem.stage === 'spec_review' || workItem.stage === 'design_review';
+  if (
+    action.kind === 'spec_gate' &&
+    (!reviewing || (isBackToSpec(action.body) && workItem.stage !== 'design_review'))
+  ) {
+    await tellTapper(isBackToSpec(action.body) ? DESIGN_GATE_GONE : SPEC_GATE_GONE);
     return;
   }
-  if (action.kind === 'gate' && (workItem.gateSlackTs === null || workItem.stage === 'spec_review')) {
+  if (
+    action.kind === 'gate' &&
+    (workItem.gateSlackTs === null || workItem.stage === 'spec_review' || workItem.stage === 'design_review')
+  ) {
     await tellTapper(GATE_GONE);
     return;
   }
@@ -3019,6 +3051,17 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
     const gate = slackSpecGateMessage(workItem.id, {
       specUrl: specUrl(workItem),
       prUrl,
+      issueUrl: workItem.issueUrl
+    });
+    const ts = await replyInThread(project, workItem, asking(gate));
+    await getDb()
+      .update(workItems)
+      .set({ gateSlackTs: ts ?? null })
+      .where(eq(workItems.id, workItem.id));
+  }
+  if (next.stage === 'design_review') {
+    const gate = slackDesignGateMessage(workItem.id, {
+      canvasUrl: readCanvas(run.report),
       issueUrl: workItem.issueUrl
     });
     const ts = await replyInThread(project, workItem, asking(gate));

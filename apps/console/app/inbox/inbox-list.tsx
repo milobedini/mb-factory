@@ -22,7 +22,7 @@ const describe = (entry: InboxEntry): { title: string; action: string | null } =
     case 'spec_review':
       return { title: 'Spec waiting for approval', action: 'Read the spec' };
     case 'design_review':
-      return { title: 'Design waiting for approval', action: null };
+      return { title: 'Design waiting for approval', action: 'Open the canvas' };
     case 'awaiting_merge':
       return { title: 'PR waiting for your review and merge', action: 'Review the PR' };
     case 'run_ended':

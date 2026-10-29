@@ -189,6 +189,25 @@ describe('workItemCard', () => {
     ]);
   });
 
+  it('waits on the design with its gate’s buttons and a link to the canvas', () => {
+    const canvas = 'https://claude.ai/artifact/9ENfcagd6BSq9LgLDHwCtv';
+    const card = workItemCard({
+      ...input(
+        { runs: [run(), run({ agent: 'spec' }), run({ agent: 'design', finishedAt: at(9) })] },
+        { stage: 'design_review' }
+      ),
+      canvas
+    });
+    expect(status(card)).toBe(':tb-needs-you: *Waiting on you:* approve the design.');
+    const value = (a: string) => JSON.stringify({ w: '22222222-2222-4222-8222-222222222222', a });
+    expect(buttons(card)).toEqual([
+      { text: 'Approve', value: value('Approve') },
+      { text: 'Change something', value: value('Change something') },
+      { text: 'Back to spec', value: value('Back to spec') },
+      { text: 'Open canvas', url: canvas }
+    ]);
+  });
+
   it('points open questions at the thread, counting the answered ones', () => {
     const card = workItemCard(
       input(
