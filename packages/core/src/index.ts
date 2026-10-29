@@ -228,6 +228,7 @@ export {
   answersPrompt,
   applyAnswer,
   chosenFollowUps,
+  choseRerun,
   keptText,
   MAX_QUESTIONS,
   questionElicitation,

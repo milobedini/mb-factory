@@ -40,6 +40,7 @@ import {
   CHANGES_QUESTION,
   canRerun,
   chosenFollowUps,
+  choseRerun,
   ciHandOverText,
   clock,
   closedLine,
@@ -215,6 +216,7 @@ import {
   pullRequestInfo,
   pullReviewThreads,
   requestReviewers,
+  rerunFailedJobs,
   resolveReviewThread,
   sendStageDispatch
 } from './github-api';
@@ -1107,22 +1109,27 @@ const keepReviewedPr = async (
   workItem: WorkItem,
   round: AskedQuestion[],
   from: ReplyFrom,
-  review: { id: string; findings: ReviewFinding[]; beforeMerging: string | undefined }
+  review: { id: string; findings: ReviewFinding[]; beforeMerging: string | undefined; rerun: boolean }
 ): Promise<void> => {
   const text = keptText(round, from.via === 'slack' ? `by ${from.name} in Slack` : 'in Linear');
   const { prNumber } = workItem;
   log('info', 'review decisions kept the PR', { issue: workItem.issueIdentifier });
   const merging = (await checkConflict(project, workItem)) === 'fixing';
-  // A failing check is only reported here: the answers may have been to merge with it.
-  const failing = merging ? undefined : await headFailure(workItem);
+  // A failing check is only reported here: the answers may have been to merge with it, or to re-run it as flaky.
+  const failures = merging ? [] : await headFailures(workItem);
+  const rerunning = review.rerun && failures.length > 0 && (await rerunChecks(workItem, failures));
+  const [failing] = failures;
   const offering = !merging && review.findings.length > 0;
+  const choose = offering ? ' Choose which of the round’s findings to fix below, or approve and merge.' : '';
   const next = merging
     ? 'The PR no longer merges cleanly, so I’m merging its base branch in first; review looks again after.'
-    : failing
-      ? `${escapeSlack(failing.workflow)} is failing on the PR (<${failing.url}|run>): reply here if you want it fixed.${offering ? ' Choose which of the round’s findings to fix below, or approve and merge.' : ''}`
-      : offering
-        ? 'Choose which of the round’s findings to fix below, or approve and merge.'
-        : 'It’s ready for you to merge.';
+    : rerunning && failing
+      ? `Re-running the failed jobs in ${failures.map(({ workflow, url }) => `${escapeSlack(workflow)} (<${url}|run>)`).join(', ')}: it’s ready for you to merge once they pass.${choose}`
+      : failing
+        ? `${escapeSlack(failing.workflow)} is failing on the PR (<${failing.url}|run>)${review.rerun ? ' and I couldn’t re-run it, so re-run its failed jobs there or' : ':'} reply here if you want it fixed.${choose}`
+        : offering
+          ? 'Choose which of the round’s findings to fix below, or approve and merge.'
+          : 'It’s ready for you to merge.';
   await Promise.all([
     replyInThread(project, workItem, askingFor(project, workItem)(`${text}\n${next}`)),
     postActivity(workItem, { type: 'response', body: text }),
@@ -1211,7 +1218,8 @@ const answerQuestion = async (
     await keepReviewedPr(project, workItem, answered, from, {
       id: open.runId,
       findings,
-      beforeMerging: readBeforeMerging(asking?.report)
+      beforeMerging: readBeforeMerging(asking?.report),
+      rerun: choseRerun(answered, readQuestions(asking?.report))
     });
     return true;
   }
@@ -3286,18 +3294,39 @@ const startCiFix = async (
   return 'left';
 };
 
-// A check failing on the PR's head now, if any.
-const headFailure = async (workItem: WorkItem): Promise<{ workflow: string; url: string } | undefined> => {
+type FailedCheck = ReturnType<typeof failedChecks>[number];
+
+// The checks failing on the PR's head now.
+const headFailures = async (workItem: WorkItem): Promise<FailedCheck[]> => {
   const { prNumber, repository } = workItem;
   if (!prNumber) {
-    return undefined;
+    return [];
   }
   try {
     const { head } = await pullHead(repository, prNumber);
-    return failedChecks(await commitRuns(repository, head))[0];
+    return failedChecks(await commitRuns(repository, head));
   } catch (error) {
     log('warn', 'head checks failed to load', { issue: workItem.issueIdentifier, error: errorMessage(error) });
-    return undefined;
+    return [];
+  }
+};
+
+const headFailure = async (workItem: WorkItem): Promise<FailedCheck | undefined> => (await headFailures(workItem))[0];
+
+// Re-runs the failed jobs of each failing check; false when GitHub refused any.
+const rerunChecks = async (workItem: WorkItem, failures: FailedCheck[]): Promise<boolean> => {
+  const workflows = failures.map(({ workflow }) => workflow);
+  try {
+    await Promise.all(failures.map(({ runId }) => rerunFailedJobs(workItem.repository, runId)));
+    log('info', 'failed checks re-run', { issue: workItem.issueIdentifier, workflows });
+    return true;
+  } catch (error) {
+    log('warn', 'failed checks re-run failed', {
+      issue: workItem.issueIdentifier,
+      workflows,
+      error: errorMessage(error)
+    });
+    return false;
   }
 };
 

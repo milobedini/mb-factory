@@ -1203,6 +1203,7 @@ describe('decideConflict', () => {
 
 describe('failedChecks', () => {
   const run = (workflowId: number, name: string, conclusion: string | null, event = 'pull_request') => ({
+    id: workflowId * 10,
     workflowId,
     name,
     event,
@@ -1217,7 +1218,7 @@ describe('failedChecks', () => {
         run(2, 'Preview checks', 'failure', 'deployment_status'),
         run(1, 'CI', 'failure')
       ])
-    ).toEqual([{ workflow: 'Preview checks', url: 'https://github.com/o/r/actions/runs/2-failure' }]);
+    ).toEqual([{ runId: 20, workflow: 'Preview checks', url: 'https://github.com/o/r/actions/runs/2-failure' }]);
   });
 
   it('ignores stage runs, unfinished checks and skipped ones', () => {

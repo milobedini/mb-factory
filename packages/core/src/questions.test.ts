@@ -6,6 +6,7 @@ import {
   answeredRequest,
   answersPrompt,
   applyAnswer,
+  choseRerun,
   keptText,
   MAX_QUESTIONS,
   questionElicitation,
@@ -51,6 +52,13 @@ describe('readQuestions', () => {
       ]
     });
     expect([named?.keep, unnamed?.keep]).toEqual(['Local disk', null]);
+  });
+
+  it('reads which option re-runs the failed checks, only when it names one', () => {
+    const [named, unnamed, absent] = readQuestions({
+      questions: [{ ...storage, rerun: ' s3 ' }, { ...storage, rerun: 'Somewhere else' }, storage]
+    });
+    expect([named?.rerun, unnamed?.rerun, absent?.rerun]).toEqual(['S3', undefined, undefined]);
   });
 
   it('keeps a topic, and drops only the topic when it’s too long', () => {
@@ -289,5 +297,31 @@ describe('afterAnswers', () => {
         { prompt: 'Question 1?', topic: null, why: null, options: ['Yes 1', 'No 1'], keep: null }
       ]).kind
     ).toBe('run');
+  });
+});
+
+describe('choseRerun', () => {
+  const reported: Question[] = [
+    {
+      prompt: 'Question 1?',
+      topic: null,
+      why: null,
+      options: ['Re-run, follow up', 'Hold'],
+      keep: null,
+      rerun: 'Re-run, follow up'
+    },
+    { prompt: 'Question 2?', topic: null, why: null, options: ['Yes 2', 'No 2'], keep: 'No 2' }
+  ];
+
+  it.each([
+    ['the re-run option, loosely matched', 're-run, follow up.', true],
+    ['another option', 'Hold', false],
+    ['nothing yet', null, false]
+  ])('%s → %s', (_, answer, expected) => {
+    expect(choseRerun([asked(1, { answer, answerSource: answer ? 'option' : null })], reported)).toBe(expected);
+  });
+
+  it('ignores a question that names no re-run option', () => {
+    expect(choseRerun([asked(2, { answer: 'Yes 2', answerSource: 'option' })], reported)).toBe(false);
   });
 });

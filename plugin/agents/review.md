@@ -71,6 +71,8 @@ For `human_decision_needed`, every finding with `needsHuman: true` also becomes 
 
 An option that defers work to later ("Ship as is, follow up") must say what later is: give the question a `followUp` naming that option, with the issue to file (`title` as an issue title, at most 80 characters; `body`: what's wrong, why it waits, and what done looks like, at most 2,000 characters; `size`: `XS`, `S`, `M`, `L` or `XL`, as triage sizes work). When that option is the answer, the console files it in Triage and links it in the thread. Without a `followUp`, don't offer a follow-up option: nothing would track it.
 
+A check that looks flaky (it failed on something the diff doesn't touch, such as a timeout or a reload, and passed before) may be settled by re-running it: name that option in `rerun` as well as in `keep`, since a re-run changes no code, and the console re-runs the check's failed jobs when it's chosen. Without `rerun`, don't offer a re-run: nothing would do it. A re-run with a follow-up ("Re-run, follow up") names the same option in `rerun`, `keep` and `followUp`.
+
 ```json
 { "prompt": "Ship this before the pages move onto the components?", "topic": "Bare controls until part 3",
   "why": "Preflight strips the native controls on four live pages until part 3 restyles them.",

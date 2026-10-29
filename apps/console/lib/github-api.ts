@@ -105,6 +105,14 @@ export const cancelActionsRun = async (repository: string, actionsRunId: string)
   }
 };
 
+// Re-runs only the jobs that failed, as the Actions page's "Re-run failed jobs" does.
+export const rerunFailedJobs = async (repository: string, runId: number): Promise<void> => {
+  const response = await githubRequest(`/repos/${repository}/actions/runs/${runId}/rerun-failed-jobs`);
+  if (!response.ok) {
+    throw await failure('re-run', response);
+  }
+};
+
 // Asking someone already requested changes nothing, so a PR that comes back to the gate asks again harmlessly.
 export const requestReviewers = async (repository: string, prNumber: number, reviewers: string[]): Promise<void> => {
   const response = await githubRequest(`/repos/${repository}/pulls/${prNumber}/requested_reviewers`, { reviewers });
@@ -281,6 +289,7 @@ export const scheduledRuns = async (repository: string, since: Date): Promise<Sc
 
 type CommitWorkflowRuns = {
   workflow_runs: {
+    id: number;
     workflow_id: number;
     name: string | null;
     event: string;
@@ -297,6 +306,7 @@ export const commitRuns = async (repository: string, sha: string): Promise<Commi
     'commit runs'
   );
   return workflowRuns.map((run) => ({
+    id: run.id,
     workflowId: run.workflow_id,
     name: run.name,
     event: run.event,

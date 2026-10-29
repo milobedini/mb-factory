@@ -44,6 +44,8 @@ const questionSchema = z
     suggested: z.string().trim().nullish(),
     // A review's question only: the option that leaves the PR as it is.
     keep: z.string().trim().nullish(),
+    // A review's question only: the option that re-runs the PR's failed checks, such as a flaky job's.
+    rerun: z.string().trim().nullish(),
     // A review's question only: the issue to file when the answer is `option`, which defers work to it.
     followUp: z
       .object({
@@ -72,6 +74,7 @@ export type Question = {
   why: string | null;
   options: string[];
   keep: string | null;
+  rerun?: string;
   followUp?: FollowUp;
 };
 
@@ -95,10 +98,11 @@ export const readQuestions = (report: unknown): Question[] =>
       if (!read.success) {
         return [];
       }
-      const { prompt, topic, why, options, suggested, keep, followUp } = read.data;
+      const { prompt, topic, why, options, suggested, keep, rerun, followUp } = read.data;
       const named = (wanted: string | null | undefined) =>
         options.find((option) => wanted && normalise(option) === normalise(wanted));
       const first = named(suggested) ?? options[0];
+      const rerunOption = named(rerun);
       return first
         ? [
             {
@@ -107,6 +111,7 @@ export const readQuestions = (report: unknown): Question[] =>
               why: why ?? null,
               options: [first, ...options.filter((option) => option !== first)],
               keep: named(keep) ?? null,
+              ...(rerunOption ? { rerun: rerunOption } : {}),
               ...followUpFor(followUp, named)
             }
           ]
@@ -114,8 +119,8 @@ export const readQuestions = (report: unknown): Question[] =>
     })
     .slice(0, MAX_QUESTIONS);
 
-// As asked and stored: `keep` and `followUp` stay in the review's report, read back when the round is answered.
-export type PositionedQuestion = Omit<Question, 'keep' | 'followUp'> & { position: number };
+// As asked and stored: `keep`, `rerun` and `followUp` stay in the review's report, read back when the round is answered.
+export type PositionedQuestion = Omit<Question, 'keep' | 'rerun' | 'followUp'> & { position: number };
 
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
@@ -263,6 +268,13 @@ export const chosenFollowUps = (round: AskedQuestion[], reported: Question[]): C
     return followUp && answer !== null && normalise(answer) === normalise(followUp.option)
       ? [{ ...followUp, prompt }]
       : [];
+  });
+
+// Whether a review round's answers chose to re-run the PR's failed checks.
+export const choseRerun = (round: AskedQuestion[], reported: Question[]): boolean =>
+  byPosition(round).some(({ position, answer }) => {
+    const rerun = reported[position - 1]?.rerun;
+    return rerun !== undefined && answer !== null && normalise(answer) === normalise(rerun);
   });
 
 // The decisions as a PR comment and a thread reply, when every answer kept the PR as it is.
