@@ -23,7 +23,7 @@ The routine's fire text holds the run's brief as JSON. It comes from the factory
 ## Procedure
 
 0. **Bring the design system up to date.** Skip this without a `designSystem`. Read its `project/tokens.json` (Artifact `read` with that `path`): `meta.ref` is the commit it was built from (`<branch>@<sha>`) and `meta.inputs` the paths it was built from. In the project's checkout, fetch and run `git diff --quiet <sha> origin/<default branch> -- <inputs>`. If it reports no difference, go on. If it reports one, or the ref is missing or ends `+uncommitted`, rebuild: check out `origin/<default branch>` detached, install dependencies, run `build`, and republish to the system as the type's `SKILL.md` says for revising one (read it on the system first):
-   - Send every file under `<out>/project/` at its path, and a `null` for each of the system's `fonts/` files the build no longer writes.
+   - Send every file under `<out>/project/` at its path (a `.ts` file with `contentType: "text/plain"`, which the tool needs), and a `null` for each of the system's `fonts/` files the build no longer writes.
    - For each component in the new `meta.components` without a folder in the system, write its `components/<Name>/README.md` and `preview.html` the way the others are written (read two first). For a component whose props changed (compare `components/index.d.ts`), update its README and preview to match. For a folder whose component is gone, send `null` for both files. Change no other guideline or preview.
    - Send the index (`project/design-system.json`) last, read again right before, with only `lastChange` changed: `by` the person, `via` "mb-factory design run", `note` "Rebuilt from <branch>@<sha>".
 
