@@ -306,6 +306,7 @@ export {
   reviewVerdict,
   runRequestFor,
   STOPPED_RESPONSE,
+  sameChanges,
   shouldBringUpToDate,
   shouldMoveIssue,
   shouldResume,

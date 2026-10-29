@@ -38,6 +38,7 @@ import {
   reverifiesOnRequest,
   reviewThreadsToResolve,
   runRequestFor,
+  sameChanges,
   shouldBringUpToDate,
   shouldMoveIssue,
   shouldResume,
@@ -1081,6 +1082,17 @@ describe('Slack text', () => {
     ).toBe(
       'The implement run hit the usage limit; it resumes once the window resets. <https://github.com/milobedini/tastebook/actions/runs/1|run log>'
     );
+  });
+});
+
+describe('sameChanges', () => {
+  const file = (filename: string, sha: string) => ({ filename, status: 'modified', sha });
+
+  it('holds only when every file, lockfiles included, is as reviewed', () => {
+    const reviewed = [file('frontend/src/main.tsx', 'a1'), file('pnpm-lock.yaml', 'l1')];
+    expect(sameChanges(reviewed, [file('pnpm-lock.yaml', 'l1'), file('frontend/src/main.tsx', 'a1')])).toBe(true);
+    expect(sameChanges(reviewed, [file('frontend/src/main.tsx', 'a1'), file('pnpm-lock.yaml', 'l2')])).toBe(false);
+    expect(sameChanges(reviewed, [file('frontend/src/main.tsx', 'a1')])).toBe(false);
   });
 });
 

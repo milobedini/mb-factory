@@ -1,6 +1,7 @@
 import type {
   AgentRole,
   AskedQuestion,
+  ChangedFile,
   DependencyPr,
   DependencyWork,
   FactoryConfig,
@@ -148,6 +149,7 @@ import {
   runRequestFor,
   SPEC_GATE_GONE,
   STOPPED_RESPONSE,
+  sameChanges,
   settleReadyMessage,
   shouldBringUpToDate,
   shouldMoveIssue,
@@ -2882,8 +2884,9 @@ const acceptedHead = async (workItem: WorkItem): Promise<string | null> => {
       : latest.agent === 'implement' && latest.trigger === 'conflict' && latest.finishedAt
         ? await branchHeadBefore(repository, branch, latest.finishedAt)
         : null;
-  // The console merges the default branch into a PR waiting here (`bringUpToDate`); the merge gate takes that head too.
-  return anchor && ((await headKeepingReviewedChanges(workItem, anchor)) ?? anchor);
+  // The console merges the default branch into a PR waiting here (`bringUpToDate`); the merge gate takes that head too,
+  // lockfiles included, since anyone who can push could make such a merge.
+  return anchor && ((await headKeepingReviewedChanges(workItem, anchor, sameChanges)) ?? anchor);
 };
 
 // After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a
@@ -2891,7 +2894,8 @@ const acceptedHead = async (workItem: WorkItem): Promise<string | null> => {
 const LOCKFILE_GATE_TEXT = 'Only lockfiles conflicted, so it’s back at the merge gate without another review.';
 
 // Whether a conflict fix changed only lockfiles: the PR's last review accepted it, and the head keeps the changes that
-// review saw (the branch's last push before it, from the webhooks), with only the default branch merged in.
+// review saw (the branch's last push before it, from the webhooks), with only the default branch merged in. A
+// lockfile's contents aren't checked here: its manifest is, and CI installs from it.
 const lockfileOnlyMerge = async (
   run: { agent: AgentRole; trigger: RunTrigger; createdAt: Date },
   workItem: WorkItem
@@ -2920,14 +2924,18 @@ const lockfileOnlyMerge = async (
   if (!reviewed) {
     return false;
   }
-  return (await headKeepingReviewedChanges(workItem, reviewed)) !== null;
+  return (await headKeepingReviewedChanges(workItem, reviewed, onlyLockfilesChanged)) !== null;
 };
 
 // The PR's head when it only merges the default branch into `reviewed`, from GitHub's record rather than a run's
 // report: the PR still targets the default branch, each commit from the head back to `reviewed` merges a commit already
-// on it (`newestMergedBase`), and apart from lockfiles the PR's changes are the reviewed ones. Null otherwise, or when
-// the head is `reviewed` itself. A lockfile's contents aren't checked: its manifest is, and CI installs from it.
-const headKeepingReviewedChanges = async (workItem: WorkItem, reviewed: string): Promise<string | null> => {
+// on it (`newestMergedBase`), and the PR's changes are the reviewed ones as `same` compares them. Null otherwise, or
+// when the head is `reviewed` itself.
+const headKeepingReviewedChanges = async (
+  workItem: WorkItem,
+  reviewed: string,
+  same: (reviewed: ChangedFile[], now: ChangedFile[]) => boolean
+): Promise<string | null> => {
   const { prNumber, repository } = workItem;
   if (!prNumber) {
     return null;
@@ -2951,7 +2959,7 @@ const headKeepingReviewedChanges = async (workItem: WorkItem, reviewed: string):
       compareFiles(repository, base, reviewed),
       compareFiles(repository, base, head)
     ]);
-    return before !== undefined && after !== undefined && onlyLockfilesChanged(before, after) ? head : null;
+    return before !== undefined && after !== undefined && same(before, after) ? head : null;
   } catch (error) {
     log('warn', 'reviewed changes check failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
     return null;

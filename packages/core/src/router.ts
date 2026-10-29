@@ -729,18 +729,26 @@ export type ChangedFile = { filename: string; status: string; sha: string | null
 // place stays: its order, its context lines, and the function or section name after the header.
 const diffLines = (patch: string): string => patch.replace(/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/gm, '@@');
 
-// The PR's changes against its new base, beside its changes as reviewed: the same apart from lockfiles means merging
-// the base changed nothing the PR does, as when the base moves without a conflict. Both lists come from GitHub, never
-// from the run's own report. A file with no diff is compared by content.
-export const onlyLockfilesChanged = (reviewed: ChangedFile[], now: ChangedFile[]): boolean => {
+const sameFiles = (reviewed: ChangedFile[], now: ChangedFile[], counts: (filename: string) => boolean): boolean => {
   const code = (files: ChangedFile[]): string[] =>
     files
-      .filter(({ filename }) => !isLockfile(filename))
+      .filter(({ filename }) => counts(filename))
       .map(({ filename, status, sha, patch }) => [filename, status, patch ? diffLines(patch) : sha].join('\u0000'))
       .toSorted();
   const [before, after] = [code(reviewed), code(now)];
   return before.length === after.length && before.every((file, index) => file === after[index]);
 };
+
+// The PR's changes against its new base, beside its changes as reviewed: the same apart from lockfiles means merging
+// the base changed nothing the PR does, as when the base moves without a conflict. Both lists come from GitHub, never
+// from the run's own report. A file with no diff is compared by content.
+export const onlyLockfilesChanged = (reviewed: ChangedFile[], now: ChangedFile[]): boolean =>
+  sameFiles(reviewed, now, (filename) => !isLockfile(filename));
+
+// The same, lockfiles included: for a head nobody's run made, where a lockfile changed inside a merge commit could
+// install a different package unreviewed.
+export const sameChanges = (reviewed: ChangedFile[], now: ChangedFile[]): boolean =>
+  sameFiles(reviewed, now, () => true);
 
 const WAITING_ON_SPEC_REVIEW: (RunOutcome | null)[] = ['done', 'needs_input'];
 
