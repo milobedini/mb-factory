@@ -452,6 +452,66 @@ export const fileSubIssues = async (
   }, Promise.resolve([]));
 };
 
+type FeatureForDino = {
+  issue: {
+    id: string;
+    team: { id: string; states: { nodes: { id: string; position: number }[] } };
+    project: { id: string } | null;
+    inverseRelations: { nodes: { type: string; issue: { title: string } }[] };
+  } | null;
+  issueLabels: { nodes: { id: string; name: string; team: { id: string } | null }[] };
+};
+
+// The new Dino components an approved design needs, each its own issue in the feature's project and Backlog, labelled
+// `dino`, blocking the feature. One already blocking it under the same title isn't filed again.
+export const fileDinoIssues = async (
+  organizationId: string,
+  featureId: string,
+  issues: { title: string; description: string }[]
+): Promise<CreatedIssue[]> => {
+  const { issue: feature, issueLabels } = await linearGraphql<FeatureForDino>(
+    organizationId,
+    'query FeatureForDino($id: String!) { issue(id: $id) { id team { id states(filter: { type: { eq: "backlog" } }) { nodes { id position } } } project { id } inverseRelations(first: 50) { nodes { type issue { title } } } } issueLabels(filter: { name: { in: ["factory", "dino"] } }) { nodes { id name team { id } } } }',
+    { id: featureId }
+  );
+  if (!feature) {
+    throw new Error('Linear has no such feature issue');
+  }
+  const blocking = new Set(
+    feature.inverseRelations.nodes.filter(({ type }) => type === 'blocks').map(({ issue }) => issue.title)
+  );
+  const labelIds = await labelIdsFor(organizationId, feature.team.id, ['factory', 'dino'], issueLabels.nodes);
+  const stateId = partStateId(feature.team.states.nodes);
+  return issues
+    .filter(({ title }) => !blocking.has(title))
+    .reduce<Promise<CreatedIssue[]>>(async (filing, { title, description }) => {
+      const filed = await filing;
+      const { issueCreate } = await linearGraphql<{ issueCreate: { issue: CreatedIssue | null } }>(
+        organizationId,
+        'mutation DinoIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { issue { id identifier url title } } }',
+        {
+          input: {
+            teamId: feature.team.id,
+            title,
+            description,
+            labelIds,
+            ...(stateId ? { stateId } : {}),
+            ...(feature.project ? { projectId: feature.project.id } : {})
+          }
+        }
+      );
+      if (!issueCreate.issue) {
+        throw new Error('Linear created no Dino issue');
+      }
+      await linearGraphql(
+        organizationId,
+        'mutation DinoBlocksFeature($input: IssueRelationCreateInput!) { issueRelationCreate(input: $input) { success } }',
+        { input: { issueId: issueCreate.issue.id, relatedIssueId: feature.id, type: 'blocks' } }
+      );
+      return [...filed, issueCreate.issue];
+    }, Promise.resolve([]));
+};
+
 const BLOCKED_LABEL = 'Blocked';
 const BLOCKED_COLOUR = '#eb5757';
 

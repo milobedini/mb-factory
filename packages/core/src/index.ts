@@ -80,13 +80,19 @@ export {
 } from './dashboard';
 export type { Bump, DependencyPr, DependencyWork } from './dependencies';
 export { DEPENDABOT_LOGIN, dependencyIssue, dependencyTakenText, isMajorBump, readBump } from './dependencies';
-export type { ComponentChange, DesignBrief, FiredSession, SpecComponent, SpecDesign } from './design';
+export type { ComponentChange, DesignBrief, DesignFile, FiredSession, SpecComponent, SpecDesign } from './design';
 export {
   COMPONENT_CHANGES,
+  designCommitMessage,
   designFireText,
+  designFolder,
+  dinoIssue,
+  dinoWaitText,
   latestCanvas,
   latestSpecDesign,
   readCanvas,
+  readDesignComponents,
+  readDesignFiles,
   readDesignReportBody,
   readFiredSession,
   readSpecDesign

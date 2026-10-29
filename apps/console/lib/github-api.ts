@@ -32,6 +32,60 @@ const githubRequest = async (path: string, body?: unknown, token: TokenName = 'G
 const failure = async (action: string, response: Response): Promise<Error> =>
   new Error(`GitHub ${action} failed with ${response.status}: ${(await response.text()).slice(0, 200)}`);
 
+const githubWrite = async (method: 'POST' | 'PATCH', path: string, body: unknown, action: string) => {
+  const response = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${requireEnv('GITHUB_DISPATCH_TOKEN')}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    throw await failure(action, response);
+  }
+  return response.json() as Promise<{ sha: string }>;
+};
+
+// One commit of whole files on a branch's head, through Git's data API: a blob each, a tree over the head's, the
+// commit, then the branch moved to it. The move isn't forced, so a push that lands first fails it rather than being lost.
+export const commitFiles = async (
+  repository: string,
+  branch: string,
+  files: { path: string; base64: string }[],
+  message: string
+): Promise<string> => {
+  const ref = `heads/${branch.split('/').map(encodeURIComponent).join('/')}`;
+  const head = (await githubGet<{ object: { sha: string } }>(`/repos/${repository}/git/ref/${ref}`, 'branch')).object
+    .sha;
+  const base = (await githubGet<{ tree: { sha: string } }>(`/repos/${repository}/git/commits/${head}`, 'commit')).tree
+    .sha;
+  const blobs = await Promise.all(
+    files.map(({ base64 }) =>
+      githubWrite('POST', `/repos/${repository}/git/blobs`, { content: base64, encoding: 'base64' }, 'blob')
+    )
+  );
+  const tree = await githubWrite(
+    'POST',
+    `/repos/${repository}/git/trees`,
+    {
+      base_tree: base,
+      tree: files.map(({ path }, index) => ({ path, mode: '100644', type: 'blob', sha: blobs[index]?.sha }))
+    },
+    'tree'
+  );
+  const commit = await githubWrite(
+    'POST',
+    `/repos/${repository}/git/commits`,
+    { message, tree: tree.sha, parents: [head] },
+    'commit'
+  );
+  await githubWrite('PATCH', `/repos/${repository}/git/refs/${ref}`, { sha: commit.sha, force: false }, 'ref update');
+  return commit.sha;
+};
+
 // The project's `factory.yml` turns this into a stage run.
 export const sendStageDispatch = async (repository: string, payload: DispatchPayload): Promise<void> => {
   const response = await githubRequest(`/repos/${repository}/dispatches`, {

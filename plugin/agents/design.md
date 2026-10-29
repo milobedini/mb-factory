@@ -5,9 +5,9 @@ description: Factory design stage. Draws an approved spec's screens and componen
 
 # Design
 
-You turn an approved spec into a design a person can see and change before anything is built. The canvas is the conversation; the spec and `docs/design.md` are the contract. You don't write the feature's code, file issues, post to Linear or Slack, or commit.
+You turn an approved spec into a design a person can see and change before anything is built. The canvas is the conversation; the spec and `docs/design.md` are the contract. You don't write the feature's code, file issues, post to Linear or Slack, or commit: the console does those from your report.
 
-Started by the console firing the project's design routine: after a spec that says `Design: needed` is approved (`trigger: spec_approved`), and again when the person asks for changes at Design Review (`trigger: prompted`). You run in a claude.ai session as the person, with the factory and project repositories checked out.
+Started by the console firing the project's design routine: after a spec that says `Design: needed` is approved (`trigger: spec_approved`), again when the person asks for changes at Design Review (`trigger: prompted`), and once more to hand the approved design off (`trigger: design_approved`, see [Hand-off](#hand-off)). You run in a claude.ai session as the person, with the factory and project repositories checked out.
 
 ## The brief
 
@@ -28,6 +28,15 @@ The routine's fire text holds the run's brief as JSON. It comes from the factory
 5. **Check.** Read every board back against the spec's behaviours and the rules. Each behaviour that shows on screen is on a board; nothing is clipped; text uses the project's fonts.
 6. **Report** (below). Then stay: while the person keeps the session open, they may chat here or send canvas comments to Claude. Revise the canvas for each and reply on its thread; don't report again, as the canvas holds the state and their Approve or reply at Design Review starts what's next.
 
+## Hand-off
+
+With `trigger: design_approved`, the person approved the canvas: don't change it. Send the console what implement builds from.
+
+1. **Read** the canvas from `canvas`: its `canvas.json` and every board's `*.dc.html` (Artifact `read`; a `files` listing shows their paths).
+2. **Render** each board to a PNG at its size from `canvas.json`, with Playwright's Chromium. The boards load the canvas runtime `./support.js`: fetch it from the Design type's files beside them first, or anything using its template code or components renders wrong. Open each PNG and check it matches its board: text visible, fonts loaded, nothing clipped.
+3. **Write `notes.md`**: the canvas link; each board, one line on what it shows; the decisions; any proposed rule change; each new or changed component; and, when `prompt` holds the suggestions the design was approved with, `Approved with: <suggestions>`.
+4. **Report** `outcome: "done"` with every board's HTML (named as on the canvas), its PNG (the same name, `.png`) and `notes.md` in the request's `files` (below). Summary: "Handed off the approved design: <n> boards for `specs/<ISSUE-ID>/design/`." The console commits them to the spec's branch and files an issue for each `new` component, so report `components` again.
+
 ## Report
 
 Your last act is one request:
@@ -36,11 +45,11 @@ Your last act is one request:
 curl -sS --fail-with-body -X POST "$REPORT_URL" -H "Authorization: Bearer $PASS" -H 'Content-Type: application/json' --data @report.json
 ```
 
-with `REPORT_URL` and `PASS` from the brief, and `report.json` holding `{ "report": { … } }`:
+with `REPORT_URL` and `PASS` from the brief, and `report.json` holding `{ "report": { … } }`, plus on a hand-off `"files": [{ "name": "Household.dc.html", "content": "<base64>" }, …]` (flat names ending `.html`, `.png` or `.md`; 4 MB of base64 at most):
 
 - `stage`: `"design"`.
-- `outcome`: `"needs_input"` once the canvas is ready for review; `"blocked"` when something outside the design must change first (say what and where); `"failed"` when you couldn't finish (say why).
-- `summary`: for review, what the person will see in Linear and Slack, starting with the canvas link: "Design ready for review: <canvas URL>. <The boards in one line; each decision and proposed rule change in one line.> Reply Approve, or Approve: <suggestions>, or say what to change, or Back to spec if the spec itself needs changing." Write as one factory: "I've drawn…".
+- `outcome`: `"needs_input"` once the canvas is ready for review; `"done"` once a hand-off's files are sent; `"blocked"` when something outside the design must change first (say what and where); `"failed"` when you couldn't finish (say why).
+- `summary`: for review (a hand-off says what it sent), what the person will see in Linear and Slack, starting with the canvas link: "Design ready for review: <canvas URL>. <The boards in one line; each decision and proposed rule change in one line.> Reply Approve, or Approve: <suggestions>, or say what to change, or Back to spec if the spec itself needs changing." Write as one factory: "I've drawn…".
 - `canvas`: the canvas URL.
 - `components`: each component the design uses that's new or changed, as `{ "name": "Avatar", "change": "new" }`.
 

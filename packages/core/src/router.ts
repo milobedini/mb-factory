@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import type { FactoryConfig } from './config';
 import type { SpecDesign } from './design';
+import { readDesignComponents } from './design';
 import type { Gate } from './gates';
 import { readGate } from './gates';
 import type { Decision, DispatchRequest, HoldReason, Priority, UsageWindow } from './governor';
@@ -153,11 +154,13 @@ export const runRequestFor = (
   if (stage !== 'spec_review' && stage !== 'design_review') {
     return { agent, trigger: 'prompted', priority: 'in_flight', prompt: event.body };
   }
-  // Design Review reads a reply as Spec Review does: an approval starts implement, anything else revises the design.
+  // Design Review reads a reply as Spec Review does: an approval hands the design off to the repo before implement
+  // builds it, and anything else revises the design.
   const reply = readSpecReply(event.body);
   if (reply.kind === 'approve') {
-    const trigger = stage === 'spec_review' ? 'spec_approved' : 'design_approved';
-    return { agent: 'implement', trigger, priority: 'in_flight', prompt: reply.suggestions };
+    return stage === 'spec_review'
+      ? { agent: 'implement', trigger: 'spec_approved', priority: 'in_flight', prompt: reply.suggestions }
+      : { agent: 'design', trigger: 'design_approved', priority: 'in_flight', prompt: reply.suggestions };
   }
   return reply.kind === 'changes'
     ? { agent, trigger: 'prompted', priority: 'in_flight', prompt: reply.body }
@@ -730,7 +733,14 @@ const afterReview = (report: unknown, { reviewRounds, maxReviewRounds }: ReviewL
 // A spec run with its PR open is waiting on approval, whether it reports that as done or as needing input.
 // A delivered PR goes to review; the review's verdict sends it to the human merge gate or back for a revision.
 export const nextStepAfterRun = (
-  run: { agent: AgentRole; trigger?: RunTrigger; status: RunStatus; outcome: RunOutcome | null; report: unknown },
+  run: {
+    agent: AgentRole;
+    trigger?: RunTrigger;
+    status: RunStatus;
+    outcome: RunOutcome | null;
+    report: unknown;
+    prompt?: string | null;
+  },
   {
     hasPr,
     lockfileOnlyMerge = false,
@@ -746,6 +756,19 @@ export const nextStepAfterRun = (
   const asking = questions.length > 0 ? { questions } : gate ? { gate } : {};
   if (run.agent === 'spec' && run.status === 'finished' && WAITING_ON_SPEC_REVIEW.includes(run.outcome) && hasPr) {
     return { stage: 'spec_review', ...asking };
+  }
+  // The hand-off committed the approved boards: implement builds them, with the approval's suggestions, unless the
+  // design needs new Dino components, which are built first.
+  if (run.agent === 'design' && run.trigger === 'design_approved') {
+    if (run.status !== 'finished' || run.outcome !== 'done') {
+      return asking;
+    }
+    return readDesignComponents(run.report).some(({ change }) => change === 'new')
+      ? { stage: 'building' }
+      : {
+          stage: 'building',
+          request: { agent: 'implement', trigger: 'design_approved', priority: 'in_flight', prompt: run.prompt ?? null }
+        };
   }
   // A design run that drew or revised the canvas waits on Design Review, as a spec waits on Spec Review.
   if (run.agent === 'design' && run.status === 'finished' && WAITING_ON_SPEC_REVIEW.includes(run.outcome)) {

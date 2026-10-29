@@ -106,3 +106,81 @@ export const readDesignReportBody = (body: unknown): { report: unknown } | null 
   const read = designReportBodySchema.safeParse(body);
   return read.success ? { report: read.data.report } : null;
 };
+
+// The approved design's files, as the hand-off sends them: each board's markup and picture, and the notes. Flat names
+// only, so nothing lands outside the design folder; the sizes keep the request inside Vercel's 4.5 MB body limit.
+const MAX_DESIGN_FILES = 60;
+const MAX_DESIGN_BASE64 = 4_000_000;
+const DESIGN_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(html|png|md)$/;
+
+const designFileSchema = z.object({
+  name: z.string().regex(DESIGN_FILE_NAME),
+  content: z.base64()
+});
+
+export type DesignFile = { name: string; content: string };
+
+const designFilesSchema = z.looseObject({ files: z.array(designFileSchema).min(1).max(MAX_DESIGN_FILES) });
+
+// Undefined when the body sends no files; null when it sends files that can't be committed as they are.
+export const readDesignFiles = (body: unknown): DesignFile[] | null | undefined => {
+  if (!z.looseObject({ files: z.unknown() }).safeParse(body).data?.files) {
+    return undefined;
+  }
+  const read = designFilesSchema.safeParse(body);
+  if (!read.success) {
+    return null;
+  }
+  const names = new Set(read.data.files.map(({ name }) => name));
+  const size = read.data.files.reduce((total, { content }) => total + content.length, 0);
+  return names.size === read.data.files.length && size <= MAX_DESIGN_BASE64
+    ? read.data.files.map(({ name, content }) => ({ name, content }))
+    : null;
+};
+
+export const designFolder = (issueIdentifier: string): string => `specs/${issueIdentifier}/design`;
+
+export const designCommitMessage = (issueIdentifier: string, coAuthor: string | null): string =>
+  [`Add the approved design for ${issueIdentifier}`, ...(coAuthor ? ['', `Co-authored-by: ${coAuthor}`] : [])].join(
+    '\n'
+  );
+
+const reportComponentsSchema = z.looseObject({ components: z.array(z.unknown()).nullish() });
+
+// The components a design run reported as new or changed.
+export const readDesignComponents = (report: unknown): SpecComponent[] =>
+  componentsOf(reportComponentsSchema.safeParse(report).data?.components);
+
+// A new Dino component the approved design needs: its own issue, built before the feature that uses it.
+export const dinoIssue = (
+  feature: { identifier: string; url: string },
+  component: SpecComponent,
+  { repository, branch }: { repository: string; branch: string | null }
+): { title: string; description: string } => {
+  const boards = branch
+    ? `https://github.com/${repository}/tree/${encodeURI(branch)}/${designFolder(feature.identifier)}`
+    : null;
+  return {
+    title: `Add ${component.name} to Dino`,
+    description: [
+      `A new Dino component that [${feature.identifier}](${feature.url}) needs, from its approved design. It blocks ${feature.identifier}, which builds with it once it's done.`,
+      '',
+      boards
+        ? `The board with every state is in [${designFolder(feature.identifier)}](${boards}), on the spec's branch until ${feature.identifier} merges.`
+        : `The board with every state is in \`${designFolder(feature.identifier)}\` on ${feature.identifier}'s spec branch.`,
+      '',
+      'Build it in Dino with a story for each state on the board, matching the board exactly.'
+    ].join('\n')
+  };
+};
+
+export const dinoWaitText = (
+  filed: { identifier: string; url: string }[],
+  markup: 'slack' | 'markdown' = 'slack'
+): string => {
+  const links = filed.map(({ identifier, url }) =>
+    markup === 'slack' ? `<${url}|${identifier}>` : `[${identifier}](${url})`
+  );
+  const what = filed.length === 1 ? 'a new Dino component' : `${filed.length} new Dino components`;
+  return `The design needs ${what} first: ${links.join(', ')}. Reply here once ${filed.length === 1 ? 'it’s' : 'they’re'} done and building starts.`;
+};

@@ -63,6 +63,8 @@ import {
   designFireText,
   designRunLapsesAt,
   designStageOn,
+  dinoIssue,
+  dinoWaitText,
   dispatchLapsesAt,
   emptyMentionText,
   escapeSlack,
@@ -131,6 +133,7 @@ import {
   readBeforeMerging,
   readBump,
   readCanvas,
+  readDesignComponents,
   readFixableFindings,
   readGate,
   readQuestions,
@@ -225,6 +228,7 @@ import {
   createIssue,
   createSessionOnIssue,
   delegateIssue,
+  fileDinoIssues,
   fileSubIssues,
   findAppUserId,
   findUserIdByEmail,
@@ -1718,6 +1722,35 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
   }
 };
 
+// A handed-off design that needs new Dino components files each as an issue blocking the feature, and the feature
+// waits, with the Blocked label, for a person to start building once they're done.
+const waitOnDino = async (project: FactoryConfig, workItem: WorkItem, report: unknown): Promise<void> => {
+  const needed = readDesignComponents(report).filter(({ change }) => change === 'new');
+  const feature = { identifier: workItem.issueIdentifier, url: workItem.issueUrl };
+  const filed = await fileDinoIssues(
+    workItem.linearOrganizationId,
+    workItem.linearIssueId,
+    needed.map((component) => dinoIssue(feature, component, workItem))
+  ).catch((error: unknown) => {
+    log('error', 'dino issues failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return [];
+  });
+  log('info', 'dino issues filed', {
+    issue: workItem.issueIdentifier,
+    filed: filed.map(({ identifier }) => identifier)
+  });
+  if (filed.length === 0) {
+    return;
+  }
+  await Promise.all([
+    replyInThread(project, workItem, askingFor(project, workItem)(dinoWaitText(filed))),
+    postActivity(workItem, { type: 'elicitation', body: dinoWaitText(filed, 'markdown') }),
+    attempt('linear blocked label', { issue: workItem.issueIdentifier }, () =>
+      setBlockedLabel(workItem.linearOrganizationId, workItem.linearIssueId, true)
+    )
+  ]);
+};
+
 // The reports of a work item's finished runs of one agent, newest first.
 const finishedReports = async (workItem: WorkItem, agent: AgentRole): Promise<unknown[]> => {
   const finished = await getDb()
@@ -3058,6 +3091,9 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       .update(workItems)
       .set({ gateSlackTs: ts ?? null })
       .where(eq(workItems.id, workItem.id));
+  }
+  if (run.agent === 'design' && run.trigger === 'design_approved' && run.outcome === 'done' && !next.request) {
+    await waitOnDino(project, workItem, run.report);
   }
   if (next.stage === 'design_review') {
     const gate = slackDesignGateMessage(workItem.id, {

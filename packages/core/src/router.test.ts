@@ -201,9 +201,9 @@ describe('runRequestFor', () => {
     expect(runRequestFor(reply('Change something'), 'spec_review')).toBeUndefined();
   });
 
-  it('starts implement on approval in Design Review, and revises the design on a change', () => {
+  it('hands the design off on approval in Design Review, and revises it on a change', () => {
     expect(runRequestFor(reply('Approve: tighten the gap'), 'design_review')).toEqual({
-      agent: 'implement',
+      agent: 'design',
       trigger: 'design_approved',
       priority: 'in_flight',
       prompt: 'tighten the gap'
@@ -634,6 +634,23 @@ describe('nextStepAfterRun', () => {
     const question = { prompt: 'Which?', options: ['A', 'B'] };
     expect(nextStepAfterRun({ ...waiting, report: { gate, questions: [question] } }, loop)).not.toHaveProperty('gate');
     expect(nextStepAfterRun({ ...finished, agent: 'triage', report: { gate } }, loop)).not.toHaveProperty('gate');
+  });
+
+  it('builds the handed-off design with the approval’s suggestions, unless it needs new components first', () => {
+    const handedOff = {
+      ...finished,
+      agent: 'design' as const,
+      trigger: 'design_approved' as const,
+      prompt: 'Tighten the gap',
+      report: { components: [{ name: 'Button', change: 'changed' }] }
+    };
+    expect(nextStepAfterRun(handedOff, loop)).toEqual({
+      stage: 'building',
+      request: { agent: 'implement', trigger: 'design_approved', priority: 'in_flight', prompt: 'Tighten the gap' }
+    });
+    const needsAvatar = { ...handedOff, report: { components: [{ name: 'Avatar', change: 'new' }] } };
+    expect(nextStepAfterRun(needsAvatar, loop)).toEqual({ stage: 'building' });
+    expect(nextStepAfterRun({ ...handedOff, outcome: 'failed' }, loop)).toEqual({});
   });
 
   it('waits on Design Review once a design run drew the canvas or asked about it', () => {

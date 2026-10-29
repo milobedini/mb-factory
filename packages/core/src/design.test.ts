@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import type { DesignBrief } from './design';
 import {
+  designCommitMessage,
   designFireText,
+  dinoIssue,
+  dinoWaitText,
   latestCanvas,
   latestSpecDesign,
   readCanvas,
+  readDesignComponents,
+  readDesignFiles,
   readDesignReportBody,
   readFiredSession,
   readSpecDesign
@@ -155,5 +160,79 @@ describe('readDesignReportBody', () => {
   it('reads the report a design session posts, and rejects anything else', () => {
     expect(readDesignReportBody({ report: { outcome: 'done' } })).toEqual({ report: { outcome: 'done' } });
     expect(readDesignReportBody(null)).toBeNull();
+  });
+});
+
+describe('readDesignFiles', () => {
+  const png = Buffer.from('png').toString('base64');
+
+  it('reads flat board, picture and notes files', () => {
+    const files = [
+      { name: 'Household.dc.html', content: Buffer.from('<x-dc></x-dc>').toString('base64') },
+      { name: 'Household.png', content: png },
+      { name: 'notes.md', content: Buffer.from('# Notes').toString('base64') }
+    ];
+    expect(readDesignFiles({ report: {}, files })).toEqual(files);
+  });
+
+  it('sends nothing when the body has no files', () => {
+    expect(readDesignFiles({ report: {} })).toBeUndefined();
+  });
+
+  it('refuses a path, another type, a repeated name or content that isn’t base64', () => {
+    expect(readDesignFiles({ files: [{ name: '../AGENTS.md', content: png }] })).toBeNull();
+    expect(readDesignFiles({ files: [{ name: 'nested/Board.html', content: png }] })).toBeNull();
+    expect(readDesignFiles({ files: [{ name: 'run.sh', content: png }] })).toBeNull();
+    expect(
+      readDesignFiles({
+        files: [
+          { name: 'A.png', content: png },
+          { name: 'A.png', content: png }
+        ]
+      })
+    ).toBeNull();
+    expect(readDesignFiles({ files: [{ name: 'A.png', content: 'not base64!' }] })).toBeNull();
+    expect(readDesignFiles({ files: [] })).toBeNull();
+  });
+});
+
+describe('hand-off text', () => {
+  const feature = { identifier: 'TAS-90', url: 'https://linear.app/tastebook/issue/TAS-90' };
+
+  it('credits the person the work is for on the design commit', () => {
+    expect(designCommitMessage('TAS-90', 'Milo Bedini <1+milo@users.noreply.github.com>')).toBe(
+      'Add the approved design for TAS-90\n\nCo-authored-by: Milo Bedini <1+milo@users.noreply.github.com>'
+    );
+    expect(designCommitMessage('TAS-90', null)).toBe('Add the approved design for TAS-90');
+  });
+
+  it('files a new component with a link to its board on the spec branch', () => {
+    const issue = dinoIssue(
+      feature,
+      { name: 'Avatar', change: 'new' },
+      {
+        repository: 'milobedini/tastebook',
+        branch: 'tas-90-households'
+      }
+    );
+    expect(issue.title).toBe('Add Avatar to Dino');
+    expect(issue.description).toContain(
+      '(https://github.com/milobedini/tastebook/tree/tas-90-households/specs/TAS-90/design)'
+    );
+    expect(issue.description).toContain('It blocks TAS-90');
+  });
+
+  it('says what the feature waits on, in Slack and in Linear', () => {
+    const filed = [{ identifier: 'TAS-91', url: 'https://linear.app/tastebook/issue/TAS-91' }];
+    expect(dinoWaitText(filed)).toBe(
+      'The design needs a new Dino component first: <https://linear.app/tastebook/issue/TAS-91|TAS-91>. Reply here once it’s done and building starts.'
+    );
+    expect(dinoWaitText(filed, 'markdown')).toContain('[TAS-91](https://linear.app/tastebook/issue/TAS-91)');
+  });
+
+  it('reads the components a design run reported', () => {
+    expect(readDesignComponents({ components: [{ name: 'Avatar', change: 'new' }, 'Tabs'] })).toEqual([
+      { name: 'Avatar', change: 'new' }
+    ]);
   });
 });
