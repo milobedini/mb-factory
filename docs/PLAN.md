@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** once the user has added the Design and Design Review statuses to Linear's TAS workflow, turn the design stage on in Tastebook's `factory.yaml` (`design.routine: trig_015ytNVnxYsCys81Mnm6A8N4` and the two statuses) and wait for a real spec that calls for design (the Accounts and households slices) to see it live; meanwhile build (6) the `dino` labeler and review rubric, then (7) rebuilding the Dino Design System.
+**Next:** build step 6 of the design stage, the `dino` labeler and Dino review rubric, then step 7, rebuilding the Dino Design System from the code (see [Design stage and Dino](#design-stage-and-dino)); the stage itself is on for Tastebook, so watch the first spec that calls for design under [To see live](#to-see-live).
 
 **Direction, in order:** the design stage and the Dino project (below), so the Accounts and households PRD is the first feature designed through it; then that PRD and slicing it; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
@@ -333,7 +333,8 @@ Learnt the hard way; each would bite again.
 Built but not yet seen working; delete each line once seen.
 
 - **Fri 30 Oct morning:** the wake-ups collapse to one: the copies booked before `a255969` still arrive at 05:52 and 06:00, then one `woke` a slot (count them in the logs), with one governor probe each at about 05:52 and 06:22; the backup ran near 02:17 (29 Oct's hadn't run by 07:40 and was dispatched by hand); a `morning ready list` line beside the Ready message (29 Oct's message posted, but the line was missing).
-- **Design call:** the next Tastebook spec (TAS-72 to 74 likely first) writes `Design: needed | skip — <why>` under Evidence, says it in the approval message, and approval logs `spec design` with the call; Storybook and the token move should be `skip`, as `docs/design.md` and the boards already decide them.
+- **Design call:** TAS-72's spec wrote `Design: skip — …` under Evidence (seen 29 Oct); still to see: the call in the approval message, and approval logging `spec design` with the call and `next`.
+- **Design stage (on since 29 Oct):** the first approved spec with `Design: needed` (an Accounts and households slice, most likely): a `design` run fires the routine and moves the issue to Design, its run log opens the session, the canvas link arrives in Linear and Slack with the Design Review gate and card buttons; Change something and a comment sent to Claude each revise the same canvas; Approve commits HTML, PNG and `notes.md` to `specs/<ID>/design/` on the spec branch, then implement starts, or the `dino` issues are filed blocking the feature with the Blocked label; Back to spec reopens Spec Review.
 - **Mon 2 Nov:** the weekly security and docs passes from their own slots (05:00, 05:30).
 - **Runs:** a timeout saying "ran out of time" and waiting with Re-run; a stopped card reading Stopped with Re-run; a stale Re-run button re-running the latest run; a held run with no `slack card failed` burst; a usage hold booking its wake and starting soon after the reset; a lapse wake firing; a `limit_hit` resume; Linear's stop signal; a human push counted in `human_pushes`.
 - **Work items:** an undelegated item reading Not delegated and leaving the Inbox; the Blocked label going on and off; the health check flagging a stuck run.
