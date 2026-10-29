@@ -511,6 +511,49 @@ export const decideConflict = (
   };
 };
 
+// A PR waiting at the merge gate that's behind its base and merges cleanly gets the base merged in by the console, with
+// no run: the merge gate takes the new head while the PR's changes stay as reviewed, and CI checks it as usual. Not while
+// a run is going, which pushes commits of its own.
+export const shouldBringUpToDate = ({
+  stage,
+  openRuns,
+  mergeable,
+  behindBy
+}: {
+  stage: Stage;
+  openRuns: number;
+  mergeable: boolean | null;
+  behindBy: number;
+}): boolean => stage === 'awaiting_merge' && openRuns === 0 && mergeable === true && behindBy > 0;
+
+// The most merges of the default branch a head can stack on the reviewed commit and still count as reviewed.
+export const MAX_BASE_MERGES = 10;
+
+// The newest default-branch commit merged in on the way from `reviewed` to `head`, when every commit along the head's
+// first parents is a two-parent merge whose other parent is already on the default branch. Undefined when the walk
+// leaves that shape, runs past `limit`, or `head` is `reviewed`.
+export const newestMergedBase = async (
+  head: string,
+  reviewed: string,
+  { parents, onBase }: { parents: (sha: string) => Promise<string[]>; onBase: (sha: string) => Promise<boolean> },
+  limit = MAX_BASE_MERGES
+): Promise<string | undefined> => {
+  const walk = async (sha: string, steps: number, newest: string | undefined): Promise<string | undefined> => {
+    if (sha === reviewed) {
+      return newest;
+    }
+    if (steps === 0) {
+      return undefined;
+    }
+    const [first, other, ...more] = await parents(sha);
+    if (!first || !other || more.length > 0 || !(await onBase(other))) {
+      return undefined;
+    }
+    return walk(first, steps - 1, newest ?? other);
+  };
+  return walk(head, limit, undefined);
+};
+
 // Two runs that finish close together (a conflict fix and an answer's revision) can each hand on to the same stage. A
 // verify or review already queued works on the PR's head when it starts, so a second would only repeat it; and with an
 // implement run queued, that run hands on once it's done, so one review sees both changes.

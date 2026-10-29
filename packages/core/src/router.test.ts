@@ -26,6 +26,7 @@ import {
   metEveryCriterion,
   modelFor,
   neverStarted,
+  newestMergedBase,
   nextStepAfterRun,
   onlyLockfilesChanged,
   orderQueue,
@@ -37,6 +38,7 @@ import {
   reverifiesOnRequest,
   reviewThreadsToResolve,
   runRequestFor,
+  shouldBringUpToDate,
   shouldMoveIssue,
   shouldResume,
   shouldRetry,
@@ -1151,6 +1153,54 @@ describe('currentMergeable', () => {
   it('passes false and null through', () => {
     expect(currentMergeable({ mergeable: false, testMergeParents: undefined, ...heads })).toBe(false);
     expect(currentMergeable({ mergeable: null, testMergeParents: undefined, ...heads })).toBeNull();
+  });
+});
+
+describe('shouldBringUpToDate', () => {
+  const waiting = { stage: 'awaiting_merge' as const, openRuns: 0, mergeable: true, behindBy: 2 };
+
+  it('merges the base into a clean PR waiting at the merge gate behind it', () => {
+    expect(shouldBringUpToDate(waiting)).toBe(true);
+  });
+
+  it('leaves a PR that is up to date, conflicts, has a run going or is still in review', () => {
+    expect(shouldBringUpToDate({ ...waiting, behindBy: 0 })).toBe(false);
+    expect(shouldBringUpToDate({ ...waiting, mergeable: false })).toBe(false);
+    expect(shouldBringUpToDate({ ...waiting, mergeable: null })).toBe(false);
+    expect(shouldBringUpToDate({ ...waiting, openRuns: 1 })).toBe(false);
+    expect(shouldBringUpToDate({ ...waiting, stage: 'in_review' })).toBe(false);
+  });
+});
+
+describe('newestMergedBase', () => {
+  // reviewed ← m1 (merges main's b1) ← m2 (merges main's b2) = head
+  const graph: Record<string, string[]> = {
+    m2: ['m1', 'b2'],
+    m1: ['reviewed', 'b1'],
+    fix: ['reviewed'],
+    octopus: ['reviewed', 'b1', 'b2'],
+    side: ['reviewed', 'x1']
+  };
+  const onMain = new Set(['b1', 'b2']);
+  const github = {
+    parents: async (sha: string) => graph[sha] ?? [],
+    onBase: async (sha: string) => onMain.has(sha)
+  };
+
+  it('finds the newest base commit merged in on the way from the reviewed commit', async () => {
+    expect(await newestMergedBase('m1', 'reviewed', github)).toBe('b1');
+    expect(await newestMergedBase('m2', 'reviewed', github)).toBe('b2');
+  });
+
+  it('gives nothing for the reviewed commit itself, or a commit that is not only a merge of the base', async () => {
+    expect(await newestMergedBase('reviewed', 'reviewed', github)).toBeUndefined();
+    expect(await newestMergedBase('fix', 'reviewed', github)).toBeUndefined();
+    expect(await newestMergedBase('octopus', 'reviewed', github)).toBeUndefined();
+    expect(await newestMergedBase('side', 'reviewed', github)).toBeUndefined();
+  });
+
+  it('stops after the limit of merges', async () => {
+    expect(await newestMergedBase('m2', 'reviewed', github, 1)).toBeUndefined();
   });
 });
 

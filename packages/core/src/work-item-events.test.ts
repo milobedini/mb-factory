@@ -105,6 +105,16 @@ describe('parseGitHubEvent', () => {
     });
   });
 
+  it('leaves out the default branch merged in, and its commits already in the repo', () => {
+    const repository = { full_name: 'milobedini/tastebook', default_branch: 'main' };
+    const merge = { id: 'm1', distinct: true, message: "Merge branch 'main' into tas-7-page-not-found" };
+    const fromMain = { id: 'b1', distinct: false, message: 'Merge pull request #87 from milobedini/fix' };
+    expect(parseGitHubEvent('push', push({ repository, commits: [merge, fromMain] }))).toBeUndefined();
+    expect(
+      parseGitHubEvent('push', push({ repository, commits: [merge, fromMain, { id: 'a1', distinct: true }] }))
+    ).toMatchObject({ kind: 'human_push', commits: 1 });
+  });
+
   it('counts a force push that leaves no new commits', () => {
     expect(parseGitHubEvent('push', push({ forced: true, commits: [] }))).toMatchObject({ commits: 0 });
   });

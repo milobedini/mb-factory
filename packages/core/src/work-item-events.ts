@@ -31,7 +31,7 @@ const pushEventSchema = z.looseObject({
   forced: z.boolean().nullish(),
   repository: repositorySchema,
   sender: z.looseObject({ login: z.string().min(1), type: z.string() }),
-  commits: z.array(z.unknown()).nullish()
+  commits: z.array(z.looseObject({ distinct: z.boolean().nullish(), message: z.string().nullish() })).nullish()
 });
 
 const workflowRunEventSchema = z.looseObject({
@@ -161,7 +161,12 @@ export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEve
     return undefined;
   }
   const { ref, deleted, forced, repository, sender, commits } = parsed.data;
-  const count = commits?.length ?? 0;
+  // Commits already in the repo (the default branch's, brought in by a merge) and the merge that brings the default
+  // branch in, from a person's Update branch or the console's, aren't work on the branch.
+  const baseMerge = repository.default_branch ? `Merge branch '${repository.default_branch}' into ` : undefined;
+  const count = (commits ?? []).filter(
+    ({ distinct, message }) => distinct !== false && !(baseMerge && message?.startsWith(baseMerge))
+  ).length;
   // Anything landing on the default branch, a merge or a direct push, can make open PRs conflict.
   if (!deleted && repository.default_branch && ref === `${BRANCH_REF}${repository.default_branch}`) {
     return { kind: 'default_branch_moved', repository: repository.full_name, branch: repository.default_branch };

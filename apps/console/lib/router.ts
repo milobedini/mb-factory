@@ -102,6 +102,7 @@ import {
   modelFor,
   movedOnLine,
   neutraliseMarkdown,
+  newestMergedBase,
   nextStepAfterRun,
   notAllowedText,
   notAllowedToStartText,
@@ -148,6 +149,7 @@ import {
   SPEC_GATE_GONE,
   STOPPED_RESPONSE,
   settleReadyMessage,
+  shouldBringUpToDate,
   shouldMoveIssue,
   shouldResume,
   shouldRetry,
@@ -199,6 +201,7 @@ import { requireEnv } from './env';
 import { fileFollowUps, fileRequestedIssues } from './follow-ups';
 import {
   approvePull,
+  behindBy,
   branchChecks,
   branchContains,
   cancelActionsRun,
@@ -207,6 +210,7 @@ import {
   commitRuns,
   compareFiles,
   defaultBranch,
+  mergeBaseIntoBranch,
   mergePull,
   openPullsWithHead,
   pullFiles,
@@ -446,8 +450,14 @@ const branchMovedAt = async (repository: string, branch: string): Promise<Date |
 type ConflictCheck = 'clean' | 'fixing' | 'handed_over' | 'left';
 
 // A delivered PR that no longer merges goes back to implement, once for each state of its base branch, then to a
-// person. A PR GitHub can't decide on yet counts as clean: the next push to the base branch or the gate asks again.
-const checkConflict = async (project: FactoryConfig, workItem: WorkItem): Promise<ConflictCheck> => {
+// person; one waiting at the merge gate that merges cleanly but is behind is brought up to date. A PR GitHub can't
+// decide on yet counts as clean: the next push to the base branch or the gate asks again. `stage` is where the work
+// item is now, which the caller may have just moved it to.
+const checkConflict = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  stage: Stage = workItem.stage
+): Promise<ConflictCheck> => {
   const { prNumber } = workItem;
   if (!prNumber) {
     return 'clean';
@@ -458,6 +468,9 @@ const checkConflict = async (project: FactoryConfig, workItem: WorkItem): Promis
   });
   if (state?.mergeable === null) {
     log('warn', 'merge state unknown', { issue: workItem.issueIdentifier, pr: prNumber });
+  }
+  if (state) {
+    await bringUpToDate(workItem, { stage, ...state });
   }
   if (state?.mergeable !== false) {
     return 'clean';
@@ -494,6 +507,38 @@ const checkConflict = async (project: FactoryConfig, workItem: WorkItem): Promis
   return 'left';
 };
 
+// Merges the base branch into a PR waiting at the merge gate that's behind it, with no run: the gate takes the new head
+// while the PR's changes stay as reviewed (`acceptedHead`), and CI checks it before anyone can merge. Saves an implement
+// run to merge the base and a review of a merge that changed nothing the PR does.
+const bringUpToDate = (
+  workItem: WorkItem,
+  { stage, mergeable, base }: { stage: Stage; mergeable: boolean | null; base: string }
+) => {
+  const { prNumber, branch, repository } = workItem;
+  return prNumber && branch && stage === 'awaiting_merge' && mergeable
+    ? attempt('bring up to date', { issue: workItem.issueIdentifier, pr: prNumber }, async () => {
+        const [openRuns, behind] = await Promise.all([
+          getDb()
+            .select({ id: runs.id })
+            .from(runs)
+            .where(and(eq(runs.workItemId, workItem.id), inArray(runs.status, OPEN_STATUSES))),
+          behindBy(repository, branch, base)
+        ]);
+        if (!shouldBringUpToDate({ stage, openRuns: openRuns.length, mergeable, behindBy: behind })) {
+          return;
+        }
+        const merged = await mergeBaseIntoBranch(repository, branch, base);
+        log('info', 'brought up to date', { issue: workItem.issueIdentifier, pr: prNumber, base, behind, merged });
+        if (merged) {
+          await postActivity(workItem, {
+            type: 'thought',
+            body: `Merged ${base} into PR #${prNumber} to bring it up to date; it can merge once its checks pass.`
+          });
+        }
+      })
+    : undefined;
+};
+
 // The review's threads, settled by the time nothing is left to decide, would otherwise hold the merge where the repo
 // requires resolved conversations.
 const resolveReviewThreads = (workItem: WorkItem) => {
@@ -513,7 +558,8 @@ const resolveReviewThreads = (workItem: WorkItem) => {
 const enterMergeGate = async (project: FactoryConfig, workItem: WorkItem, asking: boolean): Promise<void> => {
   if (
     !asking &&
-    ((await checkConflict(project, workItem)) === 'fixing' || (await checkFailedChecks(project, workItem)) === 'fixing')
+    ((await checkConflict(project, workItem, 'awaiting_merge')) === 'fixing' ||
+      (await checkFailedChecks(project, workItem)) === 'fixing')
   ) {
     return;
   }
@@ -1115,7 +1161,7 @@ const keepReviewedPr = async (
   const text = keptText(round, from.via === 'slack' ? `by ${from.name} in Slack` : 'in Linear');
   const { prNumber } = workItem;
   log('info', 'review decisions kept the PR', { issue: workItem.issueIdentifier });
-  const merging = (await checkConflict(project, workItem)) === 'fixing';
+  const merging = (await checkConflict(project, workItem, 'awaiting_merge')) === 'fixing';
   // A failing check is only reported here: the answers may have been to merge with it, or to re-run it as flaky.
   const failures = merging ? [] : await headFailures(workItem);
   const rerunning = review.rerun && failures.length > 0 && (await rerunChecks(workItem, failures));
@@ -2817,7 +2863,8 @@ const branchHeadBefore = async (repository: string, branch: string, before: Date
 };
 
 // The commit the merge gate waits on: the branch's head when the last review started (what it checked out), or, after
-// a conflict fix that changed only lockfiles, when that fix finished. Null when it can't be told, so nothing merges.
+// a conflict fix that changed only lockfiles, when that fix finished; or a head that has only merged the default branch
+// into it since. Null when it can't be told, so nothing merges.
 const acceptedHead = async (workItem: WorkItem): Promise<string | null> => {
   const { repository, branch } = workItem;
   const [latest] = await getDb()
@@ -2829,22 +2876,22 @@ const acceptedHead = async (workItem: WorkItem): Promise<string | null> => {
   if (!branch || !latest) {
     return null;
   }
-  if (latest.agent === 'review') {
-    return branchHeadBefore(repository, branch, latest.createdAt);
-  }
-  return latest.agent === 'implement' && latest.trigger === 'conflict' && latest.finishedAt
-    ? branchHeadBefore(repository, branch, latest.finishedAt)
-    : null;
+  const anchor =
+    latest.agent === 'review'
+      ? await branchHeadBefore(repository, branch, latest.createdAt)
+      : latest.agent === 'implement' && latest.trigger === 'conflict' && latest.finishedAt
+        ? await branchHeadBefore(repository, branch, latest.finishedAt)
+        : null;
+  // The console merges the default branch into a PR waiting here (`bringUpToDate`); the merge gate takes that head too.
+  return anchor && ((await headKeepingReviewedChanges(workItem, anchor)) ?? anchor);
 };
 
 // After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a
 // limit-hit run, free its slot.
 const LOCKFILE_GATE_TEXT = 'Only lockfiles conflicted, so it’s back at the merge gate without another review.';
 
-// Whether a conflict fix changed only lockfiles, from GitHub's record rather than the run's report: the PR's last
-// review accepted it, the PR still targets the default branch, the new head merges a commit already on it into exactly the commit that review saw
-// (the branch's last push before it, from the webhooks), and apart from lockfiles the PR's changes are the reviewed
-// ones. A lockfile's contents aren't checked here: its manifest is, and CI installs from it.
+// Whether a conflict fix changed only lockfiles: the PR's last review accepted it, and the head keeps the changes that
+// review saw (the branch's last push before it, from the webhooks), with only the default branch merged in.
 const lockfileOnlyMerge = async (
   run: { agent: AgentRole; trigger: RunTrigger; createdAt: Date },
   workItem: WorkItem
@@ -2873,29 +2920,41 @@ const lockfileOnlyMerge = async (
   if (!reviewed) {
     return false;
   }
+  return (await headKeepingReviewedChanges(workItem, reviewed)) !== null;
+};
+
+// The PR's head when it only merges the default branch into `reviewed`, from GitHub's record rather than a run's
+// report: the PR still targets the default branch, each commit from the head back to `reviewed` merges a commit already
+// on it (`newestMergedBase`), and apart from lockfiles the PR's changes are the reviewed ones. Null otherwise, or when
+// the head is `reviewed` itself. A lockfile's contents aren't checked: its manifest is, and CI installs from it.
+const headKeepingReviewedChanges = async (workItem: WorkItem, reviewed: string): Promise<string | null> => {
+  const { prNumber, repository } = workItem;
+  if (!prNumber) {
+    return null;
+  }
   try {
     const [pull, mainBranch] = await Promise.all([pullHead(repository, prNumber), defaultBranch(repository)]);
     const { head } = pull;
-    const [firstParent, base, ...more] = await commitParents(repository, head);
-    // Factory PRs target the default branch, and the merged-in parent must already be on it, or code in it would never
-    // be compared. A PR retargeted elsewhere is reviewed.
-    if (
-      pull.base !== mainBranch ||
-      firstParent !== reviewed ||
-      !base ||
-      more.length > 0 ||
-      !(await branchContains(repository, mainBranch, base))
-    ) {
-      return false;
+    // Factory PRs target the default branch, and the merged-in parents must already be on it, or code in them would
+    // never be compared. A PR retargeted elsewhere is reviewed.
+    const base =
+      pull.base === mainBranch
+        ? await newestMergedBase(head, reviewed, {
+            parents: (sha) => commitParents(repository, sha),
+            onBase: (sha) => branchContains(repository, mainBranch, sha)
+          })
+        : undefined;
+    if (!base) {
+      return null;
     }
     const [before, after] = await Promise.all([
       compareFiles(repository, base, reviewed),
       compareFiles(repository, base, head)
     ]);
-    return before !== undefined && after !== undefined && onlyLockfilesChanged(before, after);
+    return before !== undefined && after !== undefined && onlyLockfilesChanged(before, after) ? head : null;
   } catch (error) {
-    log('warn', 'lockfile-only check failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
-    return false;
+    log('warn', 'reviewed changes check failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return null;
   }
 };
 

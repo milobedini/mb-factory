@@ -345,6 +345,32 @@ export const branchContains = async (repository: string, branch: string, sha: st
   return status === 'ahead' || status === 'identical';
 };
 
+// How many commits `base` has that `branch` doesn't.
+export const behindBy = async (repository: string, branch: string, base: string): Promise<number> =>
+  (
+    await githubGet<{ ahead_by: number }>(
+      `/repos/${repository}/compare/${encodeURIComponent(branch)}...${encodeURIComponent(base)}`,
+      'compare'
+    )
+  ).ahead_by;
+
+// Merges `base` into `branch` with a merge commit, as GitHub's Update branch does, and under its message so the push
+// isn't counted as a person's work. False when it conflicts.
+export const mergeBaseIntoBranch = async (repository: string, branch: string, base: string): Promise<boolean> => {
+  const response = await githubRequest(`/repos/${repository}/merges`, {
+    base: branch,
+    head: base,
+    commit_message: `Merge branch '${base}' into ${branch}`
+  });
+  if (response.status === 201 || response.status === 204) {
+    return true;
+  }
+  if (response.status === 409) {
+    return false;
+  }
+  throw await failure('merge of the base branch', response);
+};
+
 export const commitParents = async (repository: string, sha: string): Promise<string[]> =>
   (await githubGet<{ parents: { sha: string }[] }>(`/repos/${repository}/commits/${sha}`, 'commit')).parents.map(
     (parent) => parent.sha
