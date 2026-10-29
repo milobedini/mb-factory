@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** build the design stage in the agreed order (29 Oct): (1) the spec writes `design: needed` or `design: skip (<why>)` with the components it expects, read by core; (2) Design and Design Review statuses and router steps; (3) the design routine and a design skill in the factory plugin; (4) the Design Review card; (5) hand-off, committing HTML and PNG boards and filing blocking `dino` issues; (6) the `dino` labeler and rubric; (7) rebuilding the Dino Design System; start with (1).
+**Next:** build step 2 of the design stage, the Design and Design Review statuses and the router steps that send an approved spec marked `needed` to Design (step 1, the spec's design call, shipped 29 Oct and is only logged); the order agreed on 29 Oct is (1) the spec's call, (2) statuses and router steps, (3) the design routine and a design skill in the factory plugin, (4) the Design Review card, (5) hand-off, committing HTML and PNG boards and filing blocking `dino` issues, (6) the `dino` labeler and rubric, (7) rebuilding the Dino Design System.
 
 **Direction, in order:** the design stage and the Dino project (below), so the Accounts and households PRD is the first feature designed through it; then that PRD and slicing it; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
@@ -331,6 +331,7 @@ Learnt the hard way; each would bite again.
 Built but not yet seen working; delete each line once seen.
 
 - **Fri 30 Oct morning:** the wake-ups collapse to one: the copies booked before `a255969` still arrive at 05:52 and 06:00, then one `woke` a slot (count them in the logs), with one governor probe each at about 05:52 and 06:22; the backup ran near 02:17 (29 Oct's hadn't run by 07:40 and was dispatched by hand); a `morning ready list` line beside the Ready message (29 Oct's message posted, but the line was missing).
+- **Design call:** the next Tastebook spec (TAS-72 to 74 likely first) writes `Design: needed | skip — <why>` under Evidence, says it in the approval message, and approval logs `spec design` with the call; Storybook and the token move should be `skip`, as `docs/design.md` and the boards already decide them.
 - **Mon 2 Nov:** the weekly security and docs passes from their own slots (05:00, 05:30).
 - **Runs:** a timeout saying "ran out of time" and waiting with Re-run; a stopped card reading Stopped with Re-run; a stale Re-run button re-running the latest run; a held run with no `slack card failed` burst; a usage hold booking its wake and starting soon after the reset; a lapse wake firing; a `limit_hit` resume; Linear's stop signal; a human push counted in `human_pushes`.
 - **Work items:** an undelegated item reading Not delegated and leaving the Inbox; the Blocked label going on and off; the health check flagging a stuck run.
