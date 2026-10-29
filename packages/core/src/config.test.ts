@@ -127,6 +127,28 @@ describe('jobs', () => {
   });
 });
 
+describe('design', () => {
+  it('reads the design routine and the Design System it draws with, which is optional', () => {
+    expect(parseFactoryConfig(tastebookConfig).design).toEqual({
+      routine: 'trig_015ytNVnxYsCys81Mnm6A8N4',
+      system: {
+        url: 'https://claude.ai/artifact/Log29Ws2J3fTumoXaxVr1C',
+        build: 'pnpm dino:bundle',
+        out: 'frontend/dino-bundle'
+      }
+    });
+    const without = tastebookConfig.replace(/ {2}system:\n( {4}.+\n)+/, '');
+    expect(parseFactoryConfig(without).design).toEqual({ routine: 'trig_015ytNVnxYsCys81Mnm6A8N4' });
+  });
+
+  it('rejects an output folder outside the repository', () => {
+    expect(() =>
+      parseFactoryConfig(tastebookConfig.replace('out: frontend/dino-bundle', 'out: ../dino-bundle'))
+    ).toThrow(/out/);
+    expect(() => parseFactoryConfig(tastebookConfig.replace('out: frontend/dino-bundle', 'out: /tmp'))).toThrow(/out/);
+  });
+});
+
 describe('health', () => {
   it('reads the daily health check, and has none when it is left out', () => {
     expect(parseFactoryConfig(tastebookConfig).health).toEqual({ at: '07:00' });

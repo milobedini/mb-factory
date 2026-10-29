@@ -13,6 +13,9 @@ const isTimeZone = (zone: string): boolean => {
   }
 };
 
+// A file path inside a repository, from its root.
+const repositoryPath = z.string().regex(/^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[\w./-]+$/);
+
 const githubLogin = z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/);
 
 // A job's daily slot, as a 24-hour time in the project's time zone.
@@ -70,7 +73,21 @@ export const factoryConfigSchema = z
       .min(1),
     // The claude.ai routine that runs the design stage, by its trigger ID; its token is the console's
     // `DESIGN_ROUTINE_TOKEN`. With the Design and Design Review statuses, it turns the design stage on.
-    design: z.object({ routine: z.string().regex(/^trig_[A-Za-z0-9]+$/) }).optional(),
+    design: z
+      .object({
+        routine: z.string().regex(/^trig_[A-Za-z0-9]+$/),
+        // The project's Design System artifact on claude.ai, which seeds every canvas. A design run rebuilds its files
+        // from the default branch with `build`, run at the repository root, which writes them under `out/project/`,
+        // and republishes them when the artifact is behind.
+        system: z
+          .object({
+            url: z.string().regex(/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9_-]{1,64}$/),
+            build: z.string().min(1),
+            out: repositoryPath
+          })
+          .optional()
+      })
+      .optional(),
     linear: z.object({
       teamKey: z.string().min(1),
       statuses: z.object({

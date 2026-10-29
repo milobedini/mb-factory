@@ -79,6 +79,8 @@ export type DesignBrief = {
   // The canvas an earlier round drew, to revise rather than start again.
   canvas: string | null;
   design: SpecDesign | null;
+  // The project's Design System artifact, to bring up to date and draw with.
+  designSystem: { url: string; build: string; out: string } | null;
 };
 
 export const designFireText = (brief: DesignBrief): string =>

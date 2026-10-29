@@ -9,9 +9,14 @@ repositories:
       - milobedini
 
 # The design stage: a spec that says `Design: needed` is drawn on a claude.ai canvas by this routine before implement
-# (plugin/agents/design.md). Its token is the console's DESIGN_ROUTINE_TOKEN.
+# (plugin/agents/design.md). Its token is the console's DESIGN_ROUTINE_TOKEN. Canvases draw with the Dino Design
+# System, which a design run rebuilds from main with `build` and republishes when it's behind.
 design:
   routine: trig_015ytNVnxYsCys81Mnm6A8N4
+  system:
+    url: https://claude.ai/artifact/Log29Ws2J3fTumoXaxVr1C
+    build: pnpm dino:bundle
+    out: frontend/dino-bundle
 
 linear:
   teamKey: TAS

@@ -611,7 +611,8 @@ const startDesignRun = async (project: FactoryConfig, found: RunWithWorkItem, no
     trigger: run.trigger,
     prompt: run.prompt,
     canvas: latestCanvas(designs),
-    design: latestSpecDesign(specs)
+    design: latestSpecDesign(specs),
+    designSystem: project.design.system ?? null
   });
   const fired = await fireRoutine(project.design.routine, text).catch(async (error: unknown) => {
     await failDispatch(found, error, now, 'claude.ai');

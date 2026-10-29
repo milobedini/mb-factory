@@ -135,7 +135,12 @@ describe('designFireText', () => {
       trigger: 'spec_approved',
       prompt: null,
       canvas: null,
-      design: { needed: true, why: 'A new screen.', components: [{ name: 'Avatar', change: 'new' }] }
+      design: { needed: true, why: 'A new screen.', components: [{ name: 'Avatar', change: 'new' }] },
+      designSystem: {
+        url: 'https://claude.ai/artifact/Log29Ws2J3fTumoXaxVr1C',
+        build: 'pnpm dino:bundle',
+        out: 'frontend/dino-bundle'
+      }
     } satisfies DesignBrief;
     const text = designFireText(brief);
     expect(text.startsWith('mb-factory design run.')).toBe(true);
