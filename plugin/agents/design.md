@@ -58,6 +58,6 @@ with `REPORT_URL` and `PASS` from the brief, and `report.json` holding `{ "repor
 - `outcome`: `"needs_input"` once the canvas is ready for review; `"done"` once a hand-off's files are sent; `"blocked"` when something outside the design must change first (say what and where); `"failed"` when you couldn't finish (say why).
 - `summary`: for review (a hand-off says what it sent), what the person will see in Linear and Slack, starting with the canvas link: "Design ready for review: <canvas URL>. <The boards in one line; each decision and proposed rule change in one line.> Reply Approve, or Approve: <suggestions>, or say what to change, or Back to spec if the spec itself needs changing." Write as one factory: "I've drawn…".
 - `canvas`: the canvas URL.
-- `components`: each component the design uses that's new or changed, as `{ "name": "Avatar", "change": "new" }`.
+- `components`: each component the design uses that's new or changed, as `{ "name": "Avatar", "change": "new" }`. Leave out a component the issue exists to build (its title or goal names it, as in "Add a switch to Dino"): it's built in this issue's PR, and a `new` one listed here is filed as its own issue that blocks this one.
 
 If the request fails, try it once more, then say so in the session.
