@@ -23,6 +23,7 @@ import {
   formatReleaseAt,
   governDispatch,
   linearStatusFor,
+  madeOnlyBy,
   metEveryCriterion,
   modelFor,
   neverStarted,
@@ -1213,6 +1214,31 @@ describe('newestMergedBase', () => {
 
   it('stops after the limit of merges', async () => {
     expect(await newestMergedBase('m2', 'reviewed', github, 1)).toBeUndefined();
+  });
+});
+
+describe('madeOnlyBy', () => {
+  // reviewed ← c1 ← c2 (both the console's merges); reviewed ← p1 (a person's merge) ← c3 (the console's)
+  const graph: Record<string, string[]> = {
+    c2: ['c1', 'b2'],
+    c1: ['reviewed', 'b1'],
+    c3: ['p1', 'b3'],
+    p1: ['reviewed', 'b2']
+  };
+  const github = {
+    parents: async (sha: string) => graph[sha] ?? [],
+    made: (sha: string) => ['c1', 'c2', 'c3'].includes(sha)
+  };
+
+  it('holds when every commit down to the reviewed one is a merge the console made', async () => {
+    expect(await madeOnlyBy('c1', 'reviewed', github)).toBe(true);
+    expect(await madeOnlyBy('c2', 'reviewed', github)).toBe(true);
+  });
+
+  it('fails past a commit the console did not make, for the reviewed commit itself, or past the limit', async () => {
+    expect(await madeOnlyBy('c3', 'reviewed', github)).toBe(false);
+    expect(await madeOnlyBy('reviewed', 'reviewed', github)).toBe(false);
+    expect(await madeOnlyBy('c2', 'reviewed', github, 1)).toBe(false);
   });
 });
 

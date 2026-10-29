@@ -555,6 +555,27 @@ export const newestMergedBase = async (
   return walk(head, limit, undefined);
 };
 
+// Whether `head` sits on `reviewed` only through merge commits the console made itself (`made`), following first
+// parents. GitHub computed each of those merges, so nothing in them went unreviewed, whatever files the base shares.
+export const madeOnlyBy = async (
+  head: string,
+  reviewed: string,
+  { parents, made }: { parents: (sha: string) => Promise<string[]>; made: (sha: string) => boolean },
+  limit = MAX_BASE_MERGES
+): Promise<boolean> => {
+  const walk = async (sha: string, steps: number): Promise<boolean> => {
+    if (sha === reviewed) {
+      return steps < limit;
+    }
+    if (steps === 0 || !made(sha)) {
+      return false;
+    }
+    const [first] = await parents(sha);
+    return first !== undefined && walk(first, steps - 1);
+  };
+  return walk(head, limit);
+};
+
 // Two runs that finish close together (a conflict fix and an answer's revision) can each hand on to the same stage. A
 // verify or review already queued works on the PR's head when it starts, so a second would only repeat it; and with an
 // implement run queued, that run hands on once it's done, so one review sees both changes.

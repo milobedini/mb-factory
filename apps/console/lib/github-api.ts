@@ -354,19 +354,27 @@ export const behindBy = async (repository: string, branch: string, base: string)
     )
   ).ahead_by;
 
-// Merges `base` into `branch` with a merge commit, as GitHub's Update branch does, and under its message so the push
-// isn't counted as a person's work. False when it conflicts.
-export const mergeBaseIntoBranch = async (repository: string, branch: string, base: string): Promise<boolean> => {
+// Merges `base` into `branch` with a merge commit GitHub computes, as its Update branch does, and under its message so
+// the push isn't counted as a person's work. The new commit, or why there isn't one.
+export const mergeBaseIntoBranch = async (
+  repository: string,
+  branch: string,
+  base: string
+): Promise<{ sha: string } | 'up_to_date' | 'conflict'> => {
   const response = await githubRequest(`/repos/${repository}/merges`, {
     base: branch,
     head: base,
     commit_message: `Merge branch '${base}' into ${branch}`
   });
-  if (response.status === 201 || response.status === 204) {
-    return true;
+  if (response.status === 201) {
+    const { sha } = (await response.json()) as { sha: string };
+    return { sha };
+  }
+  if (response.status === 204) {
+    return 'up_to_date';
   }
   if (response.status === 409) {
-    return false;
+    return 'conflict';
   }
   throw await failure('merge of the base branch', response);
 };

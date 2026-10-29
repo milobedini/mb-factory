@@ -93,6 +93,7 @@ import {
   linearSlackReplyText,
   linearStatusFor,
   MAX_READY_ROWS,
+  madeOnlyBy,
   mentioning,
   mergeButton,
   mergedLine,
@@ -200,6 +201,7 @@ import {
 } from './ask-runs';
 import { designPass } from './design-pass';
 import { requireEnv } from './env';
+import { recordEvent } from './events';
 import { fileFollowUps, fileRequestedIssues } from './follow-ups';
 import {
   approvePull,
@@ -472,7 +474,7 @@ const checkConflict = async (
     log('warn', 'merge state unknown', { issue: workItem.issueIdentifier, pr: prNumber });
   }
   if (state) {
-    await bringUpToDate(workItem, { stage, ...state });
+    await bringUpToDate(project, workItem, { stage, ...state });
   }
   if (state?.mergeable !== false) {
     return 'clean';
@@ -513,6 +515,7 @@ const checkConflict = async (
 // while the PR's changes stay as reviewed (`acceptedHead`), and CI checks it before anyone can merge. Saves an implement
 // run to merge the base and a review of a merge that changed nothing the PR does.
 const bringUpToDate = (
+  project: FactoryConfig,
   workItem: WorkItem,
   { stage, mergeable, base }: { stage: Stage; mergeable: boolean | null; base: string }
 ) => {
@@ -531,12 +534,21 @@ const bringUpToDate = (
         }
         const merged = await mergeBaseIntoBranch(repository, branch, base);
         log('info', 'brought up to date', { issue: workItem.issueIdentifier, pr: prNumber, base, behind, merged });
-        if (merged) {
-          await postActivity(workItem, {
-            type: 'thought',
-            body: `Merged ${base} into PR #${prNumber} to bring it up to date; it can merge once its checks pass.`
-          });
+        if (typeof merged === 'string') {
+          return;
         }
+        // The merge gate takes a head made of merges recorded here without comparing files (`acceptedHead`).
+        await recordEvent({
+          source: 'github',
+          deliveryId: `base-merge:${merged.sha}`,
+          type: BASE_MERGE_EVENT,
+          payload: { repository, branch, sha: merged.sha }
+        });
+        const text = `Merged ${base} into PR #${prNumber} (${behind} new ${behind === 1 ? 'commit' : 'commits'}) to bring it up to date, as it must be to merge. Approve and merge works once its checks pass; no new review is needed.`;
+        await Promise.all([
+          postActivity(workItem, { type: 'thought', body: text }),
+          replyInThread(project, workItem, text)
+        ]);
       })
     : undefined;
 };
@@ -2884,9 +2896,16 @@ const acceptedHead = async (workItem: WorkItem): Promise<string | null> => {
       : latest.agent === 'implement' && latest.trigger === 'conflict' && latest.finishedAt
         ? await branchHeadBefore(repository, branch, latest.finishedAt)
         : null;
-  // The console merges the default branch into a PR waiting here (`bringUpToDate`); the merge gate takes that head too,
-  // lockfiles included, since anyone who can push could make such a merge.
-  return anchor && ((await headKeepingReviewedChanges(workItem, anchor, sameChanges)) ?? anchor);
+  if (!anchor) {
+    return null;
+  }
+  // The console merges the default branch into a PR waiting here (`bringUpToDate`): the gate takes a head reached only
+  // through those merges, or else one whose changes, lockfiles included, are exactly the reviewed ones.
+  return (
+    (await headMadeByConsole(workItem, anchor)) ??
+    (await headKeepingReviewedChanges(workItem, anchor, sameChanges)) ??
+    anchor
+  );
 };
 
 // After a run reports: close the session if the agent didn't, mirror to Slack, start the next stage or resume a
@@ -2925,6 +2944,40 @@ const lockfileOnlyMerge = async (
     return false;
   }
   return (await headKeepingReviewedChanges(workItem, reviewed, onlyLockfilesChanged)) !== null;
+};
+
+const BASE_MERGE_EVENT = 'base_merge';
+
+// The PR's head when every commit from it back to `reviewed` is a merge of the base the console made and recorded.
+const headMadeByConsole = async (workItem: WorkItem, reviewed: string): Promise<string | null> => {
+  const { prNumber, repository, branch } = workItem;
+  if (!prNumber || !branch) {
+    return null;
+  }
+  try {
+    const [{ head }, recorded] = await Promise.all([
+      pullHead(repository, prNumber),
+      getDb()
+        .select({ sha: sql<string>`${events.payload}->>'sha'` })
+        .from(events)
+        .where(
+          and(
+            eq(events.type, BASE_MERGE_EVENT),
+            sql`${events.payload}->>'repository' = ${repository}`,
+            sql`${events.payload}->>'branch' = ${branch}`
+          )
+        )
+    ]);
+    const made = new Set(recorded.map(({ sha }) => sha));
+    const only = await madeOnlyBy(head, reviewed, {
+      parents: (sha) => commitParents(repository, sha),
+      made: (sha) => made.has(sha)
+    });
+    return only ? head : null;
+  } catch (error) {
+    log('warn', 'console merges check failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return null;
+  }
 };
 
 // The PR's head when it only merges the default branch into `reviewed`, from GitHub's record rather than a run's

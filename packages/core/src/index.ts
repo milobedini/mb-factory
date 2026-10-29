@@ -286,6 +286,7 @@ export {
   MAX_BASE_MERGES,
   MAX_CI_FIXES,
   MAX_CONFLICT_FIXES,
+  madeOnlyBy,
   metEveryCriterion,
   modelFor,
   neverStarted,
