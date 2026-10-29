@@ -75,6 +75,7 @@ import {
   isOpenRun,
   isReadyRequest,
   keptText,
+  latestSpecDesign,
   latestSpecParts,
   linearSlackReplyText,
   linearStatusFor,
@@ -1604,19 +1605,29 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
     await attempt('slack reaction', { issue: workItem.issueIdentifier }, () => addSlackReaction(channel, ts, 'eyes'));
   }
   if (request.trigger === 'spec_approved') {
-    await attempt('spec parts', { issue: workItem.issueIdentifier }, () => fileSpecParts(project, workItem));
+    await attempt('spec parts', { issue: workItem.issueIdentifier }, async () => {
+      const reports = await specReports(workItem);
+      // Nothing routes on the design call yet: it's logged so the calls can be checked before the design stage does.
+      log('info', 'spec design', { issue: workItem.issueIdentifier, design: latestSpecDesign(reports) });
+      await fileSpecParts(project, workItem, reports);
+    });
   }
 };
 
-// A spec that split its work: once approved, its later parts become sub-issues, each posted to delegate when the one
-// before it merges.
-const fileSpecParts = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
+// The reports of a work item's finished spec runs, newest first.
+const specReports = async (workItem: WorkItem): Promise<unknown[]> => {
   const specs = await getDb()
     .select({ report: runs.report })
     .from(runs)
     .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'spec'), eq(runs.status, 'finished')))
     .orderBy(desc(runs.createdAt));
-  const parts = latestSpecParts(specs.map(({ report }) => report));
+  return specs.map(({ report }) => report);
+};
+
+// A spec that split its work: once approved, its later parts become sub-issues, each posted to delegate when the one
+// before it merges.
+const fileSpecParts = async (project: FactoryConfig, workItem: WorkItem, reports: unknown[]): Promise<void> => {
+  const parts = latestSpecParts(reports);
   if (parts.length === 0) {
     return;
   }

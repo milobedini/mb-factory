@@ -21,7 +21,7 @@ Use the repo's `specs/_template.md` when it exists, keeping its headings and ord
 ## Parts
 
 - **Required reading** (first): `AGENTS.md`, the lessons that apply, and each canonical file the implementer should mirror, one line on why.
-- **Summary**: what is built or fixed and why, in one short paragraph. Then `Evidence: feature | bug | chore — <why>`, decided by what users in production will see, not by the issue's type.
+- **Summary**: what is built or fixed and why, in one short paragraph. Then `Evidence: feature | bug | chore — <why>`, decided by what users in production will see, not by the issue's type. In a repo with `docs/design.md`, then `Design: needed | skip — <why>`, the call the `spec` agent makes, and when needed, the components it expects: `Components: Avatar (new), Button (changed: lg size)`.
 - **Behaviours** (product behaviour): one per acceptance criterion, in the same order, each a true-or-false claim of about 12 words about what someone can do or see. Split by behaviour, never by file or layer. A refactor's single claim is "Nothing a caller sees changes."
 - **Technical design**: how the area works today, what changes, the data flow, with `path:line` references.
 - **Decisions**: every real decision point: the options, the trade-off, why the winner won. A decision a human made ends `Asked: <question, short> → <answer>`. The implement stage copies these into the PR.
@@ -38,6 +38,7 @@ Use the repo's `specs/_template.md` when it exists, keeping its headings and ord
 
 Issue: <Linear URL>
 Evidence: <feature | bug | chore> — <why>
+Design: <needed | skip> — <why>   (only with docs/design.md)
 
 ## Required reading
 ## Summary

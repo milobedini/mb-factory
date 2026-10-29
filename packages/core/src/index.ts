@@ -80,6 +80,8 @@ export {
 } from './dashboard';
 export type { Bump, DependencyPr, DependencyWork } from './dependencies';
 export { DEPENDABOT_LOGIN, dependencyIssue, dependencyTakenText, isMajorBump, readBump } from './dependencies';
+export type { ComponentChange, SpecComponent, SpecDesign } from './design';
+export { COMPONENT_CHANGES, latestSpecDesign, readSpecDesign } from './design';
 export type { FollowUpContext, RequestedContext, RequestedIssue } from './follow-ups';
 export { filedFollowUpsText, followUpIssue, readRequestedIssues, requestedIssue } from './follow-ups';
 export type { Gate } from './gates';
