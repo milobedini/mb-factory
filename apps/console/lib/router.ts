@@ -522,6 +522,11 @@ const bringUpToDate = (
   const { prNumber, branch, repository } = workItem;
   return prNumber && branch && stage === 'awaiting_merge' && mergeable !== false
     ? attempt('bring up to date', { issue: workItem.issueIdentifier, pr: prNumber }, async () => {
+        // Only the default branch is merged in: a PR retargeted at another branch would bring that branch's code past
+        // review.
+        if (base !== (await defaultBranch(repository))) {
+          return;
+        }
         const [openRuns, behind] = await Promise.all([
           getDb()
             .select({ id: runs.id })
@@ -542,7 +547,7 @@ const bringUpToDate = (
           source: 'github',
           deliveryId: `base-merge:${merged.sha}`,
           type: BASE_MERGE_EVENT,
-          payload: { repository, branch, sha: merged.sha }
+          payload: { repository, branch, base, sha: merged.sha }
         });
         const text = `Merged ${base} into PR #${prNumber} (${behind} new ${behind === 1 ? 'commit' : 'commits'}) to bring it up to date, as it must be to merge. Approve and merge works once its checks pass; no new review is needed.`;
         await Promise.all([
@@ -2948,26 +2953,30 @@ const lockfileOnlyMerge = async (
 
 const BASE_MERGE_EVENT = 'base_merge';
 
-// The PR's head when every commit from it back to `reviewed` is a merge of the base the console made and recorded.
+// The PR's head when every commit from it back to `reviewed` is a merge of the default branch the console made and
+// recorded, and the PR still targets the default branch.
 const headMadeByConsole = async (workItem: WorkItem, reviewed: string): Promise<string | null> => {
   const { prNumber, repository, branch } = workItem;
   if (!prNumber || !branch) {
     return null;
   }
   try {
-    const [{ head }, recorded] = await Promise.all([
-      pullHead(repository, prNumber),
-      getDb()
-        .select({ sha: sql<string>`${events.payload}->>'sha'` })
-        .from(events)
-        .where(
-          and(
-            eq(events.type, BASE_MERGE_EVENT),
-            sql`${events.payload}->>'repository' = ${repository}`,
-            sql`${events.payload}->>'branch' = ${branch}`
-          )
+    const [pull, mainBranch] = await Promise.all([pullHead(repository, prNumber), defaultBranch(repository)]);
+    if (pull.base !== mainBranch) {
+      return null;
+    }
+    const { head } = pull;
+    const recorded = await getDb()
+      .select({ sha: sql<string>`${events.payload}->>'sha'` })
+      .from(events)
+      .where(
+        and(
+          eq(events.type, BASE_MERGE_EVENT),
+          sql`${events.payload}->>'repository' = ${repository}`,
+          sql`${events.payload}->>'branch' = ${branch}`,
+          sql`${events.payload}->>'base' = ${mainBranch}`
         )
-    ]);
+      );
     const made = new Set(recorded.map(({ sha }) => sha));
     const only = await madeOnlyBy(head, reviewed, {
       parents: (sha) => commitParents(repository, sha),
