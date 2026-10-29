@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** once the user merges tastebook#68 (the `dino` labeler), move the Dino project through the factory (TAS-72 is in review), as step 7, rebuilding the Dino Design System from the code (see [Design stage and Dino](#design-stage-and-dino)), waits on TAS-73's tokens file; watch the first `dino` review and the first spec that calls for design under [To see live](#to-see-live).
+**Next:** once TAS-73 (Picnic tokens, which waits for TAS-86) merges, build step 7, rebuilding the Dino Design System from its tokens file (see [Design stage and Dino](#design-stage-and-dino)), then start the Accounts and households PRD while the Dino restyles go through the factory; watch the first `dino` review and the first spec that calls for design under [To see live](#to-see-live).
 
 **Direction, in order:** the design stage and the Dino project (below), so the Accounts and households PRD is the first feature designed through it; then that PRD and slicing it; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
