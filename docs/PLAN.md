@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** once the user merges tastebook#66 (TAS-85), check production holds 305 recipes, then start building the design stage by trying its two unknowns with a throwaway routine (does a cloud session see canvas comments sent to Claude; can it export PNGs of its boards) and propose the build order from the [Tastebook Design Flow page](https://claude.ai/artifact/M2hMHwchvFc7Pxpp8iVfY6)'s checklist (see [Design stage and Dino](#design-stage-and-dino)); Thursday 29 Oct's morning items under [To see live](#to-see-live) are still unchecked.
+**Next:** start building the design stage by trying its two unknowns with a throwaway routine (does a cloud session see canvas comments sent to Claude; can it export PNGs of its boards), then propose the build order from the [Tastebook Design Flow page](https://claude.ai/artifact/M2hMHwchvFc7Pxpp8iVfY6)'s checklist (see [Design stage and Dino](#design-stage-and-dino)); Thursday 29 Oct's morning items under [To see live](#to-see-live) are still unchecked.
 
 **Direction, in order:** the design stage and the Dino project (below), so the Accounts and households PRD is the first feature designed through it; then that PRD and slicing it; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
