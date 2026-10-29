@@ -363,7 +363,7 @@ export const decideVerify = (
     return { verify: false, skipped: reason };
   }
   return verifiedAt
-    ? { verify: false, skipped: `already verified at ${verifiedAt}, with every criterion met` }
+    ? { verify: false, skipped: `already verified at ${verifiedAt}, and nothing it checked was unmet` }
     : { verify: true };
 };
 

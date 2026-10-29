@@ -459,7 +459,7 @@ describe('decideVerify', () => {
   it('skips verify once an earlier run met every criterion, saying when', () => {
     expect(decideVerify(screen, ['frontend/src/app.tsx'], null, '15:24')).toEqual({
       verify: false,
-      skipped: 'already verified at 15:24, with every criterion met'
+      skipped: 'already verified at 15:24, and nothing it checked was unmet'
     });
   });
 
