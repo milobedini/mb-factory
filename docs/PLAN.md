@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** start building the design stage by trying its two unknowns with a throwaway routine (does a cloud session see canvas comments sent to Claude; can it export PNGs of its boards), then propose the build order from the [Tastebook Design Flow page](https://claude.ai/artifact/M2hMHwchvFc7Pxpp8iVfY6)'s checklist (see [Design stage and Dino](#design-stage-and-dino)); Thursday 29 Oct's morning items under [To see live](#to-see-live) are still unchecked.
+**Next:** once the user merges tastebook#66 (TAS-85), check production holds 305 recipes, then start building the design stage by trying its two unknowns with a throwaway routine (does a cloud session see canvas comments sent to Claude; can it export PNGs of its boards) and propose the build order from the [Tastebook Design Flow page](https://claude.ai/artifact/M2hMHwchvFc7Pxpp8iVfY6)'s checklist (see [Design stage and Dino](#design-stage-and-dino)); Thursday 29 Oct's morning items under [To see live](#to-see-live) are still unchecked.
 
 **Direction, in order:** the design stage and the Dino project (below), so the Accounts and households PRD is the first feature designed through it; then that PRD and slicing it; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
@@ -83,6 +83,7 @@ Choices whose reasons aren't in the code. Where the code says why, it isn't repe
 - **The console deploys through a deploy hook,** with Git deploys off (most pushes change only the plan, plugin or workflows).
 - **Pro's free domain went to Tastebook** (`tastebook.dev`, registered through Vercel, renews 27 Oct 2027), not the console, which is internal and would mean re-pointing every webhook.
 - **Secrets live in GitHub environments limited to `main`** (`factory`, `backups`); only `VERCEL_AUTOMATION_BYPASS_SECRET` is a repository secret, because the preview checks run on PR branches.
+- **Builds stay inside Pro** (29 Oct, after $25.71 beyond Pro's $20 usage credit in a day): every project, and the team default, on a fixed Standard machine with on-demand concurrent builds off. The team budget only alerts ($35 for the cycle that began 26 Oct, then $5): its pause stops every project on the team, client sites such as goodgate.tv included, so a pause limited to the factory's projects is in the [backlog](#factory-backlog).
 - **No `proxy.ts` in the console:** the Next 16 docs advise against it, so each page loader checks the session (behind `<Suspense>`) and each Server Action checks again; API routes keep their own auth.
 
 **Tastebook**
@@ -297,7 +298,8 @@ Learnt the hard way; each would bite again.
 - Services projects have no working `ignoreCommand`; a cancelled build still counts as a deployment; "skip unaffected projects" treats non-package folders as global changes.
 - A new production domain needs a production redeploy before redirecting to it (`VERCEL_PROJECT_PRODUCTION_URL` is fixed at deploy time); `DJANGO_ALLOWED_HOSTS` alone doesn't make a CSRF origin.
 - Protected previews redirect credential-less same-origin fetches to sign-in (it broke the Sentry tunnel's Lighthouse score). Standard Protection doesn't cover the production `*.vercel.app` alias. Toolbar settings apply only to new deployments.
-- A Python service must name its `entrypoint`; set `regions` at the top level (default `iad1`).
+- A Python service must name its `entrypoint`; set `regions` at the top level (default `iad1`). Builds run in `iad1` whatever `regions` says, so database work in a build pays a transatlantic round trip a query to Neon in London: the catalogue load's 9,000 queries timed every deploy out at 305 recipes (TAS-85).
+- Only a fixed Standard build machine with on-demand concurrent builds off is included in Pro; Elastic (the default for new teams), Basic, Enhanced, Turbo and on-demand concurrency bill per CPU minute. Elastic moves a project to Turbo (30 CPUs) after a build times out, so each hung 46-minute build cost about $4.80. A budget's pause stops every project on the team, each until resumed by hand.
 - Queues deduplicates on `idempotencyKey`, but wakes booked for different moments can arrive in a burst.
 - The first wake after a deploy fires the day's missed slot as a catch-up, which reports itself late.
 
@@ -342,6 +344,7 @@ mb-factory isn't a factory project yet, so its own follow-ups live here. Each is
 
 - **PRD flow:** start a project's PRD with a person in the loop and, on approval, file "Slice <project>". Open: drafted as a Linear document? steered by questions then a gate? which agent? does approval delegate the slice issue?
 - **Scheduled reliability:** dispatch Tastebook's backup from the console's scheduler if GitHub keeps dropping it; the health check lists failed scheduled runs but not missing ones, doesn't see project deploys, nothing reports the console being down, and a run stuck then cleared between checks goes unseen.
+- **Spend and deploys:** the health check flags any Vercel on-demand spend (`vercel usage`) and a failed production deploy (8 hours of failed Tastebook deploys went unseen on 29 Oct); the budget's webhook points at a console route that pauses only `tastebook` and `mb-factory-console` at 100%, leaving the rest of the team's sites up.
 - **Merge state:** re-check PRs whose merge state stays unknown (needs a record of which); make `merge state unknown` a warning only when it changes an outcome; a PR handed over for conflicts is told again on every later push to `main`, and the CI hand-over repeats on every later failure.
 - **Merge conflicts:** compare lockfile contents after an agent conflict fix (CI regenerates and fails on a difference); flag issues touching the same manifests in the Ready list; conflicts and their cost on the dashboard; union merge for `GLOSSARY.md`.
 - **Dependencies:** triage Dependabot majors before implement (check runtime versions, peer ranges, `AGENTS.md`); learn from an unmerged close (ask why, propose an ignore rule or a lesson).
