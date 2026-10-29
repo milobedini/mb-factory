@@ -134,6 +134,13 @@
       "when": 1793213214939,
       "tag": "0018_undelegated",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793259889649,
+      "tag": "0019_wake_bookings",
+      "breakpoints": true
     }
   ]
 }

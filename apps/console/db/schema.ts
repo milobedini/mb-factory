@@ -202,6 +202,13 @@ export const jobSlots = pgTable(
   (table) => [uniqueIndex('job_slots_slot_idx').on(table.project, table.job, table.slotAt)]
 );
 
+// One row per wake-up moment booked: inserting it is what sends the message, as Vercel Queues delivers every send of
+// an idempotency key (29 Oct: 41 bookings of one moment woke the console 43 times).
+export const wakeBookings = pgTable('wake_bookings', {
+  at: timestamp({ withTimezone: true }).primaryKey(),
+  bookedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
+});
+
 // Each Linear issue a job filed, by the finding's fingerprint, so the same finding isn't filed twice.
 export const jobFindings = pgTable(
   'job_findings',
