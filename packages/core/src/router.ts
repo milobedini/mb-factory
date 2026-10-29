@@ -511,9 +511,10 @@ export const decideConflict = (
   };
 };
 
-// A PR waiting at the merge gate that's behind its base and merges cleanly gets the base merged in by the console, with
-// no run: the merge gate takes the new head while the PR's changes stay as reviewed, and CI checks it as usual. Not while
-// a run is going, which pushes commits of its own.
+// A PR waiting at the merge gate that's behind its base gets the base merged in by the console, with no run: the merge
+// gate takes the new head while the PR's changes stay as reviewed, and CI checks it as usual. GitHub often can't say
+// whether a PR merges for minutes after its base moves, so only a known conflict stops it (the merge itself is refused
+// on one). Not while a run is going, which pushes commits of its own.
 export const shouldBringUpToDate = ({
   stage,
   openRuns,
@@ -524,7 +525,7 @@ export const shouldBringUpToDate = ({
   openRuns: number;
   mergeable: boolean | null;
   behindBy: number;
-}): boolean => stage === 'awaiting_merge' && openRuns === 0 && mergeable === true && behindBy > 0;
+}): boolean => stage === 'awaiting_merge' && openRuns === 0 && mergeable !== false && behindBy > 0;
 
 // The most merges of the default branch a head can stack on the reviewed commit and still count as reviewed.
 export const MAX_BASE_MERGES = 10;

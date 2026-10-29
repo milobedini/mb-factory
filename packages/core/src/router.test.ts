@@ -1171,14 +1171,14 @@ describe('currentMergeable', () => {
 describe('shouldBringUpToDate', () => {
   const waiting = { stage: 'awaiting_merge' as const, openRuns: 0, mergeable: true, behindBy: 2 };
 
-  it('merges the base into a clean PR waiting at the merge gate behind it', () => {
+  it('merges the base into a PR waiting at the merge gate behind it, even before GitHub knows it merges', () => {
     expect(shouldBringUpToDate(waiting)).toBe(true);
+    expect(shouldBringUpToDate({ ...waiting, mergeable: null })).toBe(true);
   });
 
   it('leaves a PR that is up to date, conflicts, has a run going or is still in review', () => {
     expect(shouldBringUpToDate({ ...waiting, behindBy: 0 })).toBe(false);
     expect(shouldBringUpToDate({ ...waiting, mergeable: false })).toBe(false);
-    expect(shouldBringUpToDate({ ...waiting, mergeable: null })).toBe(false);
     expect(shouldBringUpToDate({ ...waiting, openRuns: 1 })).toBe(false);
     expect(shouldBringUpToDate({ ...waiting, stage: 'in_review' })).toBe(false);
   });

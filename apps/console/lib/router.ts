@@ -452,9 +452,9 @@ const branchMovedAt = async (repository: string, branch: string): Promise<Date |
 type ConflictCheck = 'clean' | 'fixing' | 'handed_over' | 'left';
 
 // A delivered PR that no longer merges goes back to implement, once for each state of its base branch, then to a
-// person; one waiting at the merge gate that merges cleanly but is behind is brought up to date. A PR GitHub can't
-// decide on yet counts as clean: the next push to the base branch or the gate asks again. `stage` is where the work
-// item is now, which the caller may have just moved it to.
+// person; one waiting at the merge gate that's behind and not known to conflict is brought up to date. A PR GitHub
+// can't decide on yet counts as clean: the next push to the base branch or the gate asks again. `stage` is where the
+// work item is now, which the caller may have just moved it to.
 const checkConflict = async (
   project: FactoryConfig,
   workItem: WorkItem,
@@ -517,7 +517,7 @@ const bringUpToDate = (
   { stage, mergeable, base }: { stage: Stage; mergeable: boolean | null; base: string }
 ) => {
   const { prNumber, branch, repository } = workItem;
-  return prNumber && branch && stage === 'awaiting_merge' && mergeable
+  return prNumber && branch && stage === 'awaiting_merge' && mergeable !== false
     ? attempt('bring up to date', { issue: workItem.issueIdentifier, pr: prNumber }, async () => {
         const [openRuns, behind] = await Promise.all([
           getDb()
