@@ -289,6 +289,7 @@ Learnt the hard way; each would bite again.
 - A `prompted` body arrives in `agentActivity.content.body` (not as documented); a stop is `prompted` with `signal: "stop"`.
 - The GitHub integration's "review requested" automation must point at Awaiting Merge, or it undoes the merge gate.
 - A PR that names an issue (even "Part of TAS-73") assigns that issue to the PR's author: harmless, as delegating assigns it anyway, but it looks like someone took it. Blockers only hold an issue off the Ready list; a spec run doesn't see one added after it starts, so say an ordering in an answer.
+- Attaching a GitHub PR's link to an issue (the MCP's `links`) makes it the issue's PR: merging it would move the issue to Done. Name another issue's PR in the description's text instead (TAS-90 and tastebook#77, 29 Oct).
 - "Agent session events" options appear only after the OAuth app is first saved. The Linear MCP connector acts as the user. Fallback text for one-tap options repeats the label: Linear's rendering.
 
 **Slack**
