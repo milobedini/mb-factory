@@ -366,6 +366,7 @@ mb-factory isn't a factory project yet, so its own follow-ups live here. Each is
 - **Console:** a live Runs page (times counting up, the agent's latest thought); usage over time with runs overlaid and the factory/you split; a weekly evidence clean-up (before the Blob store passes about 500 MB); exact Actions minutes; scorer cards (Phase 5); a project filter (Phase 6).
 - **Router:** a PR reopened after an unmerged close isn't handled; reviewer per project from the Linear project's lead; Linear blockers only hold back the Ready list, so a spec approved while its issue waits on another (TAS-73 on TAS-86, 29 Oct) starts implement at once: hold implement with the Blocked label until the blockers finish, then start it as `unblockedBy` already does for the Ready list.
 - **Jobs:** backlog grooming (stale, duplicate, unclear, unsized, blocked only by finished issues), through the read-only Linear proxy; `autoDelegate` once trusted; guards proposed to the shared plugin (Phase 5).
+- **Screenshot baselines (TAS-74):** 95 story PNGs at 390 px, 0.73 MB (29 Oct), about 8 KB each and one per story, so git history grows only when a look changes. Move them to Git LFS or a hosted snapshot service once that history passes about 100 MB, or when more widths or full-page shots are added; until then nothing to do.
 - **Linear housekeeping (by hand):** swap the stale Notion "Vision" links on the projects for the Linear Vision document; pin the TAS Overview sections.
 
 ## Phases
