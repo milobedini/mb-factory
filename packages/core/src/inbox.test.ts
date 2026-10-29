@@ -35,8 +35,13 @@ describe('inboxEntry', () => {
     });
   });
 
-  it('waits at the two gates from when the run before finished', () => {
+  it('waits at the gates from when the run before finished', () => {
     expect(inboxEntry(item('spec_review'), [run()], [])).toEqual({ kind: 'spec_review', since: at(5), agent: 'spec' });
+    expect(inboxEntry(item('design_review'), [run({ agent: 'design' })], [])).toEqual({
+      kind: 'design_review',
+      since: at(5),
+      agent: 'design'
+    });
     expect(inboxEntry(item('awaiting_merge'), [run({ agent: 'review', finishedAt: at(9) })], [])).toEqual({
       kind: 'awaiting_merge',
       since: at(9),

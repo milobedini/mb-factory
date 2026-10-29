@@ -115,6 +115,7 @@ export const button = (actionId: string, text: string, value: ButtonValue, prima
 const STAGE_NAMES: Record<AgentRole, string> = {
   triage: 'Triage',
   spec: 'Spec',
+  design: 'Design',
   implement: 'Build',
   review: 'Review',
   verify: 'Verify',

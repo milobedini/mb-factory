@@ -16,6 +16,26 @@ describe('transition', () => {
     expect(transition('spec', { type: 'spec_written' }, context)).toEqual({ ok: true, stage: 'spec_review' });
   });
 
+  it.each([
+    [true, 'design'],
+    [false, 'building']
+  ] as const)('routes an approved spec with designNeeded=%s to %s', (designNeeded, expected) => {
+    expect(transition('spec_review', { type: 'spec_approved', designNeeded }, context)).toEqual({
+      ok: true,
+      stage: expected
+    });
+  });
+
+  it('waits for a human once the design is drafted, then builds it, revises it or reopens the spec', () => {
+    expect(transition('design', { type: 'design_drafted' }, context)).toEqual({ ok: true, stage: 'design_review' });
+    expect(transition('design_review', { type: 'design_approved' }, context)).toEqual({ ok: true, stage: 'building' });
+    expect(transition('design_review', { type: 'design_changes_requested' }, context)).toEqual({
+      ok: true,
+      stage: 'design'
+    });
+    expect(transition('design_review', { type: 'back_to_spec' }, context)).toEqual({ ok: true, stage: 'spec' });
+  });
+
   it('sends requested spec changes back to the spec stage', () => {
     expect(transition('spec_review', { type: 'spec_changes_requested' }, context)).toEqual({ ok: true, stage: 'spec' });
   });

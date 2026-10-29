@@ -3,8 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { parseFactoryConfig } from './config';
+import type { SpecDesign } from './design';
 import type { UsageReading } from './governor';
 import {
+  afterSpecApproval,
   briefRound,
   canRerun,
   closingActivity,
@@ -15,6 +17,7 @@ import {
   decideCiFailure,
   decideConflict,
   decideVerify,
+  designStageOn,
   failedChecks,
   findingsPrompt,
   formatReleaseAt,
@@ -153,6 +156,8 @@ describe('runRequestFor', () => {
     ['researching', 'triage'],
     ['spec', 'spec'],
     ['spec_review', 'spec'],
+    ['design', 'design'],
+    ['design_review', 'design'],
     ['building', 'implement'],
     ['in_review', 'review'],
     ['awaiting_merge', 'implement'],
@@ -160,7 +165,7 @@ describe('runRequestFor', () => {
     ['canceled', 'triage']
   ] as const)('continues from %s with %s', (stage, agent) => {
     expect(runRequestFor(created, stage)).toMatchObject({ agent, trigger: 'delegated' });
-    if (stage !== 'spec_review') {
+    if (stage !== 'spec_review' && stage !== 'design_review') {
       expect(runRequestFor(prompted, stage)?.agent).toBe(agent);
     }
   });
@@ -194,6 +199,60 @@ describe('runRequestFor', () => {
       prompt: 'Keep the old copy.'
     });
     expect(runRequestFor(reply('Change something'), 'spec_review')).toBeUndefined();
+  });
+
+  it('starts implement on approval in Design Review, and revises the design on a change', () => {
+    expect(runRequestFor(reply('Approve: tighten the gap'), 'design_review')).toEqual({
+      agent: 'implement',
+      trigger: 'design_approved',
+      priority: 'in_flight',
+      prompt: 'tighten the gap'
+    });
+    expect(runRequestFor(reply('Make the button green.'), 'design_review')).toEqual({
+      agent: 'design',
+      trigger: 'prompted',
+      priority: 'in_flight',
+      prompt: 'Make the button green.'
+    });
+    expect(runRequestFor(reply('Change something'), 'design_review')).toBeUndefined();
+  });
+});
+
+describe('afterSpecApproval', () => {
+  const approved = {
+    agent: 'implement',
+    trigger: 'spec_approved',
+    priority: 'in_flight',
+    prompt: 'Shorter copy'
+  } as const;
+  const needed: SpecDesign = { needed: true, why: 'A new screen.', components: [] };
+
+  it('sends an approved spec that calls for design to the design stage, with its suggestions', () => {
+    expect(afterSpecApproval(approved, needed, true)).toEqual({ ...approved, agent: 'design' });
+  });
+
+  it('keeps implement when the spec skips design, makes no call, or the project has no design stage', () => {
+    expect(afterSpecApproval(approved, { needed: false, why: 'No visual change.' }, true)).toEqual(approved);
+    expect(afterSpecApproval(approved, null, true)).toEqual(approved);
+    expect(afterSpecApproval(approved, needed, false)).toEqual(approved);
+  });
+
+  it('leaves any other request alone', () => {
+    const reply = { agent: 'spec', trigger: 'prompted', priority: 'in_flight', prompt: 'Keep it.' } as const;
+    expect(afterSpecApproval(reply, needed, true)).toEqual(reply);
+  });
+});
+
+describe('designStageOn', () => {
+  it('is on only when the project names both design statuses', () => {
+    const statuses = config.linear.statuses;
+    const withStatuses = (design: Partial<typeof statuses>) => ({
+      ...config,
+      linear: { ...config.linear, statuses: { ...statuses, ...design } }
+    });
+    expect(designStageOn(withStatuses({ design: 'Design', designReview: 'Design Review' }))).toBe(true);
+    expect(designStageOn(withStatuses({ design: 'Design', designReview: undefined }))).toBe(false);
+    expect(designStageOn(withStatuses({ design: undefined, designReview: undefined }))).toBe(false);
   });
 });
 
@@ -572,6 +631,13 @@ describe('nextStepAfterRun', () => {
     const question = { prompt: 'Which?', options: ['A', 'B'] };
     expect(nextStepAfterRun({ ...waiting, report: { gate, questions: [question] } }, loop)).not.toHaveProperty('gate');
     expect(nextStepAfterRun({ ...finished, agent: 'triage', report: { gate } }, loop)).not.toHaveProperty('gate');
+  });
+
+  it('waits on Design Review once a design run drew the canvas or asked about it', () => {
+    const designed = { ...finished, agent: 'design' as const, report: { summary: 'Drew the canvas.' } };
+    expect(nextStepAfterRun(designed, loop)).toEqual({ stage: 'design_review' });
+    expect(nextStepAfterRun({ ...designed, outcome: 'needs_input' }, loop)).toEqual({ stage: 'design_review' });
+    expect(nextStepAfterRun({ ...designed, outcome: 'failed' }, loop)).toEqual({});
   });
 
   it('sends a delivered PR to review, as in-flight work', () => {

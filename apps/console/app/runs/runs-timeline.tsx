@@ -12,6 +12,7 @@ const TRIGGER_COPY: Record<RunTrigger, string> = {
   delegated: 'delegated',
   prompted: 'a reply',
   spec_approved: 'spec approved',
+  design_approved: 'design approved',
   delivered: 'PR delivered',
   review_findings: 'review findings',
   ci_failed: 'CI failed',
@@ -26,6 +27,7 @@ const TRIGGER_COPY: Record<RunTrigger, string> = {
 
 const STAGE_STYLES: Partial<Record<Stage, string>> = {
   spec_review: 'text-warn',
+  design_review: 'text-warn',
   awaiting_merge: 'text-warn',
   done: 'text-ok',
   canceled: 'text-foreground/60'

@@ -52,7 +52,7 @@ const requestedReportSchema = z.looseObject({ issues: z.array(z.unknown()).nulli
 
 // Runs whose prompt is a person's own words. Only those can have asked for an issue, so a later run that repeats one
 // from the session doesn't file it again.
-const REQUESTING_TRIGGERS: readonly RunTrigger[] = ['prompted', 'spec_approved', 'answered'];
+const REQUESTING_TRIGGERS: readonly RunTrigger[] = ['prompted', 'spec_approved', 'design_approved', 'answered'];
 
 // The issues a person's reply asked a stage run to file ("file the and/or choice as its own issue"), from its report.
 export const readRequestedIssues = (run: { trigger: RunTrigger; report: unknown }): RequestedIssue[] =>

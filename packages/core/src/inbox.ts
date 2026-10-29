@@ -4,7 +4,14 @@ import type { AgentRole, Stage } from './stages';
 import { TERMINAL_STAGES } from './stages';
 
 // What a work item is waiting on a person for. Each waits on one thing at a time.
-export const INBOX_KINDS = ['questions', 'spec_review', 'awaiting_merge', 'run_ended', 'reply_needed'] as const;
+export const INBOX_KINDS = [
+  'questions',
+  'spec_review',
+  'design_review',
+  'awaiting_merge',
+  'run_ended',
+  'reply_needed'
+] as const;
 
 export type InboxKind = (typeof INBOX_KINDS)[number];
 
@@ -51,7 +58,7 @@ export const inboxEntry = (
       answered: round.filter(({ answeredAt }) => answeredAt !== null).length
     };
   }
-  if (workItem.stage === 'spec_review' || workItem.stage === 'awaiting_merge') {
+  if (workItem.stage === 'spec_review' || workItem.stage === 'design_review' || workItem.stage === 'awaiting_merge') {
     return { kind: workItem.stage, since, agent };
   }
   if (latest?.status === 'finished' && ENDED_BADLY.includes(latest.outcome)) {

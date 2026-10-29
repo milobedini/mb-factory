@@ -74,6 +74,9 @@ export const factoryConfigSchema = z
         researching: z.string().min(1),
         spec: z.string().min(1),
         specReview: z.string().min(1),
+        // Both set turns the design stage on: a spec that calls for design goes to it before implement.
+        design: z.string().min(1).optional(),
+        designReview: z.string().min(1).optional(),
         building: z.string().min(1),
         inReview: z.string().min(1),
         awaitingMerge: z.string().min(1),

@@ -10,6 +10,8 @@ export const RUN_TRIGGERS = [
   'ci_failed',
   'conflict',
   'spec_approved',
+  // The design was approved at Design Review, so implement builds the spec with its boards.
+  'design_approved',
   'delivered',
   'rerun',
   'console',

@@ -97,6 +97,19 @@ describe('workItemCard', () => {
     expect(card.text).toBe('TAS-38 Recipe details: running');
   });
 
+  it('shows the Design step only on work that goes through design', () => {
+    const designing = workItemCard(
+      input(
+        { runs: [run(), run({ agent: 'spec' }), run({ agent: 'design', status: 'running', finishedAt: null })] },
+        { stage: 'design' }
+      )
+    );
+    expect(track(designing)).toBe(
+      ':tb-done: Triage   :tb-done: Spec   :tb-running: *Design*   :tb-todo: Implement   :tb-todo: Verify   :tb-todo: Review   :tb-todo: Merge'
+    );
+    expect(status(designing)).toMatch(/^:tb-running: \*Designing\*/);
+  });
+
   it('follows the run that’s going, not a reply’s run queued behind it', () => {
     const card = workItemCard(
       input({

@@ -27,6 +27,7 @@ import type {
 import {
   ASK_TICKET_GONE,
   afterAnswers,
+  afterSpecApproval,
   alreadyStartedText,
   applyAnswer,
   approveRefusedText,
@@ -49,6 +50,7 @@ import {
   consecutiveCiFixes,
   consoleRerunRequest,
   DEPENDABOT_LOGIN,
+  DESIGN_CHANGES_QUESTION,
   decideCiFailure,
   decideConflict,
   decideIssueUpdate,
@@ -56,6 +58,7 @@ import {
   delegateFailedText,
   dependencyIssue,
   dependencyTakenText,
+  designStageOn,
   dispatchLapsesAt,
   emptyMentionText,
   escapeSlack,
@@ -523,10 +526,15 @@ const moveTo = async (project: FactoryConfig, workItem: WorkItem, stage: Stage):
     getDb().update(workItems).set({ stage, updatedAt: new Date() }).where(eq(workItems.id, workItem.id)),
     recordStageChange(workItem, stage, 'factory'),
     attempt('linear status', { issue: workItem.issueIdentifier }, async () => {
+      const status = linearStatusFor(project, stage);
+      if (!status) {
+        log('warn', 'linear status unset', { issue: workItem.issueIdentifier, stage });
+        return;
+      }
       const move = await moveIssueToStatus(
         workItem.linearOrganizationId,
         workItem.linearIssueId,
-        linearStatusFor(project, stage),
+        status,
         shouldMoveIssue
       );
       log('info', 'linear status', { issue: workItem.issueIdentifier, stage, ...move });
@@ -813,6 +821,20 @@ export const dispatchRun = withCards(async (project: FactoryConfig, runId: strin
   }
   const { run, workItem } = found;
   const db = getDb();
+  if (run.agent === 'design') {
+    // The design routine isn't wired up yet, and the stage workflow has no design agent, so the run ends here.
+    log('error', 'design run not dispatched', { runId, issue: workItem?.issueIdentifier });
+    await db
+      .update(runs)
+      .set({
+        status: 'finished',
+        outcome: 'failed',
+        summary: 'The design stage isn’t built yet.',
+        finishedAt: new Date()
+      })
+      .where(eq(runs.id, run.id));
+    return;
+  }
   const [readings, pause, runningCount, busyCount] = await Promise.all([
     latestReadings(),
     currentPause(),
@@ -1580,7 +1602,10 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
     return;
   }
   const atReportedGate = workItem.gateSlackTs !== null && workItem.stage !== 'spec_review';
-  const request = runRequestFor({ kind: 'prompted', body }, workItem.stage);
+  const replied = runRequestFor({ kind: 'prompted', body }, workItem.stage);
+  // An approved spec that calls for design goes to the design stage first, when the project has one.
+  const reports = replied?.trigger === 'spec_approved' ? await specReports(workItem) : [];
+  const request = replied && afterSpecApproval(replied, latestSpecDesign(reports), designStageOn(project));
   await settleGate(project, workItem, body, request, from);
   if (atReportedGate && onlyAsksForChanges(body)) {
     // As at the spec gate: ask what to change rather than start a run that would only ask the same.
@@ -1591,10 +1616,11 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
     return;
   }
   if (!request) {
-    // The Change something option on its own: ask what to change, and keep waiting in Spec Review.
+    // The Change something option on its own: ask what to change, and keep waiting in Spec or Design Review.
+    const question = workItem.stage === 'design_review' ? DESIGN_CHANGES_QUESTION : CHANGES_QUESTION;
     await Promise.all([
-      postActivity(workItem, { type: 'elicitation', body: CHANGES_QUESTION }),
-      replyInThread(project, workItem, CHANGES_QUESTION)
+      postActivity(workItem, { type: 'elicitation', body: question }),
+      replyInThread(project, workItem, question)
     ]);
     return;
   }
@@ -1605,12 +1631,12 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
     await attempt('slack reaction', { issue: workItem.issueIdentifier }, () => addSlackReaction(channel, ts, 'eyes'));
   }
   if (request.trigger === 'spec_approved') {
-    await attempt('spec parts', { issue: workItem.issueIdentifier }, async () => {
-      const reports = await specReports(workItem);
-      // Nothing routes on the design call yet: it's logged so the calls can be checked before the design stage does.
-      log('info', 'spec design', { issue: workItem.issueIdentifier, design: latestSpecDesign(reports) });
-      await fileSpecParts(project, workItem, reports);
+    log('info', 'spec design', {
+      issue: workItem.issueIdentifier,
+      design: latestSpecDesign(reports),
+      next: request.agent
     });
+    await attempt('spec parts', { issue: workItem.issueIdentifier }, () => fileSpecParts(project, workItem, reports));
   }
 };
 

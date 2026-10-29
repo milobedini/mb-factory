@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { FactoryConfig } from './config';
+import type { SpecDesign } from './design';
 import type { Gate } from './gates';
 import { readGate } from './gates';
 import type { Decision, DispatchRequest, HoldReason, Priority, UsageWindow } from './governor';
@@ -90,6 +91,8 @@ const AGENT_TO_CONTINUE: Record<Stage, AgentRole> = {
   researching: 'triage',
   spec: 'spec',
   spec_review: 'spec',
+  design: 'design',
+  design_review: 'design',
   building: 'implement',
   in_review: 'review',
   awaiting_merge: 'implement',
@@ -123,6 +126,17 @@ export const readSpecReply = (body: string): SpecReply => {
 
 export const CHANGES_QUESTION = 'What should change? Reply here with the changes and I’ll revise the spec.';
 
+export const DESIGN_CHANGES_QUESTION = 'What should change? Reply here with the changes and I’ll revise the design.';
+
+// The design stage runs for a project only once its Linear workflow has the Design and Design Review statuses.
+export const designStageOn = (config: FactoryConfig): boolean =>
+  config.linear.statuses.design !== undefined && config.linear.statuses.designReview !== undefined;
+
+// An approved spec that calls for design goes to the design stage, carrying the approval's suggestions, instead of
+// straight to implement.
+export const afterSpecApproval = (request: RunRequest, design: SpecDesign | null, designOn: boolean): RunRequest =>
+  request.trigger === 'spec_approved' && designOn && design?.needed ? { ...request, agent: 'design' } : request;
+
 // New work starts at triage; a reply carries the human's message to the agent for the work item's stage. In Spec Review
 // an approval starts implement on the spec's branch; undefined means the router should ask what to change.
 export const runRequestFor = (
@@ -133,15 +147,17 @@ export const runRequestFor = (
   if (event.kind === 'created') {
     return { agent, trigger: 'delegated', priority: 'feature', prompt: null };
   }
-  if (stage !== 'spec_review') {
+  if (stage !== 'spec_review' && stage !== 'design_review') {
     return { agent, trigger: 'prompted', priority: 'in_flight', prompt: event.body };
   }
+  // Design Review reads a reply as Spec Review does: an approval starts implement, anything else revises the design.
   const reply = readSpecReply(event.body);
   if (reply.kind === 'approve') {
-    return { agent: 'implement', trigger: 'spec_approved', priority: 'in_flight', prompt: reply.suggestions };
+    const trigger = stage === 'spec_review' ? 'spec_approved' : 'design_approved';
+    return { agent: 'implement', trigger, priority: 'in_flight', prompt: reply.suggestions };
   }
   return reply.kind === 'changes'
-    ? { agent: 'spec', trigger: 'prompted', priority: 'in_flight', prompt: reply.body }
+    ? { agent, trigger: 'prompted', priority: 'in_flight', prompt: reply.body }
     : undefined;
 };
 
@@ -350,6 +366,8 @@ const STATUS_KEYS: Record<Stage, StatusKey> = {
   researching: 'researching',
   spec: 'spec',
   spec_review: 'specReview',
+  design: 'design',
+  design_review: 'designReview',
   building: 'building',
   in_review: 'inReview',
   awaiting_merge: 'awaitingMerge',
@@ -360,7 +378,8 @@ const STATUS_KEYS: Record<Stage, StatusKey> = {
 export const stageForAgent = (agent: AgentRole): Stage | undefined =>
   STAGES.find((stage) => AGENT_FOR_STAGE[stage] === agent);
 
-export const linearStatusFor = (config: FactoryConfig, stage: Stage): string =>
+// Undefined only for a design status, in a project without the design stage.
+export const linearStatusFor = (config: FactoryConfig, stage: Stage): string | undefined =>
   config.linear.statuses[STATUS_KEYS[stage]];
 
 // Linear's workflow state types. A finished issue keeps its status; Linear's GitHub integration owns Done.
@@ -388,7 +407,7 @@ export const briefRound = (
   return run.agent === 'implement' && run.trigger === 'review_findings' ? reviewRounds : undefined;
 };
 
-const NEW_LOOP_TRIGGERS: RunTrigger[] = ['delegated', 'spec_approved', 'prompted'];
+const NEW_LOOP_TRIGGERS: RunTrigger[] = ['delegated', 'spec_approved', 'design_approved', 'prompted'];
 
 // An implement run a human asked for starts a fresh review loop; revisions and resumes continue the current one.
 export const startsReviewLoop = (request: RunRequest): boolean =>
@@ -723,6 +742,10 @@ export const nextStepAfterRun = (
   const asking = questions.length > 0 ? { questions } : gate ? { gate } : {};
   if (run.agent === 'spec' && run.status === 'finished' && WAITING_ON_SPEC_REVIEW.includes(run.outcome) && hasPr) {
     return { stage: 'spec_review', ...asking };
+  }
+  // A design run that drew or revised the canvas waits on Design Review, as a spec waits on Spec Review.
+  if (run.agent === 'design' && run.status === 'finished' && WAITING_ON_SPEC_REVIEW.includes(run.outcome)) {
+    return { stage: 'design_review', ...asking };
   }
   if (run.status !== 'finished' || run.outcome !== 'done') {
     return asking;

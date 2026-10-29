@@ -2,6 +2,8 @@ export const STAGES = [
   'researching',
   'spec',
   'spec_review',
+  'design',
+  'design_review',
   'building',
   'in_review',
   'awaiting_merge',
@@ -15,6 +17,8 @@ export type Stage = (typeof STAGES)[number];
 export const AGENT_ROLES = [
   'triage',
   'spec',
+  // Drafts and revises a design on a claude.ai canvas with a person, in a routine rather than a stage workflow.
+  'design',
   'implement',
   'verify',
   'review',
@@ -33,8 +37,12 @@ export type JobAgent = (typeof JOB_AGENTS)[number];
 export type StageEvent =
   | { type: 'triaged'; needsSpec: boolean }
   | { type: 'spec_written' }
-  | { type: 'spec_approved' }
+  | { type: 'spec_approved'; designNeeded: boolean }
   | { type: 'spec_changes_requested' }
+  | { type: 'design_drafted' }
+  | { type: 'design_approved' }
+  | { type: 'design_changes_requested' }
+  | { type: 'back_to_spec' }
   | { type: 'pr_opened' }
   | { type: 'reviewed'; verdict: 'accepted' | 'revision_needed' | 'human_decision_needed' }
   | { type: 'merged' }
@@ -51,11 +59,12 @@ export type Transition = { ok: true; stage: Stage } | { ok: false; error: string
 export const AGENT_FOR_STAGE: Partial<Record<Stage, AgentRole>> = {
   researching: 'triage',
   spec: 'spec',
+  design: 'design',
   building: 'implement',
   in_review: 'review'
 };
 
-export const HUMAN_GATES: Stage[] = ['spec_review', 'awaiting_merge'];
+export const HUMAN_GATES: Stage[] = ['spec_review', 'design_review', 'awaiting_merge'];
 
 const to = (stage: Stage): Transition => ({ ok: true, stage });
 
@@ -65,7 +74,20 @@ const HANDLERS: Record<Stage, Handler> = {
   researching: (event) => (event.type === 'triaged' ? to(event.needsSpec ? 'spec' : 'building') : undefined),
   spec: (event) => (event.type === 'spec_written' ? to('spec_review') : undefined),
   spec_review: (event) =>
-    event.type === 'spec_approved' ? to('building') : event.type === 'spec_changes_requested' ? to('spec') : undefined,
+    event.type === 'spec_approved'
+      ? to(event.designNeeded ? 'design' : 'building')
+      : event.type === 'spec_changes_requested'
+        ? to('spec')
+        : undefined,
+  design: (event) => (event.type === 'design_drafted' ? to('design_review') : undefined),
+  design_review: (event) =>
+    event.type === 'design_approved'
+      ? to('building')
+      : event.type === 'design_changes_requested'
+        ? to('design')
+        : event.type === 'back_to_spec'
+          ? to('spec')
+          : undefined,
   building: (event) => (event.type === 'pr_opened' ? to('in_review') : undefined),
   in_review: (event, { reviewRounds, maxReviewRounds }) => {
     if (event.type !== 'reviewed') {

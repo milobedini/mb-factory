@@ -244,6 +244,7 @@ export type {
   VerifyDecision
 } from './router';
 export {
+  afterSpecApproval,
   BLOCKING_OUTCOMES,
   briefRound,
   CHANGES_QUESTION,
@@ -255,9 +256,11 @@ export {
   consecutiveCiFixes,
   consoleRerunRequest,
   currentMergeable,
+  DESIGN_CHANGES_QUESTION,
   decideCiFailure,
   decideConflict,
   decideVerify,
+  designStageOn,
   FACTORY_REVIEWER_LOGIN,
   failedChecks,
   findingsPrompt,

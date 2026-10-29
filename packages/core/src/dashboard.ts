@@ -220,6 +220,7 @@ type Wait = { label: string; stage?: Stage; of?: 'answering' | 'blocked' };
 
 const WAITS: Wait[] = [
   { label: 'Spec review', stage: 'spec_review' },
+  { label: 'Design review', stage: 'design_review' },
   { label: 'Awaiting merge', stage: 'awaiting_merge' },
   { label: 'Answering questions', of: 'answering' },
   { label: 'Blocked', of: 'blocked' }

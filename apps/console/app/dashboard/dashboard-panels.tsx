@@ -10,6 +10,8 @@ const STAGE_NAMES: Record<Stage, string> = {
   researching: 'Researching',
   spec: 'Spec',
   spec_review: 'Spec review',
+  design: 'Design',
+  design_review: 'Design review',
   building: 'Building',
   in_review: 'In review',
   awaiting_merge: 'Awaiting merge',

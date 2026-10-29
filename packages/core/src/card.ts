@@ -159,6 +159,7 @@ const STATUS_WORDS: Record<CardStatus, string> = {
 const STEPS: { name: string; agent: AgentRole | null }[] = [
   { name: 'Triage', agent: 'triage' },
   { name: 'Spec', agent: 'spec' },
+  { name: 'Design', agent: 'design' },
   { name: 'Implement', agent: 'implement' },
   { name: 'Verify', agent: 'verify' },
   { name: 'Review', agent: 'review' },
@@ -172,8 +173,10 @@ const STAGE_STEP: Record<Stage, number> = {
   researching: 0,
   spec: 1,
   spec_review: 1,
-  building: 2,
-  in_review: 4,
+  design: 2,
+  design_review: 2,
+  building: 3,
+  in_review: 5,
   awaiting_merge: MERGE_STEP,
   done: STEPS.length,
   canceled: 0
@@ -237,14 +240,19 @@ const trackSteps = (
       (entry !== undefined && RUN_DECIDES.includes(entry.kind)));
   const current = runDecides ? stepOf(latest.agent) : STAGE_STEP[stage];
   const ran = (agent: AgentRole | null): boolean => agent === null || runs.some((run) => run.agent === agent);
-  return STEPS.map(({ name, agent }, index) => {
+  // Most work never needs design, so its step shows only on work that has gone through it.
+  const designed = ran('design') || stage === 'design' || stage === 'design_review';
+  return STEPS.flatMap(({ name, agent }, index): { name: string; state: StepState; current: boolean }[] => {
+    if (agent === 'design' && !designed) {
+      return [];
+    }
     if (index < current) {
-      return { name, state: ran(agent) ? 'done' : 'skipped', current: false };
+      return [{ name, state: ran(agent) ? 'done' : 'skipped', current: false }];
     }
     if (index > current) {
-      return { name, state: status === 'canceled' ? 'canceled' : 'todo', current: false };
+      return [{ name, state: status === 'canceled' ? 'canceled' : 'todo', current: false }];
     }
-    return { name, state: CURRENT_STEP[status], current: true };
+    return [{ name, state: CURRENT_STEP[status], current: true }];
   });
 };
 
@@ -267,6 +275,7 @@ const startedAgo = (at: Date, timeZone: string): string =>
 const RUNNING: Record<AgentRole, string> = {
   triage: 'Triaging',
   spec: 'Writing the spec',
+  design: 'Designing',
   implement: 'Implementing',
   verify: 'Checking it on screen',
   review: 'Reviewing',
