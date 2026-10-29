@@ -8,12 +8,19 @@ repositories:
     reviewers:
       - milobedini
 
+# The design stage: a spec that says `Design: needed` is drawn on a claude.ai canvas by this routine before implement
+# (plugin/agents/design.md). Its token is the console's DESIGN_ROUTINE_TOKEN.
+design:
+  routine: trig_015ytNVnxYsCys81Mnm6A8N4
+
 linear:
   teamKey: TAS
   statuses:
     researching: Researching
     spec: Spec
     specReview: Spec Review
+    design: Design
+    designReview: Design Review
     building: Building
     inReview: In Review
     awaitingMerge: Awaiting Merge
