@@ -1,5 +1,6 @@
 import {
   deriveKey,
+  designRunLapsesAt,
   dispatchLapsesAt,
   isSignedWake,
   nextSlot,
@@ -57,15 +58,19 @@ export const nextJobSlots = (now: Date): Date[] =>
   allProjects().flatMap((project) => project.jobs.map((job) => nextSlot(job, now, project.timeZone)));
 
 // The next moment anything is due: the earliest release time of held work, the moment a dispatched run that hasn't
-// started counts as lost, the next slot of a scheduled job, or the probe before it.
+// started counts as lost or a design session that hasn't reported is ended, the next slot of a scheduled job, or the probe before it.
 export const bookNextWake = async (cause: string): Promise<Date | undefined> => {
   const now = new Date();
-  const [held, dispatched] = await Promise.all([
+  const [held, dispatched, designing] = await Promise.all([
     getDb()
       .select({ releaseAt: queue.releaseAt })
       .from(queue)
       .where(and(isNull(queue.releasedAt), gt(queue.releaseAt, now))),
     getDb().select({ dispatchedAt: runs.dispatchedAt }).from(runs).where(eq(runs.status, 'dispatched')),
+    getDb()
+      .select({ startedAt: runs.startedAt })
+      .from(runs)
+      .where(and(eq(runs.status, 'running'), eq(runs.agent, 'design'))),
     getDb()
       .delete(wakeBookings)
       .where(lt(wakeBookings.at, new Date(now.getTime() - WAKE_BOOKING_RETENTION_MS)))
@@ -77,6 +82,7 @@ export const bookNextWake = async (cause: string): Promise<Date | undefined> => 
     [
       ...held.map(({ releaseAt }) => releaseAt),
       ...dispatched.map(({ dispatchedAt }) => dispatchedAt && dispatchLapsesAt(dispatchedAt)),
+      ...designing.map(({ startedAt }) => startedAt && designRunLapsesAt(startedAt)),
       ...slots,
       ...probeMoments(nextJobSlots(now))
     ],

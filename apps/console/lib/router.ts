@@ -58,6 +58,8 @@ import {
   delegateFailedText,
   dependencyIssue,
   dependencyTakenText,
+  designFireText,
+  designRunLapsesAt,
   designStageOn,
   dispatchLapsesAt,
   emptyMentionText,
@@ -78,6 +80,7 @@ import {
   isOpenRun,
   isReadyRequest,
   keptText,
+  latestCanvas,
   latestSpecDesign,
   latestSpecParts,
   linearSlackReplyText,
@@ -181,6 +184,7 @@ import {
   refreshAskCard,
   runOf
 } from './ask-runs';
+import { designPass } from './design-pass';
 import { requireEnv } from './env';
 import { fileFollowUps, fileRequestedIssues } from './follow-ups';
 import {
@@ -230,6 +234,7 @@ import { currentPause, pauseFactory, resumeFactory } from './pause';
 import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
 import { loadReadyList, postReadyMessage, readyMessage } from './ready';
 import { touchCard, withCards } from './redraw';
+import { fireRoutine } from './routines';
 import type { RunWithWorkItem } from './runs';
 import { findAnyRun, findRun } from './runs';
 import { sizeOnAccept } from './sizing';
@@ -542,17 +547,78 @@ const moveTo = async (project: FactoryConfig, workItem: WorkItem, stage: Stage):
   ]);
 };
 
-const failDispatch = async ({ run, workItem }: RunWithWorkItem, error: unknown, now: Date): Promise<void> => {
+const failDispatch = async (
+  { run, workItem }: RunWithWorkItem,
+  error: unknown,
+  now: Date,
+  by = 'GitHub'
+): Promise<void> => {
   log('error', 'run dispatch failed', { runId: run.id, issue: workItem.issueIdentifier, error: errorMessage(error) });
   touchCard(workItem.id);
   await getDb()
     .update(runs)
-    .set({ status: 'finished', outcome: 'failed', summary: 'GitHub rejected the stage dispatch.', finishedAt: now })
+    .set({ status: 'finished', outcome: 'failed', summary: `${by} rejected the stage dispatch.`, finishedAt: now })
     .where(eq(runs.id, run.id));
   await postActivity(workItem, {
     type: 'error',
-    body: 'I couldn’t start the run: GitHub rejected the dispatch. The details are in the console log.'
+    body: `I couldn’t start the run: ${by} rejected the dispatch. The details are in the console log.`
   });
+};
+
+// Long enough to outlast the design run's limit.
+const DESIGN_PASS_VALIDITY_MS = 2 * 60 * 60 * 1000;
+
+// A design run is a claude.ai session the project's design routine starts, not a stage workflow: it's running once
+// fired, and reports to `/api/runs/<id>/design` with the pass its brief carries.
+const startDesignRun = async (project: FactoryConfig, found: RunWithWorkItem, now: Date): Promise<StartResult> => {
+  const { run, workItem } = found;
+  if (!project.design || !workItem.agentSessionId) {
+    log('warn', 'design run not dispatched: no design routine or agent session', { runId: run.id });
+    return 'skipped';
+  }
+  if (!(await claimRun(project, run, modelFor(project, run.agent, false), now))) {
+    return 'not_claimed';
+  }
+  const db = getDb();
+  const [, specs, designs] = await Promise.all([
+    db
+      .update(queue)
+      .set({ releasedAt: now })
+      .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt))),
+    finishedReports(workItem, 'spec'),
+    finishedReports(workItem, 'design')
+  ]);
+  const text = designFireText({
+    runId: run.id,
+    reportUrl: `${requireEnv('CONSOLE_URL')}/api/runs/${run.id}/design`,
+    pass: designPass(run.id, new Date(now.getTime() + DESIGN_PASS_VALIDITY_MS)),
+    issue: { identifier: workItem.issueIdentifier, url: workItem.issueUrl, title: workItem.title },
+    repository: workItem.repository,
+    branch: workItem.branch,
+    pr: workItem.prNumber,
+    trigger: run.trigger,
+    prompt: run.prompt,
+    canvas: latestCanvas(designs),
+    design: latestSpecDesign(specs)
+  });
+  const fired = await fireRoutine(project.design.routine, text).catch(async (error: unknown) => {
+    await failDispatch(found, error, now, 'claude.ai');
+    return undefined;
+  });
+  if (!fired) {
+    return 'skipped';
+  }
+  await db
+    .update(runs)
+    .set({ status: 'running', startedAt: now, actionsRunUrl: fired.sessionUrl })
+    .where(and(eq(runs.id, run.id), eq(runs.status, 'dispatched')));
+  log('info', 'run dispatched', { runId: run.id, issue: workItem.issueIdentifier, session: fired.sessionId });
+  touchCard(workItem.id);
+  await Promise.all([
+    postActivity(workItem, { type: 'thought', body: startedThought(run.agent) }),
+    moveWorkItem(project, workItem, 'design')
+  ]);
+  return 'started';
 };
 
 // Serialises claims, so two dispatchers can't both see a free slot.
@@ -821,20 +887,6 @@ export const dispatchRun = withCards(async (project: FactoryConfig, runId: strin
   }
   const { run, workItem } = found;
   const db = getDb();
-  if (run.agent === 'design') {
-    // The design routine isn't wired up yet, and the stage workflow has no design agent, so the run ends here.
-    log('error', 'design run not dispatched', { runId, issue: workItem?.issueIdentifier });
-    await db
-      .update(runs)
-      .set({
-        status: 'finished',
-        outcome: 'failed',
-        summary: 'The design stage isn’t built yet.',
-        finishedAt: new Date()
-      })
-      .where(eq(runs.id, run.id));
-    return;
-  }
   const [readings, pause, runningCount, busyCount] = await Promise.all([
     latestReadings(),
     currentPause(),
@@ -884,15 +936,18 @@ export const dispatchRun = withCards(async (project: FactoryConfig, runId: strin
     return;
   }
   const started = workItem
-    ? await startRun(project, { run, workItem }, decision.downshift, now)
+    ? run.agent === 'design'
+      ? await startDesignRun(project, { run, workItem }, now)
+      : await startRun(project, { run, workItem }, decision.downshift, now)
     : run.agent === 'ask'
       ? await startAskRun(project, run, now)
       : run.agent === 'size'
         ? await startSizeRun(project, run, now)
         : await startJobRun(project, run, now);
   if (started === 'started') {
-    // Wakes the console in case the run's workflow never reaches it, so the run isn't left dispatched.
-    await bookWake(dispatchLapsesAt(now), 'run dispatched');
+    // Wakes the console in case the run's workflow never reaches it, so the run isn't left dispatched, or a design
+    // session never reports, so it isn't left running.
+    await bookWake(run.agent === 'design' ? designRunLapsesAt(now) : dispatchLapsesAt(now), 'run dispatched');
   }
   if (started !== 'not_claimed') {
     return;
@@ -1604,7 +1659,7 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
   const atReportedGate = workItem.gateSlackTs !== null && workItem.stage !== 'spec_review';
   const replied = runRequestFor({ kind: 'prompted', body }, workItem.stage);
   // An approved spec that calls for design goes to the design stage first, when the project has one.
-  const reports = replied?.trigger === 'spec_approved' ? await specReports(workItem) : [];
+  const reports = replied?.trigger === 'spec_approved' ? await finishedReports(workItem, 'spec') : [];
   const request = replied && afterSpecApproval(replied, latestSpecDesign(reports), designStageOn(project));
   await settleGate(project, workItem, body, request, from);
   if (atReportedGate && onlyAsksForChanges(body)) {
@@ -1640,14 +1695,14 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
   }
 };
 
-// The reports of a work item's finished spec runs, newest first.
-const specReports = async (workItem: WorkItem): Promise<unknown[]> => {
-  const specs = await getDb()
+// The reports of a work item's finished runs of one agent, newest first.
+const finishedReports = async (workItem: WorkItem, agent: AgentRole): Promise<unknown[]> => {
+  const finished = await getDb()
     .select({ report: runs.report })
     .from(runs)
-    .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'spec'), eq(runs.status, 'finished')))
+    .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, agent), eq(runs.status, 'finished')))
     .orderBy(desc(runs.createdAt));
-  return specs.map(({ report }) => report);
+  return finished.map(({ report }) => report);
 };
 
 // A spec that split its work: once approved, its later parts become sub-issues, each posted to delegate when the one

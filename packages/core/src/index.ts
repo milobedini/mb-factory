@@ -80,8 +80,17 @@ export {
 } from './dashboard';
 export type { Bump, DependencyPr, DependencyWork } from './dependencies';
 export { DEPENDABOT_LOGIN, dependencyIssue, dependencyTakenText, isMajorBump, readBump } from './dependencies';
-export type { ComponentChange, SpecComponent, SpecDesign } from './design';
-export { COMPONENT_CHANGES, latestSpecDesign, readSpecDesign } from './design';
+export type { ComponentChange, DesignBrief, FiredSession, SpecComponent, SpecDesign } from './design';
+export {
+  COMPONENT_CHANGES,
+  designFireText,
+  latestCanvas,
+  latestSpecDesign,
+  readCanvas,
+  readDesignReportBody,
+  readFiredSession,
+  readSpecDesign
+} from './design';
 export type { FollowUpContext, RequestedContext, RequestedIssue } from './follow-ups';
 export { filedFollowUpsText, followUpIssue, readRequestedIssues, requestedIssue } from './follow-ups';
 export type { Gate } from './gates';
@@ -304,7 +313,10 @@ export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } fr
 export { readingsFromEvents, runReportSchema, stageReportSchema, summariseRun } from './run-report';
 export type { RunOutcome, RunStatus, RunTotals, RunTrigger, WorkOrigin } from './runs';
 export {
+  DESIGN_RUN_LIMIT_MINUTES,
   DISPATCH_LAPSE_MINUTES,
+  designRunLapsedBefore,
+  designRunLapsesAt,
   dispatchLapsedBefore,
   dispatchLapsesAt,
   formatRunTime,

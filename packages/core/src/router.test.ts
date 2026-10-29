@@ -244,15 +244,18 @@ describe('afterSpecApproval', () => {
 });
 
 describe('designStageOn', () => {
-  it('is on only when the project names both design statuses', () => {
+  it('is on only when the project names its design routine and both design statuses', () => {
     const statuses = config.linear.statuses;
-    const withStatuses = (design: Partial<typeof statuses>) => ({
+    const routine = { routine: 'trig_0119jZu96GpU4dQ7dsog4A7Z' };
+    const withDesign = (design: typeof config.design, named: Partial<typeof statuses>) => ({
       ...config,
-      linear: { ...config.linear, statuses: { ...statuses, ...design } }
+      design,
+      linear: { ...config.linear, statuses: { ...statuses, ...named } }
     });
-    expect(designStageOn(withStatuses({ design: 'Design', designReview: 'Design Review' }))).toBe(true);
-    expect(designStageOn(withStatuses({ design: 'Design', designReview: undefined }))).toBe(false);
-    expect(designStageOn(withStatuses({ design: undefined, designReview: undefined }))).toBe(false);
+    const both = { design: 'Design', designReview: 'Design Review' };
+    expect(designStageOn(withDesign(routine, both))).toBe(true);
+    expect(designStageOn(withDesign(undefined, both))).toBe(false);
+    expect(designStageOn(withDesign(routine, { design: 'Design', designReview: undefined }))).toBe(false);
   });
 });
 

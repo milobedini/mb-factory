@@ -51,3 +51,58 @@ export const readSpecDesign = (report: unknown): SpecDesign | null => {
 // spec's text may leave `design` out, which keeps the earlier call.
 export const latestSpecDesign = (reportsNewestFirst: unknown[]): SpecDesign | null =>
   reportsNewestFirst.reduce<SpecDesign | null>((found, report) => found ?? readSpecDesign(report), null);
+
+// A Design canvas on claude.ai, as the design run reports it.
+const CANVAS_URL = /^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9_-]{1,64}$/;
+
+const reportCanvasSchema = z.looseObject({ canvas: z.string().trim().regex(CANVAS_URL) });
+
+export const readCanvas = (report: unknown): string | null => reportCanvasSchema.safeParse(report).data?.canvas ?? null;
+
+// The canvas of the newest design report that names one, from reports newest first: each round revises the same one.
+export const latestCanvas = (reportsNewestFirst: unknown[]): string | null =>
+  reportsNewestFirst.reduce<string | null>((found, report) => found ?? readCanvas(report), null);
+
+// What a design run is told, in the text the console fires the design routine with.
+export type DesignBrief = {
+  runId: string;
+  // Where the session reports, and the pass it reports with: signed for this run only.
+  reportUrl: string;
+  pass: string;
+  issue: { identifier: string; url: string; title: string | null };
+  repository: string;
+  branch: string | null;
+  pr: number | null;
+  trigger: string;
+  // The person's reply, or the suggestions they approved the spec with.
+  prompt: string | null;
+  // The canvas an earlier round drew, to revise rather than start again.
+  canvas: string | null;
+  design: SpecDesign | null;
+};
+
+export const designFireText = (brief: DesignBrief): string =>
+  ['mb-factory design run. The brief, as JSON:', '', '```json', JSON.stringify(brief, null, 2), '```'].join('\n');
+
+const firedSchema = z.object({
+  claude_code_session_id: z.string().min(1),
+  claude_code_session_url: z.url()
+});
+
+export type FiredSession = { sessionId: string; sessionUrl: string };
+
+// The routine's `/fire` response: the session it started.
+export const readFiredSession = (body: unknown): FiredSession | null => {
+  const fired = firedSchema.safeParse(body);
+  return fired.success
+    ? { sessionId: fired.data.claude_code_session_id, sessionUrl: fired.data.claude_code_session_url }
+    : null;
+};
+
+const designReportBodySchema = z.object({ report: z.unknown() });
+
+// What a design session posts to the console: its stage report, as a stage workflow would write it.
+export const readDesignReportBody = (body: unknown): { report: unknown } | null => {
+  const read = designReportBodySchema.safeParse(body);
+  return read.success ? { report: read.data.report } : null;
+};

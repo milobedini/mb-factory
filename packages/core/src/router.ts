@@ -128,9 +128,12 @@ export const CHANGES_QUESTION = 'What should change? Reply here with the changes
 
 export const DESIGN_CHANGES_QUESTION = 'What should change? Reply here with the changes and I’ll revise the design.';
 
-// The design stage runs for a project only once its Linear workflow has the Design and Design Review statuses.
+// The design stage runs for a project only once it names its design routine and its Linear workflow has the Design and
+// Design Review statuses.
 export const designStageOn = (config: FactoryConfig): boolean =>
-  config.linear.statuses.design !== undefined && config.linear.statuses.designReview !== undefined;
+  config.design !== undefined &&
+  config.linear.statuses.design !== undefined &&
+  config.linear.statuses.designReview !== undefined;
 
 // An approved spec that calls for design goes to the design stage, carrying the approval's suggestions, instead of
 // straight to implement.
@@ -289,9 +292,10 @@ export const modelFor = (
     throw new Error(`factory.yaml has no model for the ${agent} stage`);
   }
   const key = agent === 'triage' && isSlicingTitle(title) ? 'slicing' : agent;
-  // Questions are never downshifted: the governor's throttle doesn't hold them either.
+  // Questions are never downshifted, as the governor's throttle doesn't hold them either, nor is design, whose routine
+  // sets its own model.
   const model =
-    (downshift && key !== 'ask' && key !== 'size' ? config.usage.downshift[key] : undefined) ??
+    (downshift && key !== 'ask' && key !== 'size' && key !== 'design' ? config.usage.downshift[key] : undefined) ??
     config.models[key] ??
     config.models[agent];
   if (!model) {

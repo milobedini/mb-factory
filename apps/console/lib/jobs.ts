@@ -1,6 +1,8 @@
 import type { CheckIssue, CheckResult, FactoryConfig, FilingFinding, Finding, Job } from '@mb-factory/core';
 import {
+  DESIGN_RUN_LIMIT_MINUTES,
   decideFiling,
+  designRunLapsedBefore,
   dispatchLapsedBefore,
   groupFindings,
   groupIssue,
@@ -253,18 +255,31 @@ export const handleJobRunFinished = async (runId: string): Promise<void> => {
 // A dispatched run that never called `/start` is ended as failed with no report, which reads as a run that never
 // started: a stage run is tried once more by itself, and a job's run says in the channel that it failed.
 export const endLapsedDispatches = async (now: Date): Promise<void> => {
-  const lapsed = await getDb()
-    .update(runs)
-    .set({
-      status: 'finished',
-      outcome: 'failed',
-      summary: 'Its workflow failed before it reached the console.',
-      finishedAt: now
-    })
-    .where(and(eq(runs.status, 'dispatched'), lt(runs.dispatchedAt, dispatchLapsedBefore(now))))
-    .returning({ id: runs.id, workItemId: runs.workItemId, agent: runs.agent });
+  const [lapsed, unreported] = await Promise.all([
+    getDb()
+      .update(runs)
+      .set({
+        status: 'finished',
+        outcome: 'failed',
+        summary: 'Its workflow failed before it reached the console.',
+        finishedAt: now
+      })
+      .where(and(eq(runs.status, 'dispatched'), lt(runs.dispatchedAt, dispatchLapsedBefore(now))))
+      .returning({ id: runs.id, workItemId: runs.workItemId, agent: runs.agent }),
+    // A design session has no workflow timeout: one that never reports is ended at its limit, like a timed-out stage.
+    getDb()
+      .update(runs)
+      .set({
+        status: 'finished',
+        outcome: 'failed',
+        summary: `The design session didn’t report within ${DESIGN_RUN_LIMIT_MINUTES} minutes.`,
+        finishedAt: now
+      })
+      .where(and(eq(runs.status, 'running'), eq(runs.agent, 'design'), lt(runs.startedAt, designRunLapsedBefore(now))))
+      .returning({ id: runs.id, workItemId: runs.workItemId, agent: runs.agent })
+  ]);
   await Promise.all(
-    lapsed.map(async ({ id, workItemId, agent }) => {
+    [...lapsed, ...unreported].map(async ({ id, workItemId, agent }) => {
       log('warn', 'dispatched run never started', { runId: id });
       try {
         await (workItemId

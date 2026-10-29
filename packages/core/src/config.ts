@@ -68,13 +68,16 @@ export const factoryConfigSchema = z
         })
       )
       .min(1),
+    // The claude.ai routine that runs the design stage, by its trigger ID; its token is the console's
+    // `DESIGN_ROUTINE_TOKEN`. With the Design and Design Review statuses, it turns the design stage on.
+    design: z.object({ routine: z.string().regex(/^trig_[A-Za-z0-9]+$/) }).optional(),
     linear: z.object({
       teamKey: z.string().min(1),
       statuses: z.object({
         researching: z.string().min(1),
         spec: z.string().min(1),
         specReview: z.string().min(1),
-        // Both set turns the design stage on: a spec that calls for design goes to it before implement.
+        // With the design routine, both set turn the design stage on: a spec that calls for design goes to it first.
         design: z.string().min(1).optional(),
         designReview: z.string().min(1).optional(),
         building: z.string().min(1),
@@ -127,7 +130,9 @@ export const factoryConfigSchema = z
       // Answers questions asked with the slash command.
       ask: z.string().min(1).default('sonnet'),
       // Sizes an issue accepted out of Triage without one.
-      size: z.string().min(1).default('sonnet')
+      size: z.string().min(1).default('sonnet'),
+      // Recorded on design runs only: the design routine's own setting decides the model it runs.
+      design: z.string().min(1).default('opus')
     }),
     // Paths whose changes show on screen. A delivered PR that touches any of them is verified in the app before review;
     // without this, PRs go straight to review.

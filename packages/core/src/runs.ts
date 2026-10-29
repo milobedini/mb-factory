@@ -47,6 +47,16 @@ const DISPATCH_LAPSE_MS = DISPATCH_LAPSE_MINUTES * 60 * 1000;
 // When a run dispatched at `dispatchedAt` counts as lost.
 export const dispatchLapsesAt = (dispatchedAt: Date): Date => new Date(dispatchedAt.getTime() + DISPATCH_LAPSE_MS);
 
+// A design run is a claude.ai session, with no workflow timeout to end it: one that hasn't reported this long after it
+// started is ended as failed, so it doesn't hold its work item or a run slot.
+export const DESIGN_RUN_LIMIT_MINUTES = 60;
+
+const DESIGN_RUN_LIMIT_MS = DESIGN_RUN_LIMIT_MINUTES * 60 * 1000;
+
+export const designRunLapsesAt = (startedAt: Date): Date => new Date(startedAt.getTime() + DESIGN_RUN_LIMIT_MS);
+
+export const designRunLapsedBefore = (now: Date): Date => new Date(now.getTime() - DESIGN_RUN_LIMIT_MS);
+
 // Runs dispatched before this have lapsed by `now`.
 export const dispatchLapsedBefore = (now: Date): Date => new Date(now.getTime() - DISPATCH_LAPSE_MS);
 
