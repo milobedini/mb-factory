@@ -30,7 +30,9 @@ Where the approved boards break the design doc, the boards win only for a rule c
 
 - **Blocking**: a literal value where `AGENTS.md` forbids one; a control a keyboard or screen-reader user can't operate; a state or rule that fails a clause of a published standard.
 - **Should fix**: a visible difference from an approved board; a state the doc defines that's missing or wrong; a missing story or interaction test; a component that knows about its feature; one-off UI where a library component fits.
-- **Needs a human**, whatever the tier: a difference the board and the doc disagree on, or a rule the change would need bent. Say which rule, and quote both.
+- **Needs a human**, whatever the tier: an approved board that breaks the doc without approval in `notes.md`, a doc that contradicts itself or says nothing on the question, or a rule the change would need bent. Say which rule, and quote both.
+
+Where a reference board and the doc disagree, the doc has already decided it (the order above): check the code follows the doc and the spec's Decisions list the difference. An unlisted difference is a Nit, not a question for a human.
 
 ## Ref lines
 
