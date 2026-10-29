@@ -362,7 +362,7 @@ mb-factory isn't a factory project yet, so its own follow-ups live here. Each is
 - **Sentry:** issues that came back or grew, an environment filter, filing issues (Phase 6).
 - **Slack:** `/tastebook pause [reason]` (no reason column); an Approve tapped in a `/tastebook status` reply leaves it stale; the Home usage bar renders small (try coloured squares); debounce Home republishing if `views.publish` rate-limits; follow-up questions in an ask thread do nothing.
 - **Console:** a live Runs page (times counting up, the agent's latest thought); usage over time with runs overlaid and the factory/you split; a weekly evidence clean-up (before the Blob store passes about 500 MB); exact Actions minutes; scorer cards (Phase 5); a project filter (Phase 6).
-- **Router:** a PR reopened after an unmerged close isn't handled; reviewer per project from the Linear project's lead.
+- **Router:** a PR reopened after an unmerged close isn't handled; reviewer per project from the Linear project's lead; Linear blockers only hold back the Ready list, so a spec approved while its issue waits on another (TAS-73 on TAS-86, 29 Oct) starts implement at once: hold implement with the Blocked label until the blockers finish, then start it as `unblockedBy` already does for the Ready list.
 - **Jobs:** backlog grooming (stale, duplicate, unclear, unsized, blocked only by finished issues), through the read-only Linear proxy; `autoDelegate` once trusted; guards proposed to the shared plugin (Phase 5).
 - **Linear housekeeping (by hand):** swap the stale Notion "Vision" links on the projects for the Linear Vision document; pin the TAS Overview sections.
 
