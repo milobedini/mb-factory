@@ -38,10 +38,6 @@ export const jobSchema = z.object({
 });
 
 export const usagePolicySchema = z.object({
-  fiveHour: z.object({
-    throttleAt: fraction,
-    pauseAt: fraction
-  }),
   sevenDay: z.object({
     pacing: z.boolean(),
     slack: fraction,
@@ -155,8 +151,10 @@ export const factoryConfigSchema = z
     // without this, PRs go straight to review.
     verify: z.object({ paths: z.array(z.string().min(1)).min(1) }).optional(),
     review: z.object({ maxRounds: z.int().min(0).max(5) }),
-    concurrency: z.object({ maxRuns: z.int().min(1) }),
-    usage: usagePolicySchema,
+    // Factory-wide (the root `factory.yaml`), since every project shares one subscription: refused here so a project
+    // can't think it set its own.
+    concurrency: z.undefined({ error: 'concurrency is factory-wide: set it in the root factory.yaml' }).optional(),
+    usage: z.undefined({ error: 'usage is factory-wide: set it in the root factory.yaml' }).optional(),
     // Scheduled jobs, run once a day through the governor at the lowest priority.
     jobs: z
       .array(jobSchema)
@@ -189,12 +187,28 @@ export const factoryConfigSchema = z
     path: ['models', 'verify']
   });
 
-export type FactoryConfig = z.infer<typeof factoryConfigSchema>;
+// What guards the one subscription every project shares: the run cap and the usage policy.
+export const sharedConfigSchema = z.object({
+  schemaVersion: z.literal(1),
+  concurrency: z.object({ maxRuns: z.int().min(1) }),
+  usage: usagePolicySchema
+});
+
+export type SharedConfig = z.infer<typeof sharedConfigSchema>;
+
+// A project's own settings with the factory-wide ones, so each project reads the same run cap and usage policy.
+export type FactoryConfig = Omit<z.infer<typeof factoryConfigSchema>, 'concurrency' | 'usage'> &
+  Pick<SharedConfig, 'concurrency' | 'usage'>;
 export type UsagePolicy = z.infer<typeof usagePolicySchema>;
 export type Job = z.infer<typeof jobSchema>;
 export type JobScope = (typeof JOB_SCOPES)[number];
 
-export const parseFactoryConfig = (source: string): FactoryConfig => factoryConfigSchema.parse(parse(source));
+export const parseSharedConfig = (source: string): SharedConfig => sharedConfigSchema.parse(parse(source));
+
+export const parseFactoryConfig = (source: string, shared: SharedConfig): FactoryConfig => {
+  const project = factoryConfigSchema.parse(parse(source));
+  return { ...project, concurrency: shared.concurrency, usage: shared.usage };
+};
 
 // GitHub matches `owner/name` without regard to case.
 export const reviewersFor = ({ repositories }: FactoryConfig, repository: string): string[] =>

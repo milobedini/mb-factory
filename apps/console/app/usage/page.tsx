@@ -11,8 +11,8 @@ const UsagePage = () => (
     <header className="flex flex-col gap-2">
       <h1 className="text-3xl font-semibold tracking-tight">Usage</h1>
       <p className="text-foreground/70">
-        The factory shares your Claude plan’s 5-hour and weekly limits with your own use. Every dispatch goes through
-        the governor below.
+        The factory shares your Claude plan’s weekly limit with your own use, across every project. Every dispatch goes
+        through the governor below.
       </p>
     </header>
     <Suspense fallback={<p className="text-foreground/70">Loading usage…</p>}>

@@ -4,7 +4,7 @@ import { startGovernorProbe } from './github-api';
 import { endLapsedDispatches, fireDueJobs } from './jobs';
 import { log } from './log';
 import { currentPause } from './pause';
-import { strictestStaleAfterMinutes } from './projects';
+import { staleAfterMinutes } from './projects';
 import { releaseQueue } from './router';
 import { countWaiting, latestReadings } from './usage';
 import { bookNextWake, nextJobSlots } from './wake';
@@ -27,7 +27,7 @@ export const wake = async (cause: string): Promise<WakeResult> => {
       readings,
       waiting,
       jobSoon: jobSlotSoon(nextJobSlots(new Date()), new Date()),
-      staleAfterMinutes: strictestStaleAfterMinutes(),
+      staleAfterMinutes: staleAfterMinutes(),
       now: new Date()
     });
   if (probing) {

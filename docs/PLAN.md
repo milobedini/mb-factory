@@ -22,13 +22,13 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 | Area            | Decision |
 | --------------- | -------- |
-| Claude plan     | Max 20x. Usage credits stay off, so the factory can never spend beyond the plan |
+| Claude plan     | Ultra (Max 20x until the rename of 30 Oct 2026): a weekly limit only, as verified Ultra accounts have no 5-hour session limit. Usage credits stay off, so the factory can never spend beyond the plan |
 | Tracker         | Linear, using its Agents API: the factory is an app user (`@Tastebook`). The user is a workspace admin |
 | Chat            | A Slack app per project: the factory's handle, a card per work item, the App Home and `/tastebook` |
 | Docs            | Linear documents for the Vision (team document) and PRDs (a "<Project> PRD" document on each project), since stage runs read Linear; engineering and design decisions in the project repo (`AGENTS.md`, `GLOSSARY.md`, `docs/architecture.md`, `docs/design.md`); tech specs in `specs/`; the factory's own decisions here. Notion was dropped on 26 Oct 2026 (agents can't read it) |
 | Stage runner    | GitHub Actions + `anthropics/claude-code-action` using `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), as the factory's own GitHub App (`mb-factory-bot`) |
 | Scheduled loops | Jobs in `factory.yaml`, fired by the console's scheduler and run as stage runs, so every factory run passes through the usage governor |
-| Usage governor  | The console reads the 5-hour and weekly usage before every dispatch and holds, throttles or queues work against the policy in `factory.yaml` |
+| Usage governor  | The console reads the weekly usage before every dispatch and holds, throttles or queues work against the policy in the root `factory.yaml`, shared by every project |
 | Console         | One Next.js app on Vercel: webhook routes (the router), the scheduler and the console pages |
 | Factory data    | Neon Postgres (`mb-factory-db`) from the Vercel Marketplace |
 | Repos           | `mb-factory` (this repo) and `tastebook`, both **public** (unlimited Actions minutes) |
@@ -230,7 +230,7 @@ The plugin's skills are slimmer, project-agnostic forks of the user's mb-skills 
 
 ## Usage governor
 
-The factory runs on the same Max 20x limits as the user's own Claude use. The decision logic is in `packages/core/src/governor.ts`; the policy is `usage` in `factory.yaml`.
+The factory runs on the same Ultra plan as the user's own Claude use, whose one limit is weekly (the 5-hour window went on 30 Oct 2026, and readings and holds for it were removed on 3 Nov). The decision logic is in `packages/core/src/governor.ts`; the policy is `usage` in the root `factory.yaml`, with the run cap, since every project shares the subscription. Kept on 3 Nov: weekly pacing with 10% slack, the stop at 85% and at most 5 runs.
 
 | Source | What it gives | When |
 | ------ | ------------- | ---- |
@@ -238,7 +238,7 @@ The factory runs on the same Max 20x limits as the user's own Claude use. The de
 | **Probe** | A tiny headless call (`claude -p`, cheapest model) from `governor.yml` | 8 minutes before a scheduled job when readings are stale, and Refresh on the Usage page |
 | **Local reporter** | The Mac's Claude Code status line (`cli/status-line.sh`), which also measures the user's own use | Whenever the user uses Claude Code |
 
-- **Open:** dispatch normally. **Throttled** (5-hour `throttleAt`): only in-flight and urgent work, cheaper models (`downshift`), scheduled jobs skipped. **Paused** (`pauseAt`, weekly pacing, or the pause switch): nothing dispatches; held work queues and is released, highest priority first, when the window allows.
+- **Open:** dispatch normally. **Throttled** (ahead of the weekly pace plus `slack`): only in-flight and urgent work, cheaper models (`downshift`), scheduled jobs skipped. **Paused** (the week's `pauseAt`, or the pause switch): nothing dispatches; held work queues and is released, highest priority first, when the window allows.
 - **Priorities:** `urgent`, `in_flight`, `feature`, `scheduled`. **Run cap:** `concurrency.maxRuns`. **Manual controls:** pause and resume, "allow once".
 - **Rejected mid-run:** the run is `limit_hit` and resumes after the reset.
 - **Cost on a subscription:** no billed cost per run; the console records the **API-equivalent cost** and tokens as a comparison metric.
@@ -407,7 +407,7 @@ Deferred by the user on 28 Oct 2026, after a TAS-48 implement run ended without 
 
 ### Per project and shared (Phase 6)
 
-By Phase 6, everything that can be scoped by project should be. Already per project: `factory.yaml`, work items, runs, jobs, findings, Slack channel, Linear team. Shared on purpose, because they guard the one subscription: the governor and readings, the pause switch, the run cap (`concurrency.maxRuns` and `usage` must move to one factory-wide config with a second project). To split: `console_problems` (add `project`), the console pages' filters.
+By Phase 6, everything that can be scoped by project should be. Already per project: `factory.yaml`, work items, runs, jobs, findings, Slack channel, Linear team. Shared on purpose, because they guard the one subscription: the governor and readings, the pause switch, and the run cap and usage policy (the root `factory.yaml` since 3 Nov; a project's file can't set them). To split: `console_problems` (add `project`), the console pages' filters.
 
 **Hardcoded, candidates for per project:** agent instructions (several examples are Tastebook-shaped: the security agent assumes `pnpm-lock.yaml` and `uv.lock`); fix limits (`MAX_CI_FIXES`, `MAX_CONFLICT_FIXES`); the Dependabot policy (`dependencies.ts`); filing thresholds (`security-rubric`); label names; stage run limits and allowed tools (`stage.yml`).
 

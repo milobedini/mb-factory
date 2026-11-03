@@ -10,6 +10,7 @@ on:
       - apps/console/**
       - packages/**
       - projects/**
+      - factory.yaml
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml

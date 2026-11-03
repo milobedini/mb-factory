@@ -1,8 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { parseFactoryConfig } from './config';
 import type { AskedQuestion } from './questions';
 import type { ReadyIssue } from './ready';
 import type { SlackBlock } from './slack';
@@ -41,10 +38,9 @@ import {
   withRerunButton,
   wrongChannelText
 } from './slack';
+import { tastebookConfig } from './test-config';
 
-const config = parseFactoryConfig(
-  readFileSync(fileURLToPath(new URL('../../../projects/tastebook/factory.yaml', import.meta.url)), 'utf8')
-);
+const config = tastebookConfig;
 
 const questionId = '1b4e28ba-2fa1-41d2-883f-0016d3cca427';
 const workItemId = '61a9c2a8-6b99-4e1a-acdc-cb7c0ca4b81a';

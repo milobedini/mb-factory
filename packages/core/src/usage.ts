@@ -12,12 +12,12 @@ const statusLineWindowSchema = z.object({
   resets_at: z.number().positive()
 });
 
+// A `five_hour` window is ignored: the account has none since 30 Oct 2026, and others' status lines may still send it.
 export const statusLineUsageSchema = z.object({
-  five_hour: statusLineWindowSchema.nullish(),
   seven_day: statusLineWindowSchema.nullish()
 });
 
-const STATUS_LINE_WINDOWS = { five_hour: 'fiveHour', seven_day: 'sevenDay' } as const;
+const STATUS_LINE_WINDOWS = { seven_day: 'sevenDay' } as const;
 
 export const readingsFromStatusLine = (body: unknown, now: Date): RunUsageReading[] | undefined => {
   const parsed = statusLineUsageSchema.safeParse(body);
@@ -59,7 +59,6 @@ export type WindowSummary = {
   stale: boolean;
   reset: boolean;
   // Thresholds from the policy; `paceLimit` is the weekly share allowed by now when pacing is on.
-  throttleAt: number | null;
   pauseAt: number;
   paceLimit: number | null;
 };
@@ -80,7 +79,6 @@ export const summariseUsage = ({
   const windows = USAGE_WINDOWS.map((window): WindowSummary => {
     const reading = readings[window];
     const reset = reading ? now.getTime() >= reading.resetsAt.getTime() : false;
-    const weekly = window === 'sevenDay';
     return {
       window,
       utilisation: reading && !reset ? reading.utilisation : 0,
@@ -89,15 +87,14 @@ export const summariseUsage = ({
       source: reading?.source ?? null,
       stale: stale.includes(window),
       reset,
-      throttleAt: weekly ? null : policy.fiveHour.throttleAt,
-      pauseAt: weekly ? policy.sevenDay.pauseAt : policy.fiveHour.pauseAt,
+      pauseAt: policy.sevenDay.pauseAt,
       paceLimit:
-        weekly && policy.sevenDay.pacing && reading && !reset
+        policy.sevenDay.pacing && reading && !reset
           ? Math.min(weeklyPaceLimit(reading, now, policy.sevenDay.slack), 1)
           : null
     };
   });
-  return { ...assessUsage(policy, readings.fiveHour, readings.sevenDay, now), windows };
+  return { ...assessUsage(policy, readings.sevenDay, now), windows };
 };
 
 const MINUTE_MS = 60_000;

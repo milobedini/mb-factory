@@ -42,17 +42,19 @@ export {
   slackHubUrl,
   unknownRequestText
 } from './command';
-export type { FactoryConfig, Job, JobScope, Person, UsagePolicy } from './config';
+export type { FactoryConfig, Job, JobScope, Person, SharedConfig, UsagePolicy } from './config';
 export {
   coAuthorFor,
   factoryConfigSchema,
   jobSchema,
   parseFactoryConfig,
+  parseSharedConfig,
   personFor,
   personForGitHub,
   personForSlack,
   personName,
   reviewersFor,
+  sharedConfigSchema,
   slackMentionFor,
   usagePolicySchema
 } from './config';

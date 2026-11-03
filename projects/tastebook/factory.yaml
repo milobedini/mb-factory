@@ -74,22 +74,6 @@ verify:
 review:
   maxRounds: 2
 
-concurrency:
-  maxRuns: 5
-
-usage:
-  fiveHour:
-    throttleAt: 0.6
-    pauseAt: 0.8
-  sevenDay:
-    pacing: true
-    slack: 0.1
-    pauseAt: 0.85
-  staleAfterMinutes: 20
-  downshift:
-    triage: haiku
-    review: sonnet
-
 # The console's own daily check: warnings and errors, stuck runs, late jobs. Not a Claude run.
 health:
   at: "07:00"

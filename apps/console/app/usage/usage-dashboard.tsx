@@ -8,7 +8,7 @@ import { loadUsageView } from '@/lib/usage-view';
 import { allowAction, pauseAction, resumeAction } from './actions';
 import { RefreshButton } from './refresh-button';
 
-const WINDOW_NAMES: Record<WindowSummary['window'], string> = { fiveHour: '5-hour window', sevenDay: 'Weekly window' };
+const WINDOW_NAMES: Record<WindowSummary['window'], string> = { sevenDay: 'Weekly window' };
 
 const STATE_STYLES: Record<UsageSummary['state'], { label: string; className: string }> = {
   open: { label: 'Open', className: 'text-ok' },
@@ -20,8 +20,6 @@ const REASON_COPY: Record<HoldReason, string> = {
   concurrency: 'Run cap reached',
   work_item_busy: 'Another run on this issue',
   manual_pause: 'Paused from the console',
-  five_hour_throttle: '5-hour throttle',
-  five_hour_pause: '5-hour pause',
   weekly_pacing: 'Ahead of weekly pace',
   weekly_pause: 'Weekly pause',
   blocked: 'Blocked in Linear'
@@ -35,11 +33,11 @@ const STATE_EXPLANATION: Record<UsageSummary['state'], string> = {
 
 const percent = (fraction: number): string => `${Math.round(fraction * 100)}%`;
 
-const barColour = ({ utilisation, throttleAt, pauseAt, paceLimit }: WindowSummary): string => {
+const barColour = ({ utilisation, pauseAt, paceLimit }: WindowSummary): string => {
   if (utilisation >= pauseAt) {
     return 'bg-danger';
   }
-  if ((throttleAt !== null && utilisation >= throttleAt) || (paceLimit !== null && utilisation > paceLimit)) {
+  if (paceLimit !== null && utilisation > paceLimit) {
     return 'bg-warn';
   }
   return 'bg-ok';
@@ -55,7 +53,6 @@ const Marker = ({ at, label }: { at: number; label: string }) => (
 
 const WindowGauge = ({ summary, now }: { summary: WindowSummary; now: Date }) => {
   const markers = [
-    summary.throttleAt === null ? undefined : { at: summary.throttleAt, label: 'Throttle' },
     { at: summary.pauseAt, label: 'Pause' },
     summary.paceLimit === null ? undefined : { at: summary.paceLimit, label: 'Weekly pace' }
   ].filter((marker) => marker !== undefined);
@@ -71,7 +68,7 @@ const WindowGauge = ({ summary, now }: { summary: WindowSummary; now: Date }) =>
         min={0}
         max={1}
         value={summary.utilisation}
-        high={summary.throttleAt ?? summary.paceLimit ?? summary.pauseAt}
+        high={summary.paceLimit ?? summary.pauseAt}
       />
       <div className="bg-foreground/10 relative h-3 overflow-hidden rounded-full" aria-hidden="true">
         <div className={`h-full ${barColour(summary)}`} style={{ width: `${summary.utilisation * 100}%` }} />
@@ -161,32 +158,28 @@ const HeldRow = ({ run, now }: { run: HeldRun; now: Date }) => (
 export const UsageDashboard = async () => {
   const view = await loadUsageView();
   const { now } = view;
+  const state = view.pause ? STATE_STYLES.paused : STATE_STYLES[view.summary.state];
   return (
     <div className="flex flex-col gap-8">
-      {view.projects.map(({ name, alias, maxRuns, summary }) => {
-        const state = view.pause ? STATE_STYLES.paused : STATE_STYLES[summary.state];
-        return (
-          <section key={name} className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex flex-col gap-1">
-                <h2 className="text-lg font-medium">
-                  {alias}: <span className={state.className}>{state.label}</span>
-                </h2>
-                <p className="text-foreground/70 text-sm">
-                  {view.pause ? 'Paused from the console.' : STATE_EXPLANATION[summary.state]} {view.activeRuns} of{' '}
-                  {maxRuns} runs going.
-                </p>
-              </div>
-              <RefreshButton />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {summary.windows.map((window) => (
-                <WindowGauge key={window.window} summary={window} now={now} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-medium">
+              Factory: <span className={state.className}>{state.label}</span>
+            </h2>
+            <p className="text-foreground/70 text-sm">
+              {view.pause ? 'Paused from the console.' : STATE_EXPLANATION[view.summary.state]} {view.activeRuns} of{' '}
+              {view.maxRuns} runs going.
+            </p>
+          </div>
+          <RefreshButton />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {view.summary.windows.map((window) => (
+            <WindowGauge key={window.window} summary={window} now={now} />
+          ))}
+        </div>
+      </section>
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">

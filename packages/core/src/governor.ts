@@ -1,6 +1,7 @@
 import type { UsagePolicy } from './config';
 
-export const USAGE_WINDOWS = ['fiveHour', 'sevenDay'] as const;
+// Only the weekly window: Ultra accounts have had no 5-hour session limit since 30 Oct 2026.
+export const USAGE_WINDOWS = ['sevenDay'] as const;
 
 export type UsageWindow = (typeof USAGE_WINDOWS)[number];
 
@@ -31,8 +32,6 @@ export const HOLD_REASONS = [
   'concurrency',
   'work_item_busy',
   'manual_pause',
-  'five_hour_throttle',
-  'five_hour_pause',
   'weekly_pacing',
   'weekly_pause',
   // Not the governor's: a run that starts building waits while its issue has unfinished blockers in Linear.
@@ -42,13 +41,7 @@ export const HOLD_REASONS = [
 export type HoldReason = (typeof HOLD_REASONS)[number];
 
 // Holds a human can override with "allow once": the usage limits and the console's pause, not the run caps.
-export const USAGE_HOLD_REASONS: HoldReason[] = [
-  'five_hour_throttle',
-  'five_hour_pause',
-  'weekly_pacing',
-  'weekly_pause',
-  'manual_pause'
-];
+export const USAGE_HOLD_REASONS: HoldReason[] = ['weekly_pacing', 'weekly_pause', 'manual_pause'];
 
 export type Decision =
   | { kind: 'dispatch'; state: GovernorState; downshift: boolean }
@@ -98,23 +91,11 @@ const paceReleaseAt = (reading: UsageReading, slack: number): Date => {
 
 export type Assessment = { state: GovernorState; reason?: HoldReason; releaseAt?: Date };
 
-export const assessUsage = (
-  policy: UsagePolicy,
-  fiveHour: UsageReading | undefined,
-  sevenDay: UsageReading | undefined,
-  now: Date
-): Assessment => {
-  const fiveHourUsed = fiveHour ? effectiveUtilisation(fiveHour, now) : 0;
+export const assessUsage = (policy: UsagePolicy, sevenDay: UsageReading | undefined, now: Date): Assessment => {
   const sevenDayUsed = sevenDay ? effectiveUtilisation(sevenDay, now) : 0;
 
   if (sevenDay && sevenDayUsed >= policy.sevenDay.pauseAt) {
     return { state: 'paused', reason: 'weekly_pause', releaseAt: sevenDay.resetsAt };
-  }
-  if (fiveHour && fiveHourUsed >= policy.fiveHour.pauseAt) {
-    return { state: 'paused', reason: 'five_hour_pause', releaseAt: fiveHour.resetsAt };
-  }
-  if (fiveHour && fiveHourUsed >= policy.fiveHour.throttleAt) {
-    return { state: 'throttled', reason: 'five_hour_throttle', releaseAt: fiveHour.resetsAt };
   }
   if (sevenDay && policy.sevenDay.pacing && sevenDayUsed > weeklyPaceLimit(sevenDay, now, policy.sevenDay.slack)) {
     return { state: 'throttled', reason: 'weekly_pacing', releaseAt: paceReleaseAt(sevenDay, policy.sevenDay.slack) };
@@ -136,7 +117,7 @@ export const decideDispatch = ({
     return { kind: 'probe', stale };
   }
 
-  const { state, reason, releaseAt } = assessUsage(policy, readings.fiveHour, readings.sevenDay, now);
+  const { state, reason, releaseAt } = assessUsage(policy, readings.sevenDay, now);
 
   if (runningCount >= maxRuns) {
     return { kind: 'hold', state, reason: 'concurrency' };

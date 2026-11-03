@@ -98,15 +98,15 @@ export const usageBar = (fraction: number): string => {
   return `${'▰'.repeat(filled)}${'▱'.repeat(CELLS - filled)}`;
 };
 
-const WINDOW_NAMES: Record<WindowSummary['window'], string> = { fiveHour: '5-hour window', sevenDay: 'Week' };
+const WINDOW_NAMES: Record<WindowSummary['window'], string> = { sevenDay: 'Week' };
 
 const windowText = (window: WindowSummary, { now, timeZone }: HomeInput): string => {
   const percent = Math.round(window.utilisation * 100);
   const state =
     window.utilisation >= window.pauseAt
       ? 'New work waits for the reset.'
-      : window.throttleAt !== null && window.utilisation >= window.throttleAt
-        ? 'Only work in flight runs.'
+      : window.paceLimit !== null && window.utilisation > window.paceLimit
+        ? 'Ahead of the weekly pace: only work in flight runs.'
         : window.stale
           ? 'The reading is stale.'
           : undefined;

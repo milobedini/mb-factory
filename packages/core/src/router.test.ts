@@ -1,8 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { parseFactoryConfig } from './config';
 import type { SpecDesign } from './design';
 import type { UsageReading } from './governor';
 import {
@@ -54,10 +51,9 @@ import {
   waitsOnBlockers,
   withFindings
 } from './router';
+import { tastebookConfig } from './test-config';
 
-const config = parseFactoryConfig(
-  readFileSync(fileURLToPath(new URL('../../../projects/tastebook/factory.yaml', import.meta.url)), 'utf8')
-);
+const config = tastebookConfig;
 
 // Trimmed from a real delivery (TAS-7, 2026-10-25).
 const createdEvent = {
@@ -303,7 +299,7 @@ const reading = (window: UsageReading['window'], utilisation: number, overrides:
 const governed = (overrides: Partial<Parameters<typeof governDispatch>[0]>) =>
   governDispatch({
     policy: config.usage,
-    readings: { fiveHour: reading('fiveHour', 0.1), sevenDay: reading('sevenDay', 0.1) },
+    readings: { sevenDay: reading('sevenDay', 0.1) },
     priority: 'feature',
     runningCount: 0,
     maxRuns: 2,
@@ -322,15 +318,15 @@ describe('governDispatch', () => {
   it('fails open on missing readings and reports which windows were stale', () => {
     expect(governed({ readings: {} })).toEqual({
       decision: { kind: 'dispatch', state: 'open', downshift: false },
-      staleWindows: ['fiveHour', 'sevenDay']
+      staleWindows: ['sevenDay']
     });
   });
 
   it('still holds on a stale reading that says the window is paused', () => {
-    const stalePaused = reading('fiveHour', 0.9, { takenAt: new Date(now.getTime() - 60 * 60_000) });
-    expect(governed({ readings: { fiveHour: stalePaused } }).decision).toMatchObject({
+    const stalePaused = reading('sevenDay', 0.9, { takenAt: new Date(now.getTime() - 60 * 60_000) });
+    expect(governed({ readings: { sevenDay: stalePaused } }).decision).toMatchObject({
       kind: 'hold',
-      reason: 'five_hour_pause'
+      reason: 'weekly_pause'
     });
   });
 
@@ -355,7 +351,7 @@ describe('governDispatch', () => {
     expect(
       governed({
         allowUsage: true,
-        readings: { fiveHour: reading('fiveHour', 0.9), sevenDay: reading('sevenDay', 0.1) }
+        readings: { sevenDay: reading('sevenDay', 0.9) }
       }).decision
     ).toEqual({ kind: 'dispatch', state: 'paused', downshift: false });
   });
@@ -366,8 +362,8 @@ describe('governDispatch', () => {
   });
 
   it('prefers the usage reason over a busy issue, so the hold says when it can release', () => {
-    expect(governed({ workItemBusy: true, readings: { fiveHour: reading('fiveHour', 0.9) } }).decision).toMatchObject({
-      reason: 'five_hour_pause'
+    expect(governed({ workItemBusy: true, readings: { sevenDay: reading('sevenDay', 0.9) } }).decision).toMatchObject({
+      reason: 'weekly_pause'
     });
   });
 });
@@ -556,11 +552,11 @@ describe('queuedThought', () => {
     const decision = {
       kind: 'hold' as const,
       state: 'paused' as const,
-      reason: 'five_hour_pause' as const,
+      reason: 'weekly_pause' as const,
       releaseAt: new Date('2026-10-25T14:30:00Z')
     };
     expect(queuedThought(decision, now, 'Europe/London')).toBe(
-      'Queued until 14:30: usage in the 5-hour window is close to the limit.'
+      'Queued until 14:30: weekly usage is close to the limit.'
     );
   });
 

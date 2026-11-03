@@ -4,7 +4,7 @@ import { rejectUnlessGovernor } from '@/lib/github-oidc';
 import { endLapsedDispatches, fireDueJobs } from '@/lib/jobs';
 import { log } from '@/lib/log';
 import { currentPause } from '@/lib/pause';
-import { strictestStaleAfterMinutes } from '@/lib/projects';
+import { staleAfterMinutes } from '@/lib/projects';
 import { releaseQueue } from '@/lib/router';
 import { countWaiting, latestReadings } from '@/lib/usage';
 import { bookNextWake } from '@/lib/wake';
@@ -22,7 +22,7 @@ export const POST = async (request: Request) => {
   const paused = pause !== undefined;
   const now = new Date();
   // While paused, only runs someone allowed once can go, and a probe can't change that.
-  if (!probed && !paused && needsProbe({ readings, waiting, staleAfterMinutes: strictestStaleAfterMinutes(), now })) {
+  if (!probed && !paused && needsProbe({ readings, waiting, staleAfterMinutes: staleAfterMinutes(), now })) {
     log('info', 'governor tick asked for a probe', { waiting });
     return Response.json({ probe: true, waiting });
   }

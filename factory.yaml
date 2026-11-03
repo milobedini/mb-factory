@@ -1,0 +1,20 @@
+# Factory-wide settings: what guards the one Claude subscription every project shares. Each project's own settings are
+# in projects/<name>/factory.yaml.
+schemaVersion: 1
+
+# Stage runs going at once, across every project.
+concurrency:
+  maxRuns: 5
+
+# The weekly window is the only limit: verified Ultra accounts have had no 5-hour session limit since 30 Oct 2026.
+# Pacing keeps the factory from spending the week early (ahead of an even pace plus `slack`, only work in flight runs,
+# on the `downshift` models), and it stops at `pauseAt`, leaving the rest for the user's own use.
+usage:
+  sevenDay:
+    pacing: true
+    slack: 0.1
+    pauseAt: 0.85
+  staleAfterMinutes: 20
+  downshift:
+    triage: haiku
+    review: sonnet

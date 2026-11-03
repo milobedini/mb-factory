@@ -18,50 +18,48 @@ describe('readingsFromStatusLine', () => {
         },
         now
       )
-    ).toEqual([
-      { window: 'fiveHour', utilisation: 0.425, resetsAt: hoursFromNow(3), status: null },
-      { window: 'sevenDay', utilisation: 0.12, resetsAt: hoursFromNow(100), status: null }
-    ]);
+    ).toEqual([{ window: 'sevenDay', utilisation: 0.12, resetsAt: hoursFromNow(100), status: null }]);
   });
 
-  it('keeps the windows that are present, and caps utilisation at 1', () => {
+  it('ignores a 5-hour window, and caps utilisation at 1', () => {
     expect(
-      readingsFromStatusLine({ five_hour: { used_percentage: 130, resets_at: epoch(hoursFromNow(1)) } }, now)
-    ).toEqual([{ window: 'fiveHour', utilisation: 1, resetsAt: hoursFromNow(1), status: null }]);
+      readingsFromStatusLine({ seven_day: { used_percentage: 130, resets_at: epoch(hoursFromNow(1)) } }, now)
+    ).toEqual([{ window: 'sevenDay', utilisation: 1, resetsAt: hoursFromNow(1), status: null }]);
+    expect(
+      readingsFromStatusLine({ five_hour: { used_percentage: 10, resets_at: epoch(hoursFromNow(3)) } }, now)
+    ).toEqual([]);
   });
 
   it('drops a window whose reset time could not be real', () => {
     expect(
-      readingsFromStatusLine({ five_hour: { used_percentage: 10, resets_at: epoch(hoursFromNow(48)) } }, now)
+      readingsFromStatusLine({ seven_day: { used_percentage: 10, resets_at: epoch(hoursFromNow(24 * 9)) } }, now)
     ).toEqual([]);
   });
 
   it('rejects a body that is not status line usage', () => {
-    expect(readingsFromStatusLine({ five_hour: { used_percentage: 'high' } }, now)).toBeUndefined();
+    expect(readingsFromStatusLine({ seven_day: { used_percentage: 'high' } }, now)).toBeUndefined();
   });
 });
 
 describe('needsProbe', () => {
   const reading = (minutesOld: number): UsageReading => ({
-    window: 'fiveHour',
+    window: 'sevenDay',
     utilisation: 0.5,
-    resetsAt: hoursFromNow(2),
+    resetsAt: hoursFromNow(48),
     takenAt: new Date(now.getTime() - minutesOld * 60_000),
     source: 'local'
   });
-  const fresh = { fiveHour: reading(1), sevenDay: { ...reading(1), window: 'sevenDay' as const } };
+  const fresh = { sevenDay: reading(1) };
 
   it('probes before a scheduled job on stale readings, with nothing held', () => {
-    const stale = { ...fresh, sevenDay: { ...reading(600), window: 'sevenDay' as const } };
+    const stale = { sevenDay: reading(600) };
     expect(needsProbe({ readings: stale, waiting: 0, jobSoon: true, staleAfterMinutes: 20, now })).toBe(true);
     expect(needsProbe({ readings: fresh, waiting: 0, jobSoon: true, staleAfterMinutes: 20, now })).toBe(false);
     expect(needsProbe({ readings: stale, waiting: 0, staleAfterMinutes: 20, now })).toBe(false);
   });
 
   it('probes before releasing held work on stale readings', () => {
-    expect(needsProbe({ readings: { ...fresh, fiveHour: reading(30) }, waiting: 1, staleAfterMinutes: 20, now })).toBe(
-      true
-    );
+    expect(needsProbe({ readings: { sevenDay: reading(30) }, waiting: 1, staleAfterMinutes: 20, now })).toBe(true);
   });
 
   it('skips the probe when nothing is waiting, or the readings are fresh', () => {
@@ -72,7 +70,6 @@ describe('needsProbe', () => {
 
 describe('summariseUsage', () => {
   const policy: UsagePolicy = {
-    fiveHour: { throttleAt: 0.6, pauseAt: 0.8 },
     sevenDay: { pacing: true, slack: 0.1, pauseAt: 0.85 },
     staleAfterMinutes: 20,
     downshift: {}
@@ -85,32 +82,24 @@ describe('summariseUsage', () => {
     source: 'local'
   });
 
-  it('shows each window with its thresholds and the state the governor would decide on', () => {
+  it('shows the week with its thresholds and the state the governor would decide on', () => {
     // Half the week left: pacing allows 50% + 10% slack.
     const summary = summariseUsage({
       policy,
-      readings: {
-        fiveHour: reading('fiveHour', 0.65, hoursFromNow(2)),
-        sevenDay: reading('sevenDay', 0.3, hoursFromNow(84))
-      },
+      readings: { sevenDay: reading('sevenDay', 0.65, hoursFromNow(84)) },
       now
     });
-    expect(summary).toMatchObject({ state: 'throttled', reason: 'five_hour_throttle', releaseAt: hoursFromNow(2) });
-    expect(summary.windows[0]).toMatchObject({
-      window: 'fiveHour',
-      utilisation: 0.65,
-      throttleAt: 0.6,
-      pauseAt: 0.8,
-      stale: false
-    });
-    expect(summary.windows[1]?.paceLimit).toBeCloseTo(0.6);
+    expect(summary).toMatchObject({ state: 'throttled', reason: 'weekly_pacing' });
+    expect(summary.windows).toHaveLength(1);
+    expect(summary.windows[0]).toMatchObject({ window: 'sevenDay', utilisation: 0.65, pauseAt: 0.85, stale: false });
+    expect(summary.windows[0]?.paceLimit).toBeCloseTo(0.6);
   });
 
-  it('counts a window that has reset as empty, and a missing one as stale', () => {
-    const summary = summariseUsage({ policy, readings: { fiveHour: reading('fiveHour', 0.9, hoursFromNow(-1)) }, now });
-    expect(summary.state).toBe('open');
-    expect(summary.windows[0]).toMatchObject({ utilisation: 0, reset: true, resetsAt: null, stale: false });
-    expect(summary.windows[1]).toMatchObject({ source: null, stale: true });
+  it('counts a week that has reset as empty, and a missing one as stale', () => {
+    const reset = summariseUsage({ policy, readings: { sevenDay: reading('sevenDay', 0.9, hoursFromNow(-1)) }, now });
+    expect(reset.state).toBe('open');
+    expect(reset.windows[0]).toMatchObject({ utilisation: 0, reset: true, resetsAt: null, stale: false });
+    expect(summariseUsage({ policy, readings: {}, now }).windows[0]).toMatchObject({ source: null, stale: true });
   });
 });
 

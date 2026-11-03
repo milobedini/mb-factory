@@ -83,9 +83,8 @@ describe('summariseRun', () => {
     });
   });
 
-  it('turns both rate-limit windows into usage readings', () => {
+  it('turns the weekly rate-limit window into a usage reading, ignoring the 5-hour one', () => {
     expect(summariseRun(report()).readings).toEqual([
-      { window: 'fiveHour', utilisation: 0.42, resetsAt: new Date('2026-10-25T11:00:00Z'), status: 'allowed' },
       { window: 'sevenDay', utilisation: 0.13, resetsAt: new Date('2026-10-26T05:00:00Z'), status: 'allowed' }
     ]);
   });
@@ -159,19 +158,19 @@ describe('summariseRun', () => {
 
   it('caps utilisation at 1', () => {
     const event = rateLimitEvent();
-    event.rate_limit_info.unifiedWindows.five_hour.utilization = 7;
+    event.rate_limit_info.unifiedWindows.seven_day.utilization = 7;
 
     expect(summariseRun(report({ events: [event] })).readings[0]?.utilisation).toBe(1);
   });
 
   it.each([
-    ['too far ahead for the window', 1793000000],
+    ['too far ahead for the window', 1793602800],
     ['already past', 1792900000]
   ])('drops a reading whose reset is %s', (_label, resetsAt) => {
     const event = rateLimitEvent();
-    event.rate_limit_info.unifiedWindows.five_hour.resetsAt = resetsAt;
+    event.rate_limit_info.unifiedWindows.seven_day.resetsAt = resetsAt;
 
-    expect(summariseRun(report({ events: [event] })).readings.map(({ window }) => window)).toEqual(['sevenDay']);
+    expect(summariseRun(report({ events: [event] })).readings).toEqual([]);
   });
 
   it.each(['tas-12\nstage: review', '../main', '-delete', 'feature/', 'refs.lock'])(

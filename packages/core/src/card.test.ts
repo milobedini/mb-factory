@@ -164,11 +164,11 @@ describe('workItemCard', () => {
     const card = workItemCard(
       input({
         runs: [run({ status: 'queued', dispatchedAt: null, startedAt: null, finishedAt: null })],
-        hold: { reason: 'five_hour_pause', releaseAt: at(60) }
+        hold: { reason: 'weekly_pause', releaseAt: at(60) }
       })
     );
     expect(attachment(card).color).toBe(CARD_COLOURS.queued);
-    expect(status(card)).toBe(':tb-queued: *Queued* until 11:00: usage in the 5-hour window is close to the limit.');
+    expect(status(card)).toBe(':tb-queued: *Queued* until 11:00: weekly usage is close to the limit.');
     expect(track(card)).toMatch(/^:tb-queued: \*Triage\*/);
   });
 

@@ -111,10 +111,11 @@ export type RunSummary = {
   stageMs: number | null;
 };
 
-const WINDOW_KEYS = { five_hour: 'fiveHour', seven_day: 'sevenDay' } as const;
+// A run's `five_hour` window is ignored: the account has none since 30 Oct 2026.
+const WINDOW_KEYS = { seven_day: 'sevenDay' } as const;
 
 const HOUR_MS = 60 * 60 * 1000;
-const WINDOW_LENGTH_MS: Record<UsageWindow, number> = { fiveHour: 5 * HOUR_MS, sevenDay: 7 * 24 * HOUR_MS };
+const WINDOW_LENGTH_MS: Record<UsageWindow, number> = { sevenDay: 7 * 24 * HOUR_MS };
 const RESET_TOLERANCE_MS = 10 * 60 * 1000;
 
 // The agent shares the runner with the report step, so a reading must at least look like a real window.
@@ -163,8 +164,10 @@ const toUsage = (result: ResultEvent | undefined): RunUsage | null => {
 export const readingsFromEvents = (events: unknown[], now: Date): RunUsageReading[] =>
   toReadings(lastMatch(events, rateLimitEventSchema), now);
 
-const isRejected = (event: RateLimitEvent | undefined, readings: RunUsageReading[]): boolean =>
-  event?.rate_limit_info.status === 'rejected' || readings.some(({ status }) => status === 'rejected');
+// Any window refusing counts, a 5-hour one included, though it's no longer read for usage.
+const isRejected = (event: RateLimitEvent | undefined): boolean =>
+  event?.rate_limit_info.status === 'rejected' ||
+  Object.values(event?.rate_limit_info.unifiedWindows ?? {}).some((window) => window?.status === 'rejected');
 
 // GitHub stops a step at its limit without saying so to the steps after it, so a step that ran to within a minute of
 // the limit is taken to have been stopped by it.
@@ -202,7 +205,7 @@ export const summariseRun = (run: RunReport, now: Date): RunSummary => {
       stageMs
     };
   }
-  if (isRejected(rateLimit, readings)) {
+  if (isRejected(rateLimit)) {
     return {
       status: 'limit_hit',
       outcome: null,

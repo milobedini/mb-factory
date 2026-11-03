@@ -901,8 +901,6 @@ const HOLD_COPY: Record<HoldReason, string> = {
   concurrency: 'the factory is already running as many stages as it allows',
   work_item_busy: 'an earlier run on this issue is still going',
   manual_pause: 'the factory is paused from the console',
-  five_hour_throttle: 'usage in the 5-hour window is high, so only work already in flight runs',
-  five_hour_pause: 'usage in the 5-hour window is close to the limit',
   weekly_pacing: 'weekly usage is ahead of pace',
   weekly_pause: 'weekly usage is close to the limit',
   blocked: 'an issue blocking this one isn’t finished yet'

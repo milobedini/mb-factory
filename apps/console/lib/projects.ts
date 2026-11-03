@@ -1,10 +1,12 @@
-import type { FactoryConfig } from '@mb-factory/core';
-import { parseFactoryConfig } from '@mb-factory/core';
+import type { FactoryConfig, SharedConfig } from '@mb-factory/core';
+import { parseFactoryConfig, parseSharedConfig } from '@mb-factory/core';
 
+import factory from '../../../factory.yaml';
 import tastebook from '../../../projects/tastebook/factory.yaml';
 
 // Core's tests parse the same files, so an invalid factory.yaml fails `pnpm test` before it ships.
-const PROJECTS: FactoryConfig[] = [parseFactoryConfig(tastebook)];
+const SHARED: SharedConfig = parseSharedConfig(factory);
+const PROJECTS: FactoryConfig[] = [parseFactoryConfig(tastebook, SHARED)];
 
 export const findProjectByTeamKey = (teamKey: string): FactoryConfig | undefined =>
   PROJECTS.find(({ linear }) => linear.teamKey === teamKey);
@@ -20,9 +22,13 @@ export const repositoryOf = ({ repositories }: FactoryConfig): string => {
   return `${primary.owner}/${primary.name}`;
 };
 
-// The governor job serves every project, so it probes by the strictest staleness limit.
-export const strictestStaleAfterMinutes = (): number =>
-  Math.min(...PROJECTS.map(({ usage }) => usage.staleAfterMinutes));
+// The governor job serves every project, which share one usage policy.
+export const staleAfterMinutes = (): number => SHARED.usage.staleAfterMinutes;
+
+// The run cap across every project.
+export const maxRuns = (): number => SHARED.concurrency.maxRuns;
+
+export const usagePolicy = (): SharedConfig['usage'] => SHARED.usage;
 
 // Times on console pages; the console serves one operator, so the first project's zone stands for theirs.
 export const consoleTimeZone = (): string => PROJECTS[0]?.timeZone ?? 'UTC';

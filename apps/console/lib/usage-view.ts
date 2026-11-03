@@ -8,7 +8,7 @@ import { queue, runs, usageReadings, workItems } from '@/db/schema';
 
 import type { Pause } from './pause';
 import { currentPause } from './pause';
-import { allProjects } from './projects';
+import { maxRuns, usagePolicy } from './projects';
 import { releaseQueueOnActivity } from './router';
 import type { ConsoleUser } from './session';
 import { requireConsoleUser } from './session';
@@ -33,7 +33,9 @@ export type UsageView = {
   user: ConsoleUser;
   now: Date;
   pause: Pause | undefined;
-  projects: { name: string; alias: string; maxRuns: number; summary: UsageSummary }[];
+  // One for the factory: every project shares the subscription, its run cap and usage policy.
+  maxRuns: number;
+  summary: UsageSummary;
   activeRuns: number;
   held: HeldRun[];
   recent: (typeof usageReadings.$inferSelect)[];
@@ -76,12 +78,8 @@ export const loadUsageView = async (): Promise<UsageView> => {
     user,
     now,
     pause,
-    projects: allProjects().map(({ name, alias, concurrency, usage }) => ({
-      name,
-      alias,
-      maxRuns: concurrency.maxRuns,
-      summary: summariseUsage({ policy: usage, readings, now })
-    })),
+    maxRuns: maxRuns(),
+    summary: summariseUsage({ policy: usagePolicy(), readings, now }),
     activeRuns,
     held: orderQueue(held),
     recent

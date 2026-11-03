@@ -1,8 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { parseFactoryConfig } from './config';
+import { tastebookConfig } from './test-config';
 import {
   decideIssueUpdate,
   parseGitHubEvent,
@@ -13,9 +11,7 @@ import {
   stoppedText
 } from './work-item-events';
 
-const config = parseFactoryConfig(
-  readFileSync(fileURLToPath(new URL('../../../projects/tastebook/factory.yaml', import.meta.url)), 'utf8')
-);
+const config = tastebookConfig;
 
 const APP_USER = 'app-user';
 const HUMAN = 'human-user';

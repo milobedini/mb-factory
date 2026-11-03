@@ -59,18 +59,6 @@ const usage: UsageSummary = {
   stale: [],
   windows: [
     {
-      window: 'fiveHour',
-      utilisation: 0.82,
-      resetsAt: at(240),
-      takenAt: at(20),
-      source: 'probe',
-      stale: false,
-      reset: false,
-      throttleAt: 0.8,
-      pauseAt: 0.95,
-      paceLimit: null
-    },
-    {
       window: 'sevenDay',
       utilisation: 0.41,
       resetsAt: new Date(Date.UTC(2026, 10, 2, 9, 0)),
@@ -78,7 +66,6 @@ const usage: UsageSummary = {
       source: 'probe',
       stale: false,
       reset: false,
-      throttleAt: null,
       pauseAt: 0.95,
       paceLimit: 0.5
     }
@@ -155,12 +142,14 @@ describe('homeView', () => {
     expect(spec?.accessory).toMatchObject({ text: { text: 'Approve' } });
   });
 
-  it('says how full each usage window is, and what the governor does about it', () => {
-    const view = homeView(input());
-    expect(texts(view.blocks)).toEqual(
+  it('says how full the week is, and what the governor does about it', () => {
+    expect(texts(homeView(input()).blocks)).toEqual(
+      expect.arrayContaining(['*Week* 41%\n▰▰▰▰▱▱▱▱▱▱\nResets Mon 2 Nov, 09:00.'])
+    );
+    const ahead = { ...usage, windows: usage.windows.map((window) => ({ ...window, utilisation: 0.62 })) };
+    expect(texts(homeView(input({ usage: ahead })).blocks)).toEqual(
       expect.arrayContaining([
-        '*5-hour window* 82%\n▰▰▰▰▰▰▰▰▱▱\nResets 14:00. Only work in flight runs.',
-        '*Week* 41%\n▰▰▰▰▱▱▱▱▱▱\nResets Mon 2 Nov, 09:00.'
+        '*Week* 62%\n▰▰▰▰▰▰▱▱▱▱\nResets Mon 2 Nov, 09:00. Ahead of the weekly pace: only work in flight runs.'
       ])
     );
   });
@@ -285,10 +274,7 @@ describe('slackStatusMessage', () => {
       hub
     );
     expect(message.text).toBe('Tastebook: 1 running, 1 needs you');
-    expect(texts(message.blocks).slice(0, 2)).toEqual([
-      '*Tastebook factory* · 1 running · 1 needs you',
-      '5-hour window 82% · Week 41%'
-    ]);
+    expect(texts(message.blocks).slice(0, 2)).toEqual(['*Tastebook factory* · 1 running · 1 needs you', 'Week 41%']);
     const spec = message.blocks.find((block) => texts([block])[0]?.includes('TAS-38'));
     expect(spec?.accessory).toMatchObject({ text: { text: 'Approve' } });
     expect(texts(message.blocks).some((text) => text.includes('TAS-39'))).toBe(false);
