@@ -384,8 +384,4 @@ Four steps, each usable by itself. Each step's work is the factory's own (`mb-fa
 - **The visual in Slack:** a Block Kit image block plays no video, so a flow's video may need a poster image linking to it, or a GIF. Decide at step 1.
 - **"Product question":** watch the first weeks of express for technical questions that should have waited, and the reverse. Tune the definition in `implement.md`.
 - **Mutation testing:** run time on the runner.
-- **Backlog items express makes moot**, to delete as step 1 or 2 lands:
-  - "Verify" (triage's `next: verify`)
-  - "Review without a question"
-  - "Asking again" (review questions)
-  - "Fixing a kept failure"
+- **Backlog items Express made moot** were removed from the plan when Phase 4 closed: triage's `next: verify` and verify on previews; review asking again about an accepted trade-off (TAS-81); review blaming a preview's setup (TAS-95); review reporting `human_decision_needed` with no question (TAS-95); a CI fix started for a failure kept at review (TAS-94).
