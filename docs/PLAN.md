@@ -1,6 +1,6 @@
 # mb-factory — Plan
 
-A reusable software factory, modelled on [Warp Factories](https://docs.warp.dev/factories), that runs on a Claude **subscription** rather than paid API usage. Work arrives from Linear or Slack, moves through triage → spec → implement → verify → review, and comes back as a pull request for a human to merge.
+A reusable software factory, modelled on [Warp Factories](https://docs.warp.dev/factories), that runs on a Claude **subscription** rather than paid API usage. Work arrives from Linear or Slack, moves through triage → spec → implement → verify → review, and comes back as a pull request for a human to merge. Phase 5 adds an agent-first **express** track that skips the spec, never asks about anything but product, and merges low-risk PRs itself, and lightens both tracks: [docs/express.md](express.md).
 
 Demo project: **Tastebook** (a household recipe hub), live at <https://tastebook.dev>.
 
@@ -12,11 +12,11 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 - **Runs:** the Slack threads in `#tastebook-factory` (`C0CBSE2Q6FQ`) and the console's Runs, Inbox and Usage pages (<https://mb-factory-console.vercel.app>).
 - **What changed and when:** `git log` here and in `tastebook`.
 
-**Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
+**Phase:** 5 (Express, [docs/express.md](express.md)). Phase 4 closed on 3 Nov 2026 with its baseline frozen early (25 Oct–3 Nov) so Express could start at once; its full prune is still to do (wrap-up's `close-phase.md`). Exit: two weeks of express against that baseline, with cycle time and the person's taps per PR down, and fixes or reverts within 7 days and new Sentry issues tied to a PR no worse.
 
-**Next:** check the morning of 4 Nov that the scheduler's wake-ups came from the one production deployment (one `woke` per moment) and that TAS-116's revised spec came back with variant C recorded, then plan the narrow `mb-factory` onboarding with the user, to start once Phase 4 closes around 8 Nov.
+**Next:** check the morning of 4 Nov that the scheduler's wake-ups came from the one production deployment (one `woke` per moment) and that TAS-116's revised spec came back with variant C recorded, then start Express step 1 ([docs/express.md](express.md#rollout): slimmed agents and skills, verify removed, review narrowed, stage-run hooks, one visual per PR).
 
-**Direction, in order:** finish the Dino project (below); build Accounts and households' slices (sliced 29 Oct), those that need design going through the design stage; close Phase 4 at the baseline; onboard `mb-factory` as a project (agreed 3 Nov, moved ahead of Phase 5: self-improvement PRs then go through the factory's own stages, and health findings arrive as triaged issues); then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
+**Direction, in order:** Express (Phase 5) in its four steps, each the base for later factory changes, while Tastebook's Dino project and Accounts and households' slices (sliced 29 Oct; those that need design go through the design stage) keep running through the factory as the steps land; onboard `mb-factory` as a project (agreed 3 Nov: self-improvement PRs then go through the factory's own stages, and health findings arrive as triaged issues); then Phase 6. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
 ## Decisions
 
@@ -38,20 +38,28 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 Choices whose reasons aren't in the code. Where the code says why, it isn't repeated here.
 
+**Express (agreed 3 Nov 2026; why, evidence, research and rollout in [docs/express.md](express.md))**
+
+- **Two tracks:** `track: express | careful` per project in `factory.yaml`, overridden per issue by the Linear labels `express` and `careful`; Tastebook's default is express. The router reads the track at each next step. Both share one slimmed set of prompts: a track only changes which stages and gates run.
+- **Express:** triage (which also makes the design call) → design and Design Review when needed, unchanged ("taste is human") → implement → review → merge. No spec and no Spec Review (34 of 37 specs were approved unchanged); only product questions wait, the rest take the suggested answer and say so in the thread; review never asks.
+- **Both tracks:** verify goes (0 of 571 criteria not met); review is narrowed to correctness and security against the issue, never repeats a failing check or a preview and drops nits (it caught TAS-107, 108 and 114, but 41% of its Blocking findings repeated a failed check and its questions were 28% of cycle time); one visual per UI PR in the PR and the Slack thread replaces the evidence rules; agents take a four-part shape (goal, done, what it may touch, report) and rules that must always hold move to hooks, lint and CI.
+- **Who merges in express:** the factory merges once every check passes, unless the PR changes over 400 source lines or 20 source files (generated files, data, docs, tests and baselines excluded), touches a risky path (`express.humanMerge` globs), weakens the safety net (tests deleted or skipped, test or lint config, thresholds, suppressions), or an agent sends it to the person with a reason (agents tighten, never loosen). The bot merges through two rulesets: checks with no bypass, and the review rule that only `mb-factory-bot` may bypass. A 30-minute watch after each auto-merge offers Revert on a failed deploy or a new Sentry issue.
+- **Against drift:** a weekly `cleanup` job (with mutation testing on the week's changes) and a promotion ladder that turns repeated findings and lessons into lint rules, tests, hooks or CI before prose.
+
 **Runs and stages**
 
 - **Models:** spec and implement on Opus; review on Opus because it's adversarial against the project's standards (Sonnet was too lenient; about $0.80 a review against $0.19), downshifting to Sonnet when throttled; triage on Sonnet, but slicing on Opus (`models.slicing`); ask and size runs on Sonnet.
 - **Slicing is chosen by title alone** (`Slice ` and a word, the user's choice). If an ordinary issue ever misfires, match `Slice <the issue's own project>`.
 - **Every issue has a size, and only sized issues are ready** (the user: "stuff should always have a size"). Whoever files an issue sizes it; triage may correct it; an issue a person accepts unsized gets a size run.
 - **A split's later parts stay on the tap:** each part is offered with a Delegate button once the one before it merges, never delegated by the factory.
-- **Verify runs the app inside the stage runner, not against the Vercel preview** (previews were rate limited, and the project's own preview checks cover Vercel's setup). Verify always hands on to review, which treats `not met` as Blocking, so there's one loop. Implement may skip verify with `notOnScreen: <why>`, chosen over narrowing `verify.paths` (which can't tell an error reporter from a component); `verifyAgain` lets implement ask for a re-verify, chosen over re-verifying whenever a criterion was unverified. A revision carries an earlier skip as it does an earlier pass (TAS-153: a review fix that didn't repeat `notOnScreen` re-ran verify for nothing).
+- **Verify runs the app inside the stage runner, not against the Vercel preview** (previews were rate limited, and the project's own preview checks cover Vercel's setup). Express step 1 removes verify from both tracks. Verify always hands on to review, which treats `not met` as Blocking, so there's one loop. Implement may skip verify with `notOnScreen: <why>`, chosen over narrowing `verify.paths` (which can't tell an error reporter from a component); `verifyAgain` lets implement ask for a re-verify, chosen over re-verifying whenever a criterion was unverified. A revision carries an earlier skip as it does an earlier pass (TAS-153: a review fix that didn't repeat `notOnScreen` re-ran verify for nothing).
 - **Evidence:** a public Blob store per project (`tastebook-evidence`, connected to no project), uploaded by an agent-free job. `GITHUB_DISPATCH_TOKEN`, the console's GitHub token (dispatching runs, cancelling and re-running Actions jobs, committing the design hand-off), is a fine-grained personal token with Contents and Actions read and write, Tastebook only. `EVIDENCE_ATTACH_TOKEN` is a fine-grained personal token (contents and pull requests, Tastebook only) so the walkthrough plays in the PR; chosen over an animated GIF.
-- **The factory takes on Dependabot majors and failing updates by itself** (the project's `dependabot.yml` counts as the authorisation); clean grouped PRs are left to the user; nothing auto-merges.
-- **Fix limits, label names and run timeouts stay hardcoded** until a project wants other values (Phase 6).
+- **The factory takes on Dependabot majors and failing updates by itself** (the project's `dependabot.yml` counts as the authorisation); clean grouped PRs are left to the user; nothing auto-merges (express's auto-merge always leaves dependency majors to the person).
+- **Fix limits, label names and run timeouts stay hardcoded** until a project wants other values (Phase 7).
 
 **Review and merge**
 
-- **Humans merge.** The user approves factory PRs as a reviewer or taps Approve and merge; the admin bypass is only for PRs the user opens; the review agent never approves and never posts a commit status (offered, declined).
+- **Humans merge** (in express from step 3, only PRs the [rules](express.md#who-merges) send them). The user approves factory PRs as a reviewer or taps Approve and merge; the admin bypass is only for PRs the user opens; the review agent never approves and never posts a commit status (offered, declined).
 - **Merge commits, not squash:** a squash commit is authored by whoever opened the PR (`mb-factory-bot`), which would drop the user's contribution credit; rebase doesn't suit branches that merge `main` in. Factory commits are co-authored by the work item's assignee.
 - **Approve and merge acts as the person who taps,** through one factory GitHub App for every project (user-to-server token, 8 h with refresh, encrypted). Rejected: a personal token in Vercel (one person's, rotated by hand), loosening branch protection, and an app per project. Refusals go only to the tapper; the confirm shows review's `beforeMerging` and the project's `mergeEffect`.
 - **The merge gate shows the PR's checks** (3 Nov, [canvas](https://claude.ai/artifact/26Yd52xfVRWHQTGzyV1yPy), Checks at the merge gate): a checks line under Ready to merge on the card and the Home tab, from GitHub's check runs and commit statuses on the head (what the PR page lists, Vercel included), redrawn on `check_run` and `status` webhooks. A check that ran on the commit before and hasn't started on the head counts as running, since preview checks start only after the preview deploys. Approve and merge shows once they pass, on the card and on review's message in the thread (held there with a line while they run or fail, restored on the card's redraw), and the tap reads the same checks. After bringing a PR up to date, the assignee is mentioned once when they pass; that reply carries no buttons, since the console tracks one merge message per work item. Chosen over the Actions runs API (no permission change, but whole workflows only and no Vercel status). Fine-grained tokens can't hold the Checks permission (GitHub Apps only); Tastebook is public, so the console's token reads them anyway. A private project needs the factory App's installation token for this. The tap refuses when the checks can't be read.
@@ -78,7 +86,7 @@ Choices whose reasons aren't in the code. Where the code says why, it isn't repe
 
 - **The scheduler uses Vercel Queues** for delayed wake-ups (native, no third-party account; chosen over Upstash QStash), with an hourly Vercel cron as the backstop. GitHub's schedules aren't used for anything that must happen: they drop slots.
 - **The governor fails open on stale readings** for interactive dispatches (the console can't run Claude inline); scheduled jobs get a probe 8 minutes before their slot when readings are stale.
-- **The health check is plain console code, not a run:** no cost, never held, the same state gives the same message. It covers the factory's own health, not the project's app, and posts even when all is clear so a missing message stands out. Sentry issues are listed, not filed (filing waits for Phase 6).
+- **The health check is plain console code, not a run:** no cost, never held, the same state gives the same message. It covers the factory's own health, not the project's app, and posts even when all is clear so a missing message stands out. Sentry issues are listed, not filed (filing waits for Phase 7).
 
 **Hosting and deploys**
 
@@ -139,7 +147,7 @@ Agreed 28 Oct 2026.
 | Automations                               | Router rules (events → stage) and scheduled jobs |
 | Runners                                   | GitHub-hosted runners (free on public repos) |
 | Dashboard, Runs, Inbox                    | Factory console |
-| Scorers / Self-improvement / Benchmarks   | Phase 5: LLM-judge scorers, PRs that improve the plugin's own prompts and skills, a fixed task suite rerun against config changes |
+| Scorers / Self-improvement / Benchmarks   | Phase 6: LLM-judge scorers, PRs that improve the plugin's own prompts and skills, a fixed task suite rerun against config changes |
 
 ## Architecture
 
@@ -158,7 +166,7 @@ Agreed 28 Oct 2026.
 - **Stateless stages.** Each run rebuilds its context from the Linear issue, its comments, the linked PR and the branch.
 - **Briefs, not rediscovery.** Each stage records its findings on the issue so the next stage doesn't collect them again.
 - **One voice.** Only the router talks to humans; stage agents report to the issue and session.
-- **Humans merge.** Branch protection on `main`; agents never merge.
+- **Humans merge.** Branch protection on `main`; agents never merge, except express's low-risk PRs from Phase 5's step 3, which only the factory App may merge, and only on green checks.
 - **Capped loops.** Review → revise runs at most twice, then hands to a human.
 - **Usage-aware.** Plan limits are the real constraint, shared with the user's own Claude use. Every dispatch goes through the [usage governor](#usage-governor).
 - **Measure from day one.** Every run is recorded, so later changes have a baseline.
@@ -204,12 +212,12 @@ Linear has no "epic" type: a **project** plays that role.
 
 ## Instructions and conventions
 
-Every behaviour worth tuning is a Markdown file under version control, changed through a commit to this repo (factory-as-code); Phase 5's self-improvement proposes changes the same way.
+Every behaviour worth tuning is a Markdown file under version control, changed through a commit to this repo (factory-as-code); Phase 6's self-improvement proposes changes the same way.
 
 | Layer                | Where | Examples |
 | -------------------- | ----- | -------- |
 | 1. Factory defaults  | `plugin/agents/*.md`, `plugin/skills/*/SKILL.md` | How triage researches and sizes, when a spec is needed, the review rubric, how agents report |
-| 2. Project overrides | `factory.yaml` knobs (per-project instruction files later, Phase 6) | Models, gates, review rounds, jobs |
+| 2. Project overrides | `factory.yaml` knobs (per-project instruction files later, Phase 7) | Models, gates, review rounds, jobs |
 | 3. Repo conventions  | The project repo: `AGENTS.md`, PR template, `specs/_template.md`, `specs/lessons/` | Code rules and Standards (review cites them as `Standards › <clause>`), PR and spec format |
 
 Factory commits, PRs and comments carry **no AI attribution**; traceability comes from the `factory` label and the console's run records.
@@ -278,7 +286,7 @@ Learnt the hard way; each would bite again.
 
 **Claude Code and the action**
 
-- `claude-code-action` hides the agent's output and runs keep no transcript, so a run that ends without a report and pushes nothing can't be diagnosed (see [Run transcripts](#run-transcripts-after-phase-5)).
+- `claude-code-action` hides the agent's output and runs keep no transcript, so a run that ends without a report and pushes nothing can't be diagnosed (see [Run transcripts](#run-transcripts-after-phase-6)).
 - Job-level `env` and the `settings` input reach Claude's Bash tool. `execution_file` is a JSON array of stream-json events. The action skips the App token exchange when the workflow differs from the default branch's.
 - A reusable workflow sees an environment secret only if the caller names it in `secrets:` (Tastebook's `factory.yml` missing `EVIDENCE_BLOB_READ_WRITE_TOKEN` made it empty).
 
@@ -371,7 +379,7 @@ Built but not yet seen working; delete each line once seen. Swept 3 Nov: everyth
 mb-factory isn't a factory project yet, so its own follow-ups live here. Each is unbuilt (checked 28 Oct 2026).
 
 - **PRD flow:** start a project's PRD with a person in the loop and, on approval, file "Slice <project>". Writing Accounts and households by hand (29 Oct) answered most of it: a Linear document on the project from the PRD template, drafted after reading the Vision and the project; one round of up to four questions that change requirements, each with a recommended answer, and every other choice drafted as an open question with a suggested answer; approval marks it Approved, links it from the project and files the slice issue for the person to delegate. Still open: which agent, and asking in Slack.
-- **Size runs:** 3 of 16 ended in about 6 s with no report (28–29 Oct), against 18 s or more for a working one; the logs drop the final message, so the cause waits on [run transcripts](#run-transcripts-after-phase-5). A failed one is now tried again once.
+- **Size runs:** 3 of 16 ended in about 6 s with no report (28–29 Oct), against 18 s or more for a working one; the logs drop the final message, so the cause waits on [run transcripts](#run-transcripts-after-phase-6). A failed one is now tried again once.
 - **Scheduled reliability:** dispatch Tastebook's backup from the console's scheduler: GitHub ran its 02:17 cron 6 to 7 hours late every day from 30 Oct to 3 Nov. The health check lists failed scheduled runs but not missing ones, nothing reports the console being down, and a run stuck then cleared between checks goes unseen.
 - **Spend and deploys:** the health check flags any Vercel on-demand spend (`vercel usage`) and a failed production deploy (8 hours of failed Tastebook deploys went unseen on 29 Oct); the budget's webhook points at a console route that pauses only `tastebook` and `mb-factory-console` at 100%, leaving the rest of the team's sites up. The console gets no signal of a deploy today: no `deployment_status` delivery has ever reached it, and it has no Vercel token, so either needs a person's step first (the App's webhook events, or a read-only Vercel token).
 - **Merge state:** re-check PRs whose merge state stays unknown (needs a record of which); make `merge state unknown` a warning only when it changes an outcome; a PR handed over for conflicts is told again on every later push to `main`, and the CI hand-over repeats on every later failure.
@@ -379,9 +387,9 @@ mb-factory isn't a factory project yet, so its own follow-ups live here. Each is
 - **Dependencies:** triage Dependabot majors before implement (check runtime versions, peer ranges, `AGENTS.md`); learn from an unmerged close (ask why, propose an ignore rule or a lesson).
 - **Stage runner security:** the stage job's own secrets share a runner with an agent that has sudo and can write `$GITHUB_ENV` (the reasoning that split out the evidence job); the security check doesn't cover `mb-factory`; `security-rubric` has no category for untrusted text reaching a renderer or prompt, and its unpinned-actions row contradicts its no-best-practice rule.
 - **Verify:** triage's `next: verify` maps to implement in core (`router.ts`), so `triage.md` and the behaviour disagree; verify on previews.
-- **Sentry:** issues that came back or grew, an environment filter, filing issues (Phase 6).
+- **Sentry:** issues that came back or grew, an environment filter, filing issues (Phase 7).
 - **Slack:** `/tastebook pause [reason]` (no reason column); an Approve tapped in a `/tastebook status` reply leaves it stale; the Home usage bar renders small (try coloured squares); debounce Home republishing if `views.publish` rate-limits; follow-up questions in an ask thread do nothing.
-- **Console:** a live Runs page (times counting up, the agent's latest thought); usage over time with runs overlaid and the factory/you split; a weekly evidence clean-up (before the Blob store passes about 500 MB); exact Actions minutes; scorer cards (Phase 5); a project filter (Phase 6).
+- **Console:** a live Runs page (times counting up, the agent's latest thought); usage over time with runs overlaid and the factory/you split; a weekly evidence clean-up (before the Blob store passes about 500 MB); exact Actions minutes; scorer cards (Phase 6); a project filter (Phase 7).
 - **Router:** a PR reopened after an unmerged close isn't handled; reviewer per project from the Linear project's lead; Linear blockers only hold back the Ready list, so a spec approved while its issue waits on another (TAS-73 on TAS-86, 29 Oct) starts implement at once: hold implement with the Blocked label until the blockers finish, then start it as `unblockedBy` already does for the Ready list.
 - **Asking again:** a review question about a trade-off the person already accepted doesn't say so: TAS-81's round 3 asked whether to fix the list's LCP now (Performance down to 87, under the bar of 90) without saying it had been deferred to TAS-96 in round 1, or that Preview checks isn't a required check (29 Oct), and the answer reversed the deferral. Such a question should lead with the earlier answer and what changed, and offer keeping it. Likewise a spec question whose premise an earlier answer removed is still asked (TAS-91's second assumed the App the person had just declined), though Tastebook's lesson says to write questions that hold for every earlier answer.
 - **Diagnosing a failing preview:** on TAS-95 (31 Oct) implement and review blamed the preview's Neon branch for "being made before previews-base became the default" and asked the person to delete it, without checking that `previews-base` existed or was the default (it was neither, so a new branch would have failed too); review then asked the same as a question with that answer recommended. An agent blaming a provider's setup should read the provider's state first (the Neon tools are read-only there), say what it checked, and not recommend a person's step it hasn't shown would fix it. TAS-150 makes the build's own message name the cause.
@@ -389,7 +397,7 @@ mb-factory isn't a factory project yet, so its own follow-ups live here. Each is
 - **Fixing a kept failure:** on TAS-94 (29 Oct) a CI fix run started for a Preview checks failure the person had kept at review four minutes before. A failure already accepted at review shouldn't start a fix.
 - **Spec gate and design:** the Slack gate and Linear's elicitation don't show the spec's design call (only the brief's last line does).
 - **Failed hand-off:** a design run whose hand-off commit fails (TAS-103, GitHub's 500, 30 Oct) is re-run as a fresh draw needing approval again; it should retry the hand-off.
-- **Jobs:** backlog grooming (stale, duplicate, unclear, unsized, blocked only by finished issues), through the read-only Linear proxy; `autoDelegate` once trusted; guards proposed to the shared plugin (Phase 5).
+- **Jobs:** backlog grooming (stale, duplicate, unclear, unsized, blocked only by finished issues), through the read-only Linear proxy; `autoDelegate` once trusted; guards proposed to the shared plugin (Phase 6).
 - **Screenshot baselines (TAS-74):** 95 story PNGs at 390 px, 0.73 MB (29 Oct), about 8 KB each and one per story, so git history grows only when a look changes. Move them to Git LFS or a hosted snapshot service once that history passes about 100 MB, or when more widths or full-page shots are added; until then nothing to do.
 - **Linear housekeeping (by hand):** swap the stale Notion "Vision" links on the projects for the Linear Vision document; pin the TAS Overview sections.
 
@@ -401,25 +409,26 @@ mb-factory isn't a factory project yet, so its own follow-ups live here. Each is
 | 1   | **First loop, run log and governor** | Closed 25 Oct 2026 |
 | 2   | **All stages and the Runs page** | Closed 25 Oct 2026 |
 | 3   | **Slack intake, questions and Inbox** | Closed 26 Oct 2026 |
-| 4   | **Dashboard and scheduled loops**: dashboard metrics; health, security and docs checks through the governor; weekly pacing, priorities, downshift, local reporter | The dashboard shows a two-week baseline; loops file well-formed issues (met 28 Oct) |
-| 5   | **Scorers, self-improvement and benchmarks**: scorer task, self-improvement PRs on the plugin, a benchmark suite, the weekly Slack report | At least one accepted self-improvement PR; one benchmarked config change |
-| 6   | **Reusability**: onboarding a second project (wiring, the onboarding interview, settings per project) | A second repo runs through the factory with config only |
+| 4   | **Dashboard and scheduled loops** | Closed 3 Nov 2026, baseline frozen early for Express |
+| 5   | **Express** ([docs/express.md](express.md)): both tracks lightened, the express track, auto-merge with the watch after merging, the clean-up job and rule audit | Two weeks of express against the 25 Oct–3 Nov baseline: cycle time and taps per PR down; fixes or reverts within 7 days and new Sentry issues tied to a PR no worse |
+| 6   | **Scorers, self-improvement and benchmarks**: scorer task, self-improvement PRs on the plugin, a benchmark suite, the weekly Slack report | At least one accepted self-improvement PR; one benchmarked config change |
+| 7   | **Reusability**: onboarding a second project (wiring, the onboarding interview, settings per project) | A second repo runs through the factory with config only |
 
-**Weekly factory report (Phase 5):** a top-level Slack message in the project channel, Mondays 07:30 London: last week's merged PRs, autonomy, median cycle time, cost and anything stuck, linking `/dashboard?days=7`; plain console code, no run.
+**Weekly factory report (Phase 6):** a top-level Slack message in the project channel, Mondays 07:30 London: last week's merged PRs, autonomy, median cycle time, cost and anything stuck, linking `/dashboard?days=7`; plain console code, no run.
 
-### Run transcripts (after Phase 5)
+### Run transcripts (after Phase 6)
 
 Deferred by the user on 28 Oct 2026, after a TAS-48 implement run ended without a report and nothing showed why. Keep each stage run's transcripts: the session and subagent `.jsonl` files under `~/.claude/projects` on the runner, written as the run goes, so a run stopped at its time limit keeps them too. An `if: always()` step uploads them to private Vercel Blob (not Actions artifacts: on a public repo any signed-in GitHub user can download those), the run records the link in `runs.transcript_url`, and the Runs page links it. Storage costs next to nothing; the care is secrets in tool output (private store, a retention to agree, perhaps 14 days).
 
-### Per project and shared (Phase 6)
+### Per project and shared (Phase 7)
 
-By Phase 6, everything that can be scoped by project should be. Already per project: `factory.yaml`, work items, runs, jobs, findings, Slack channel, Linear team. Shared on purpose, because they guard the one subscription: the governor and readings, the pause switch, and the run cap and usage policy (the root `factory.yaml` since 3 Nov; a project's file can't set them). To split: `console_problems` (add `project`), the console pages' filters.
+By Phase 7, everything that can be scoped by project should be. Already per project: `factory.yaml`, work items, runs, jobs, findings, Slack channel, Linear team. Shared on purpose, because they guard the one subscription: the governor and readings, the pause switch, and the run cap and usage policy (the root `factory.yaml` since 3 Nov; a project's file can't set them). To split: `console_problems` (add `project`), the console pages' filters.
 
 **Hardcoded, candidates for per project:** agent instructions (several examples are Tastebook-shaped: the security agent assumes `pnpm-lock.yaml` and `uv.lock`); fix limits (`MAX_CI_FIXES`, `MAX_CONFLICT_FIXES`); the Dependabot policy (`dependencies.ts`); filing thresholds (`security-rubric`); label names; stage run limits and allowed tools (`stage.yml`).
 
 **Acting on the health check:** most of what it finds is a factory problem in `mb-factory`, which no agent can work on. Direction: onboard `mb-factory` as a project, so a new error becomes an issue the factory triages and fixes (with care: the factory changing its own code); clean up stuck cases deterministically and say so; file each new error as a Triage issue, deduplicated. The same step lets the security check cover `mb-factory`, and moves the [factory backlog](#factory-backlog) into Linear (agreed 28 Oct 2026), so it has a status like any other work.
 
-### Project onboarding (Phase 6, tried by hand on Tastebook)
+### Project onboarding (Phase 7, tried by hand on Tastebook)
 
 Onboarding is an interview in four sessions, each writing where its readers look (Tastebook's four ran on 26 Oct 2026):
 
