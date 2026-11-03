@@ -14,9 +14,9 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** once the user has removed the console's old production deployments and fixed the design-commit `human_pushes`, decide with them whether onboarding `mb-factory` as a project comes before Phase 5.
+**Next:** check the next morning's wake-ups come from one deployment, then, once Phase 4 closes, start onboarding `mb-factory` as a project (narrow: Linear team, wiring, health and security findings filed as issues, no design stage).
 
-**Direction, in order:** finish the Dino project (below); build Accounts and households' slices (sliced 29 Oct), those that need design going through the design stage; close Phase 4 at the baseline; then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
+**Direction, in order:** finish the Dino project (below); build Accounts and households' slices (sliced 29 Oct), those that need design going through the design stage; close Phase 4 at the baseline; onboard `mb-factory` as a project (agreed 3 Nov, moved ahead of Phase 5: self-improvement PRs then go through the factory's own stages, and health findings arrive as triaged issues); then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
 ## Decisions
 
