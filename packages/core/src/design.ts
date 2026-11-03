@@ -59,6 +59,39 @@ const reportCanvasSchema = z.looseObject({ canvas: z.string().trim().regex(CANVA
 
 export const readCanvas = (report: unknown): string | null => reportCanvasSchema.safeParse(report).data?.canvas ?? null;
 
+// A variant of the design's main board, drawn side by side with the others for the person to pick from. The first is
+// the one recommended, and the only one drawn in full.
+export type DesignVariant = { name: string; title: string };
+
+const MAX_VARIANTS = 3;
+
+const variantSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .regex(/^[A-Z]$/),
+  title: z.string().trim().min(1).max(MAX_NAME)
+});
+
+const reportVariantsSchema = z.looseObject({ variants: z.array(variantSchema).min(2).max(MAX_VARIANTS) });
+
+// The variants a design run drew, recommended first; none unless the report lists two or three with distinct names.
+export const readDesignVariants = (report: unknown): DesignVariant[] => {
+  const variants = reportVariantsSchema.safeParse(report).data?.variants ?? [];
+  return new Set(variants.map(({ name }) => name)).size === variants.length
+    ? variants.map(({ name, title }) => ({ name, title }))
+    : [];
+};
+
+// The reply a variant's button sends: not an approval, so the design run revises the canvas around that variant.
+export const useVariantReply = ({ name, title }: DesignVariant): string => `Use variant ${name}: ${title}`;
+
+const VARIANT_PICK = /^use variant ([A-Z])\b/i;
+
+// The variant a reply picks, as the Use button words it; null for any other reply.
+export const readVariantPick = (body: string): string | null =>
+  VARIANT_PICK.exec(body.trim())?.[1]?.toUpperCase() ?? null;
+
 // The canvas of the newest design report that names one, from reports newest first: each round revises the same one.
 export const latestCanvas = (reportsNewestFirst: unknown[]): string | null =>
   reportsNewestFirst.reduce<string | null>((found, report) => found ?? readCanvas(report), null);

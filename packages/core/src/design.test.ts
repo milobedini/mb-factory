@@ -12,8 +12,11 @@ import {
   readDesignComponents,
   readDesignFiles,
   readDesignReportBody,
+  readDesignVariants,
   readFiredSession,
-  readSpecDesign
+  readSpecDesign,
+  readVariantPick,
+  useVariantReply
 } from './design';
 
 describe('readSpecDesign', () => {
@@ -119,6 +122,38 @@ describe('readCanvas', () => {
     const canvas = { canvas: 'https://claude.ai/artifact/first' };
     expect(latestCanvas([{ summary: 'Failed.' }, canvas])).toBe('https://claude.ai/artifact/first');
     expect(latestCanvas([])).toBeNull();
+  });
+});
+
+describe('readDesignVariants', () => {
+  const variants = [
+    { name: 'A', title: 'Stacked fieldsets' },
+    { name: 'B', title: 'One row a line' }
+  ];
+
+  it('reads two or three variants, recommended first', () => {
+    expect(readDesignVariants({ stage: 'design', variants })).toEqual(variants);
+  });
+
+  it('reads none from a report without them, with one, with too many or with a name used twice', () => {
+    expect(readDesignVariants({ stage: 'design' })).toEqual([]);
+    expect(readDesignVariants({ variants: variants.slice(0, 1) })).toEqual([]);
+    expect(
+      readDesignVariants({ variants: [...variants, { name: 'C', title: 'c' }, { name: 'D', title: 'd' }] })
+    ).toEqual([]);
+    expect(readDesignVariants({ variants: [variants[0], { name: 'A', title: 'Again' }] })).toEqual([]);
+    expect(readDesignVariants({ variants: [variants[0], { name: 'Bee', title: 'Long name' }] })).toEqual([]);
+  });
+
+  it('turns a pick into a reply the design run revises from', () => {
+    expect(useVariantReply({ name: 'B', title: 'One row a line' })).toBe('Use variant B: One row a line');
+  });
+
+  it('reads the variant a reply picks, and nothing from any other reply', () => {
+    expect(readVariantPick('Use variant B: One row a line')).toBe('B');
+    expect(readVariantPick(' use variant c ')).toBe('C');
+    expect(readVariantPick('Use the other one')).toBeNull();
+    expect(readVariantPick('Use variants Bee')).toBeNull();
   });
 });
 

@@ -84,7 +84,15 @@ export {
 } from './dashboard';
 export type { Bump, DependencyPr, DependencyWork } from './dependencies';
 export { DEPENDABOT_LOGIN, dependencyIssue, dependencyTakenText, isMajorBump, readBump } from './dependencies';
-export type { ComponentChange, DesignBrief, DesignFile, FiredSession, SpecComponent, SpecDesign } from './design';
+export type {
+  ComponentChange,
+  DesignBrief,
+  DesignFile,
+  DesignVariant,
+  FiredSession,
+  SpecComponent,
+  SpecDesign
+} from './design';
 export {
   COMPONENT_CHANGES,
   designCommitMessage,
@@ -98,8 +106,10 @@ export {
   readDesignComponents,
   readDesignFiles,
   readDesignReportBody,
+  readDesignVariants,
   readFiredSession,
-  readSpecDesign
+  readSpecDesign,
+  readVariantPick
 } from './design';
 export type { FollowUpContext, RequestedContext, RequestedIssue } from './follow-ups';
 export { filedFollowUpsText, followUpIssue, readRequestedIssues, requestedIssue } from './follow-ups';

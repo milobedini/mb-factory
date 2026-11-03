@@ -143,9 +143,11 @@ import {
   readBump,
   readCanvas,
   readDesignComponents,
+  readDesignVariants,
   readFixableFindings,
   readGate,
   readQuestions,
+  readVariantPick,
   resumeRequestFor,
   retryText,
   reverifiesOnRequest,
@@ -1803,7 +1805,8 @@ const settleGate = async (
         ? slackDesignGateSettled(
             request?.trigger === 'design_approved' ? 'approved' : isBackToSpec(body) ? 'back_to_spec' : 'changes',
             by,
-            latestCanvas(await finishedReports(workItem, 'design'))
+            latestCanvas(await finishedReports(workItem, 'design')),
+            readVariantPick(body)
           )
         : gate && slackGateSettled(gate, body, by);
   await Promise.all([
@@ -3329,7 +3332,8 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
   if (next.stage === 'design_review') {
     const gate = slackDesignGateMessage(workItem.id, {
       canvasUrl: readCanvas(run.report),
-      issueUrl: workItem.issueUrl
+      issueUrl: workItem.issueUrl,
+      variants: readDesignVariants(run.report)
     });
     const ts = await replyInThread(project, workItem, asking(gate));
     await getDb()

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import type { FactoryConfig } from './config';
+import type { DesignVariant } from './design';
+import { useVariantReply } from './design';
 import type { Gate } from './gates';
 import { slackChunks, slackMarkdown } from './gates';
 import type { AskedQuestion, PositionedQuestion } from './questions';
@@ -292,20 +294,42 @@ export const DESIGN_GATE_GONE = 'The design isn’t waiting for approval any mor
 
 const canvasLink = (url: string | null, label: string): string => (url ? `<${url}|${label}>` : label);
 
-// The design approval gate in the thread, read by the router as strictly as the spec's.
+const variantsText = (canvasUrl: string | null, [recommended, ...others]: DesignVariant[]): string =>
+  [
+    `${canvasLink(canvasUrl, 'The design')} is ready for review, with ${others.length + 1} variants to pick from:`,
+    ...(recommended ? [`• ${RECOMMENDED}*${recommended.name}*: ${escapeSlack(recommended.title)}, drawn in full`] : []),
+    ...others.map(({ name, title }) => `• *${name}*: ${escapeSlack(title)}`),
+    `Approve ${recommended?.name ?? 'it'} to start building, use another and I’ll draw it in full, say what should change, or go back to the spec.`
+  ].join('\n');
+
+// The design approval gate in the thread, read by the router as strictly as the spec's. With variants, Approve takes
+// the recommended one, the only one drawn in full; using another revises the canvas around it.
 export const slackDesignGateMessage = (
   workItemId: string,
-  { canvasUrl, issueUrl }: { canvasUrl: string | null; issueUrl: string }
+  { canvasUrl, issueUrl, variants = [] }: { canvasUrl: string | null; issueUrl: string; variants?: DesignVariant[] }
 ): SlackMessage => ({
   text: 'The design is ready for review.',
   blocks: [
     section(
-      `${canvasLink(canvasUrl, 'The design')} is ready for review. Approve it to start building, say what should change, or go back to the spec.`
+      variants.length > 0
+        ? variantsText(canvasUrl, variants)
+        : `${canvasLink(canvasUrl, 'The design')} is ready for review. Approve it to start building, say what should change, or go back to the spec.`
     ),
     {
       type: 'actions',
       elements: [
-        button('design_approve', SPEC_APPROVE, { w: workItemId, a: SPEC_APPROVE }, true),
+        button(
+          'design_approve',
+          variants[0] ? `${RECOMMENDED}${SPEC_APPROVE} ${variants[0].name}` : SPEC_APPROVE,
+          { w: workItemId, a: SPEC_APPROVE },
+          true
+        ),
+        ...variants.slice(1).map((variant) =>
+          button(`design_variant_${variant.name}`, `Use ${variant.name}`, {
+            w: workItemId,
+            a: useVariantReply(variant)
+          })
+        ),
         button('design_change', SPEC_CHANGE, { w: workItemId, a: SPEC_CHANGE }),
         button('design_back', DESIGN_BACK_TO_SPEC, { w: workItemId, a: DESIGN_BACK_TO_SPEC })
       ]
@@ -319,21 +343,28 @@ export const slackDesignGateMessage = (
 export const slackDesignGateSettled = (
   outcome: 'approved' | 'changes' | 'back_to_spec',
   by: string,
-  canvas: string | null
+  canvas: string | null,
+  // The variant a Use button picked: a change, worded as the pick it is.
+  variant: string | null = null
 ): SlackMessage => {
+  const picked = outcome === 'changes' && variant !== null;
   const text =
     outcome === 'approved'
       ? `✓ ${canvasLink(canvas, 'The design')} was approved ${escapeSlack(by)}. Building starts next.`
-      : outcome === 'changes'
-        ? `Changes to ${canvasLink(canvas, 'the design')} were asked for ${escapeSlack(by)}.`
-        : `The spec was reopened ${escapeSlack(by)}, from ${canvasLink(canvas, 'the design')}.`;
+      : picked
+        ? `Variant ${variant} of ${canvasLink(canvas, 'the design')} was picked ${escapeSlack(by)}. I’ll draw it in full.`
+        : outcome === 'changes'
+          ? `Changes to ${canvasLink(canvas, 'the design')} were asked for ${escapeSlack(by)}.`
+          : `The spec was reopened ${escapeSlack(by)}, from ${canvasLink(canvas, 'the design')}.`;
   return {
     text:
       outcome === 'approved'
         ? 'The design was approved.'
-        : outcome === 'changes'
-          ? 'Changes to the design were asked for.'
-          : 'The spec was reopened from the design.',
+        : picked
+          ? `Variant ${variant} of the design was picked.`
+          : outcome === 'changes'
+            ? 'Changes to the design were asked for.'
+            : 'The spec was reopened from the design.',
     blocks: [section(text)]
   };
 };

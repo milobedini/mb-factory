@@ -168,9 +168,48 @@ describe('the design gate', () => {
     ]);
   });
 
+  it('offers the recommended variant to approve and the others to use, listing them all', () => {
+    const variants = [
+      { name: 'A', title: 'Stacked fieldsets' },
+      { name: 'B', title: 'One row a line' },
+      { name: 'C', title: 'A table <wide>' }
+    ];
+    const blocks = blocksOf(slackDesignGateMessage(workItemId, { canvasUrl: canvas, issueUrl, variants }));
+    expect(blocks[0]?.text?.text).toBe(
+      [
+        `<${canvas}|The design> is ready for review, with 3 variants to pick from:`,
+        '• (R) *A*: Stacked fieldsets, drawn in full',
+        '• *B*: One row a line',
+        '• *C*: A table &lt;wide&gt;',
+        'Approve A to start building, use another and I’ll draw it in full, say what should change, or go back to the spec.'
+      ].join('\n')
+    );
+    const buttons = blocks.find(({ type }) => type === 'actions')?.elements ?? [];
+    expect(buttons.map(({ text }) => (typeof text === 'string' ? text : text.text))).toEqual([
+      '(R) Approve A',
+      'Use B',
+      'Use C',
+      'Change something',
+      'Back to spec'
+    ]);
+    expect(buttons.map(({ value }) => JSON.parse(value ?? '{}').a)).toEqual([
+      'Approve',
+      'Use variant B: One row a line',
+      'Use variant C: A table <wide>',
+      'Change something',
+      'Back to spec'
+    ]);
+  });
+
   it('says who approved, asked for changes or reopened the spec', () => {
     expect(blocksOf(slackDesignGateSettled('approved', 'by Milo', canvas))[0]?.text?.text).toBe(
       `✓ <${canvas}|The design> was approved by Milo. Building starts next.`
+    );
+    expect(blocksOf(slackDesignGateSettled('changes', 'by Milo', canvas, 'B'))[0]?.text?.text).toBe(
+      `Variant B of <${canvas}|the design> was picked by Milo. I’ll draw it in full.`
+    );
+    expect(blocksOf(slackDesignGateSettled('changes', 'by Milo', canvas))[0]?.text?.text).toBe(
+      `Changes to <${canvas}|the design> were asked for by Milo.`
     );
     expect(blocksOf(slackDesignGateSettled('back_to_spec', 'in Linear', null))[0]?.text?.text).toBe(
       'The spec was reopened in Linear, from the design.'
