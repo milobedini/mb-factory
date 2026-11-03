@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 4 (Dashboard and scheduled loops). Exit criterion (a) met on 28 Oct 2026 (the daily checks filed well-formed issues); (b) is the dashboard's two-week baseline, around 8 Nov.
 
-**Next:** check the morning of 4 Nov that the scheduler's wake-ups came from the one production deployment (one `woke` per moment), then plan the narrow `mb-factory` onboarding with the user, to start once Phase 4 closes around 8 Nov.
+**Next:** check the morning of 4 Nov that the scheduler's wake-ups came from the one production deployment (one `woke` per moment) and that TAS-116's revised spec came back with variant C recorded, then plan the narrow `mb-factory` onboarding with the user, to start once Phase 4 closes around 8 Nov.
 
 **Direction, in order:** finish the Dino project (below); build Accounts and households' slices (sliced 29 Oct), those that need design going through the design stage; close Phase 4 at the baseline; onboard `mb-factory` as a project (agreed 3 Nov, moved ahead of Phase 5: self-improvement PRs then go through the factory's own stages, and health findings arrive as triaged issues); then Phase 5. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
@@ -329,6 +329,7 @@ Learnt the hard way; each would bite again.
 - The routine edit dialog keeps Save disabled while the trigger reads Schedule › Manual (an API-made routine with no cron): add the API trigger first. Saving there also sets a `claude/…` branch per repository.
 - A routine created with `mcp_connections: []` still gets every connector on the account (Gmail, Drive, Notion…); an `update` with an explicit list does stick. Set the list in an update before the first fire.
 - A canvas frame clips whatever runs past its `h`, and Claude can't see it rendered: on 29 Oct five of the Dino boards were cut off. Add up a board's content before setting its height, err well over (over-tall beats clipped), and change the root's height, `$preview` and the index's `h` together. After any canvas change, copy the boards into Tastebook's `docs/design/` again so the repo matches.
+- Claude can't read a claude.ai chat, nor its share link (the share page is built by JavaScript and its data endpoint answers 403), and the factory never sees one: a design talked through in a claude.ai chat reaches the design run only as a reply in the Slack thread or a canvas comment sent to Claude (3 Nov, TAS-116).
 
 **Neon, Drizzle, Next**
 
