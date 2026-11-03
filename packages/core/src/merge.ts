@@ -210,6 +210,9 @@ export const mergeRefusal = (
   return undefined;
 };
 
+export const checksUnreadText = (prNumber: number): string =>
+  `I couldn’t read PR #${prNumber}’s checks from GitHub, so nothing was merged. Tap again in a minute, or merge it on GitHub after a look.`;
+
 export const approveRefusedText = (prNumber: number, message: string): string =>
   `GitHub refused the approval on PR #${prNumber}: “${escapeSlack(clip(oneLine(message), 200))}”. Nothing was merged.`;
 

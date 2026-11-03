@@ -42,6 +42,7 @@ import {
   CHANGES_QUESTION,
   canRerun,
   checksPassedText,
+  checksUnreadText,
   chosenFollowUps,
   choseRerun,
   ciHandOverText,
@@ -2617,8 +2618,15 @@ const handleMergeTap = async (
   try {
     const [pull, accepted] = await Promise.all([pullForMerge(repository, prNumber), acceptedHead(workItem)]);
     // The same checks the card counts, so a tap is refused only when the card says why.
-    const { state: checks } = await headChecks(repository, pull.head);
-    const refusal = mergeRefusal(prNumber, { pull, acceptedHead: accepted, checks });
+    const summary = await headChecks(repository, pull.head).catch((error: unknown) => {
+      log('warn', 'merge checks failed', { issue, error: errorMessage(error) });
+      return null;
+    });
+    if (!summary) {
+      await tellTapper(checksUnreadText(prNumber));
+      return;
+    }
+    const refusal = mergeRefusal(prNumber, { pull, acceptedHead: accepted, checks: summary.state });
     if (refusal !== undefined || accepted === null) {
       log('info', 'merge from slack refused', { issue, login: connection.login, refusal });
       await tellTapper(refusal ?? notWaitingToMergeText(issue));

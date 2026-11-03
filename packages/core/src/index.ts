@@ -189,6 +189,7 @@ export { isLinearPassFor, isReadOnlyDocument, signLinearPass } from './linear-pr
 export type { AcceptedPr, PullForMerge } from './merge';
 export {
   approveRefusedText,
+  checksUnreadText,
   closedLine,
   connectGitHubMessage,
   MERGE_ACTION,
