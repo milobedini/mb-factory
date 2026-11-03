@@ -6,7 +6,7 @@ import { connection } from 'next/server';
 import { getDb } from '@/db/client';
 import { questions, runs, workItems } from '@/db/schema';
 
-import { branchChecks, pullMergeState } from './github-api';
+import { headChecks, pullHead, pullMergeState } from './github-api';
 import { log } from './log';
 import { allProjects } from './projects';
 import { recentReadyList } from './ready';
@@ -23,7 +23,7 @@ export type InboxItem = {
   // Where to act on it: the spec file, the PR's review page, or the run's log.
   actionUrl: string | null;
   threadUrl: string | null;
-  // CI on the PR, for work waiting to be merged; null when GitHub couldn't say.
+  // The checks on the PR's head, as the card's checks line counts them; null when GitHub couldn't say.
   checks: ChecksState | null;
   // Whether a PR waiting to be merged conflicts with its base branch, and which branch that is.
   conflictsWith: string | null;
@@ -71,11 +71,12 @@ const conflictFor = async (workItem: WorkItem): Promise<string | null> => {
 };
 
 const checksFor = async (workItem: WorkItem): Promise<ChecksState | null> => {
-  if (!workItem.branch) {
+  if (!workItem.prNumber) {
     return null;
   }
   try {
-    return await branchChecks(workItem.repository, workItem.branch);
+    const { head } = await pullHead(workItem.repository, workItem.prNumber);
+    return (await headChecks(workItem.repository, head)).state;
   } catch (error) {
     log('warn', 'inbox checks failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
     return null;

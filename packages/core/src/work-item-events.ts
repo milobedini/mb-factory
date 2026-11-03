@@ -52,6 +52,19 @@ const workflowRunEventSchema = z.looseObject({
   })
 });
 
+// A check run starting or finishing, or a commit status (Vercel's deployment) changing: the merge gate's checks line.
+const sha = z.string().regex(/^[0-9a-f]{40}$/);
+
+const checkRunEventSchema = z.looseObject({
+  repository: repositorySchema,
+  check_run: z.looseObject({
+    head_sha: sha,
+    pull_requests: z.array(z.looseObject({ number: z.int().positive() })).nullish()
+  })
+});
+
+const statusEventSchema = z.looseObject({ repository: repositorySchema, sha });
+
 export type GitHubEvent =
   | {
       kind: 'pr_closed';
@@ -74,7 +87,9 @@ export type GitHubEvent =
       url: string | null;
       // A check run on a deployment (a PR's preview) names its commit, not its PR, so the console looks the PR up.
       headSha?: string;
-    };
+    }
+  // The PRs are empty when GitHub doesn't tie the check to one (a commit status, a deployment's checks).
+  | { kind: 'checks_changed'; repository: string; sha: string; prNumbers: number[] };
 
 const FAILED_CONCLUSIONS = ['failure', 'timed_out'];
 
@@ -114,6 +129,23 @@ const BRANCH_REF = 'refs/heads/';
 export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEvent | undefined => {
   if (eventName === 'workflow_run') {
     return parseWorkflowRun(payload);
+  }
+  if (eventName === 'check_run') {
+    const parsed = checkRunEventSchema.safeParse(payload);
+    return parsed.success
+      ? {
+          kind: 'checks_changed',
+          repository: parsed.data.repository.full_name,
+          sha: parsed.data.check_run.head_sha,
+          prNumbers: (parsed.data.check_run.pull_requests ?? []).map(({ number }) => number)
+        }
+      : undefined;
+  }
+  if (eventName === 'status') {
+    const parsed = statusEventSchema.safeParse(payload);
+    return parsed.success
+      ? { kind: 'checks_changed', repository: parsed.data.repository.full_name, sha: parsed.data.sha, prNumbers: [] }
+      : undefined;
   }
   if (eventName === 'pull_request') {
     const parsed = pullRequestEventSchema.safeParse(payload);

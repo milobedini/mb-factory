@@ -71,16 +71,3 @@ export const inboxEntry = (
 };
 
 export type ChecksState = 'passing' | 'failing' | 'pending' | 'none';
-
-const FAILING_CONCLUSIONS = ['failure', 'timed_out', 'action_required', 'startup_failure'];
-
-// GitHub's check runs on a PR's head: any failure fails it; otherwise anything unfinished keeps it pending.
-export const checksState = (checkRuns: { status: string; conclusion: string | null }[]): ChecksState => {
-  if (checkRuns.length === 0) {
-    return 'none';
-  }
-  if (checkRuns.some(({ conclusion }) => FAILING_CONCLUSIONS.includes(conclusion ?? ''))) {
-    return 'failing';
-  }
-  return checkRuns.some(({ status }) => status !== 'completed') ? 'pending' : 'passing';
-};

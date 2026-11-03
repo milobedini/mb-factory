@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { InboxQuestion, InboxRun } from './inbox';
-import { checksState, inboxEntry } from './inbox';
+import { inboxEntry } from './inbox';
 
 const at = (minute: number): Date => new Date(Date.UTC(2026, 9, 26, 9, minute));
 
@@ -77,30 +77,5 @@ describe('inboxEntry', () => {
 
   it('falls back to when the work item last changed', () => {
     expect(inboxEntry(item('awaiting_merge'), [], [])).toEqual({ kind: 'awaiting_merge', since: at(30), agent: null });
-  });
-});
-
-describe('checksState', () => {
-  it('fails on any failure, waits on anything unfinished, and passes otherwise', () => {
-    expect(checksState([])).toBe('none');
-    expect(
-      checksState([
-        { status: 'completed', conclusion: 'success' },
-        { status: 'completed', conclusion: 'failure' },
-        { status: 'in_progress', conclusion: null }
-      ])
-    ).toBe('failing');
-    expect(
-      checksState([
-        { status: 'completed', conclusion: 'success' },
-        { status: 'queued', conclusion: null }
-      ])
-    ).toBe('pending');
-    expect(
-      checksState([
-        { status: 'completed', conclusion: 'success' },
-        { status: 'completed', conclusion: 'skipped' }
-      ])
-    ).toBe('passing');
   });
 });

@@ -26,6 +26,8 @@ export type { AskBrief, Brief, DispatchPayload, JobBrief, SizeBrief } from './br
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
 export type { CardInput, CardRun, CardStatus, NextIssue, SlackCard } from './card';
 export { CARD_COLOURS, cardStatus, readNextIssues, workItemCard } from './card';
+export type { ChecksSummary, HeadCheck, HeadCheckState } from './checks';
+export { checkRunState, checksLine, checksPassedText, commitStatusState, summariseChecks } from './checks';
 export type { CommandRequest, SlashCommand } from './command';
 export {
   alreadyPausedText,
@@ -150,7 +152,7 @@ export {
 export type { CheckState, HomeCheck, HomeInput, HomeView } from './home';
 export { checkState, clock, homeNotAllowedView, homeView, MAX_HOME_ROWS, slackStatusMessage } from './home';
 export type { ChecksState, InboxEntry, InboxKind, InboxQuestion, InboxRun } from './inbox';
-export { checksState, INBOX_KINDS, inboxEntry } from './inbox';
+export { INBOX_KINDS, inboxEntry } from './inbox';
 export type {
   CheckIssue,
   CheckResult,

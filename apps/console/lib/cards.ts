@@ -1,4 +1,4 @@
-import type { CardInput, FactoryConfig } from '@mb-factory/core';
+import type { CardInput, ChecksSummary, FactoryConfig } from '@mb-factory/core';
 import {
   canRerun,
   latestCanvas,
@@ -15,6 +15,7 @@ import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { getDb } from '@/db/client';
 import { questions, queue, runs, workItems } from '@/db/schema';
 
+import { headChecks, pullHead } from './github-api';
 import { log } from './log';
 import { findProject } from './projects';
 import { slackWorkspaceUrl, updateSlackMessage } from './slack-api';
@@ -25,6 +26,21 @@ import { slackWorkspaceUrl, updateSlackMessage } from './slack-api';
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 type WorkItem = typeof workItems.$inferSelect;
+
+// The checks on the PR's head while it waits at the merge gate; null when GitHub couldn't be read, so the card keeps
+// Approve and merge and the tap checks again.
+const gateChecks = async (workItem: WorkItem): Promise<ChecksSummary | null | undefined> => {
+  if (workItem.stage !== 'awaiting_merge' || !workItem.prNumber) {
+    return undefined;
+  }
+  try {
+    const { head } = await pullHead(workItem.repository, workItem.prNumber);
+    return await headChecks(workItem.repository, head);
+  } catch (error) {
+    log('warn', 'card checks failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return null;
+  }
+};
 
 const assigneeName = (project: FactoryConfig, email: string | null): string | null => {
   const person = personFor(project, email);
@@ -38,7 +54,10 @@ export const loadCardInput = async (
   channel: string
 ): Promise<CardInput> => {
   const db = getDb();
-  const itemRuns = await db.select().from(runs).where(eq(runs.workItemId, workItem.id)).orderBy(asc(runs.createdAt));
+  const [itemRuns, checks] = await Promise.all([
+    db.select().from(runs).where(eq(runs.workItemId, workItem.id)).orderBy(asc(runs.createdAt)),
+    gateChecks(workItem)
+  ]);
   const latest = itemRuns.at(-1);
   const asked =
     itemRuns.length === 0
@@ -107,6 +126,7 @@ export const loadCardInput = async (
       : false,
     questionsUrl,
     beforeMerging: workItem.stage === 'awaiting_merge' ? readBeforeMerging(review?.report) : undefined,
+    checks,
     mergeEffect: project.mergeEffect,
     next: readNextIssues(workItem.nextReady),
     now: new Date(),

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { ChecksSummary } from './checks';
+import { checksLine } from './checks';
 import { sizeLabel } from './dashboard';
 import type { Gate } from './gates';
 import type { HoldReason } from './governor';
@@ -106,6 +108,8 @@ export type CardInput = {
   // `mergeEffect`), for Approve and merge's confirm.
   beforeMerging?: string;
   mergeEffect?: string;
+  // The checks on the PR's head while it waits at the merge gate; null when GitHub couldn't be read.
+  checks?: ChecksSummary | null;
   next: NextIssue[];
   now: Date;
   timeZone: string;
@@ -365,8 +369,10 @@ const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | un
         : `*The ${latest?.agent ?? 'last'} run failed.*${summaryOf(latest)}`;
     case 'stopped':
       return workItem.undelegated ? NOT_DELEGATED : stoppedLine(latest);
-    case 'ready':
-      return `*Ready to merge:* ${acceptedText(input)}`;
+    case 'ready': {
+      const checks = input.checks ? checksLine(input.checks, input) : undefined;
+      return `*Ready to merge:* ${acceptedText(input)}${checks ? `\n${checks}` : ''}`;
+    }
     case 'merged':
       return `*Merged* at ${clock(workItem.updatedAt, timeZone)}${pr}`;
     case 'canceled':
@@ -439,12 +445,19 @@ const cardButtons = (input: CardInput, status: CardStatus, entry: InboxEntry | u
     ];
   }
   if (status === 'ready') {
+    // Approve and merge shows once the checks pass, so the card never offers a merge the tap would refuse. Unread
+    // checks keep it: the tap reads them again before merging.
+    const mergeable = !input.checks || input.checks.state === 'passing' || input.checks.state === 'none';
     return prUrl && workItem.prNumber
       ? [
-          mergeButton(workItem.id, workItem.prNumber, {
-            beforeMerging: input.beforeMerging,
-            mergeEffect: input.mergeEffect
-          }),
+          ...(mergeable
+            ? [
+                mergeButton(workItem.id, workItem.prNumber, {
+                  beforeMerging: input.beforeMerging,
+                  mergeEffect: input.mergeEffect
+                })
+              ]
+            : []),
           linkButton('pr_open', `Open PR #${workItem.prNumber}`, prUrl)
         ]
       : [];

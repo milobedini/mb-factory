@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { CardInput, CardRun } from './card';
 import { CARD_COLOURS, readNextIssues, workItemCard } from './card';
+import type { HeadCheck } from './checks';
+import { summariseChecks } from './checks';
 import type { SlackBlock } from './slack';
 
 const at = (minute: number): Date => new Date(Date.UTC(2026, 9, 27, 10, minute));
@@ -297,6 +299,33 @@ describe('workItemCard', () => {
       { text: 'Approve and merge', value: JSON.stringify({ m: '22222222-2222-4222-8222-222222222222' }) },
       { text: 'Open PR #38', url: 'https://github.com/milobedini/tastebook/pull/38' }
     ]);
+  });
+
+  it('shows the checks under Ready to merge, and Approve and merge only once they pass', () => {
+    const gate = (checks: CardInput['checks']) =>
+      workItemCard(
+        input({ runs: [run(), run({ agent: 'review' })], checks }, { stage: 'awaiting_merge', prNumber: 122 })
+      );
+    const check = (name: string, state: HeadCheck['state']): HeadCheck => ({
+      name,
+      state,
+      url: null,
+      finishedAt: state === 'passed' ? at(5) : null
+    });
+    const running = gate(
+      summariseChecks([check('Backend', 'passed'), check('Frontend', 'running')], ['Preview checks'])
+    );
+    expect(status(running)).toBe(
+      ':tb-done: *Ready to merge:* review accepted PR #122 at 10:02.\n:tb-running: *Checks running:* 1 of 3 passed. Frontend is running; Preview checks hasn’t started.'
+    );
+    expect(buttons(running).map(({ text }) => text)).toEqual(['Open PR #122']);
+    const failing = gate(summariseChecks([check('End-to-end', 'failed')], []));
+    expect(buttons(failing).map(({ text }) => text)).toEqual(['Open PR #122']);
+    const passed = gate(summariseChecks([check('Backend', 'passed')], []));
+    expect(status(passed)).toContain('\n:tb-done: *Checks passed:* 1 of 1 at 10:05.');
+    expect(buttons(passed).map(({ text }) => text)).toEqual(['Approve and merge', 'Open PR #122']);
+    // Checks GitHub wouldn't give keep the button: the tap reads them again.
+    expect(buttons(gate(null)).map(({ text }) => text)).toEqual(['Approve and merge', 'Open PR #122']);
   });
 
   it('asks to confirm a merge, with what review said to check first', () => {

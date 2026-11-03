@@ -1,14 +1,15 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import type {
   ChangedFile,
-  ChecksState,
+  ChecksSummary,
   CommitRun,
   DispatchPayload,
+  HeadCheck,
   PullForMerge,
   ReviewThread,
   ScheduledRun
 } from '@mb-factory/core';
-import { checksState, currentMergeable, DISPATCH_EVENT } from '@mb-factory/core';
+import { checkRunState, commitStatusState, currentMergeable, DISPATCH_EVENT, summariseChecks } from '@mb-factory/core';
 
 import { requireEnv } from './env';
 
@@ -257,20 +258,61 @@ export const pullMergeState = async (
   return pullMergeState(repository, prNumber, rest);
 };
 
-type WorkflowRuns = { workflow_runs: { workflow_id: number; status: string; conclusion: string | null }[] };
+type CheckRuns = {
+  check_runs: {
+    name: string;
+    status: string;
+    conclusion: string | null;
+    html_url: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+  }[];
+};
 
-// A PR branch's CI for the Inbox: the latest pull_request run of each workflow (GitHub lists newest first). Actions
-// read is enough, where the check-runs API would need the Checks permission too.
-export const branchChecks = async (repository: string, branch: string): Promise<ChecksState> => {
-  const query = new URLSearchParams({ branch, event: 'pull_request', per_page: '50' });
-  const { workflow_runs: workflowRuns } = await githubGet<WorkflowRuns>(
-    `/repos/${repository}/actions/runs?${query}`,
-    'workflow runs'
+type CombinedStatus = {
+  statuses: { context: string; state: string; target_url: string | null; updated_at: string }[];
+};
+
+// Every check GitHub shows under a PR for one commit: its check runs (the latest of each, newest first) and its commit
+// statuses. Needs the token's Checks and Commit statuses read.
+const commitChecks = async (repository: string, sha: string): Promise<HeadCheck[]> => {
+  const [{ check_runs: checkRuns }, { statuses }] = await Promise.all([
+    githubGet<CheckRuns>(`/repos/${repository}/commits/${sha}/check-runs?filter=latest&per_page=100`, 'check runs'),
+    githubGet<CombinedStatus>(`/repos/${repository}/commits/${sha}/status?per_page=100`, 'commit status')
+  ]);
+  const runs = [...checkRuns]
+    .sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''))
+    .map(
+      (run): HeadCheck => ({
+        name: run.name,
+        state: checkRunState(run),
+        url: run.html_url,
+        finishedAt: run.completed_at ? new Date(run.completed_at) : null
+      })
+    );
+  const fromStatuses = statuses.map(
+    (status): HeadCheck => ({
+      name: status.context,
+      state: commitStatusState(status.state),
+      url: status.target_url,
+      finishedAt: status.state === 'pending' ? null : new Date(status.updated_at)
+    })
   );
-  const latest = workflowRuns.filter(
-    (run, index) => workflowRuns.findIndex(({ workflow_id }) => workflow_id === run.workflow_id) === index
+  return [...runs, ...fromStatuses];
+};
+
+// The checks on a PR's head, counting those that ran on the commit before it and haven't started here yet.
+export const headChecks = async (repository: string, sha: string): Promise<ChecksSummary> => {
+  const [commit, head] = await Promise.all([
+    githubGet<{ parents: { sha: string }[] }>(`/repos/${repository}/git/commits/${sha}`, 'commit'),
+    commitChecks(repository, sha)
+  ]);
+  const parent = commit.parents[0]?.sha;
+  const previous = parent ? await commitChecks(repository, parent) : [];
+  return summariseChecks(
+    head,
+    previous.map(({ name }) => name)
   );
-  return checksState(latest);
 };
 
 type ScheduledRuns = {
@@ -386,7 +428,7 @@ export const mergeBaseIntoBranch = async (
 };
 
 export const commitParents = async (repository: string, sha: string): Promise<string[]> =>
-  (await githubGet<{ parents: { sha: string }[] }>(`/repos/${repository}/commits/${sha}`, 'commit')).parents.map(
+  (await githubGet<{ parents: { sha: string }[] }>(`/repos/${repository}/git/commits/${sha}`, 'commit')).parents.map(
     (parent) => parent.sha
   );
 

@@ -41,6 +41,7 @@ import {
   buildDispatchPayload,
   CHANGES_QUESTION,
   canRerun,
+  checksPassedText,
   chosenFollowUps,
   choseRerun,
   ciHandOverText,
@@ -209,7 +210,6 @@ import { fileFollowUps, fileRequestedIssues } from './follow-ups';
 import {
   approvePull,
   behindBy,
-  branchChecks,
   branchContains,
   cancelActionsRun,
   commentOnPullRequest,
@@ -217,6 +217,7 @@ import {
   commitRuns,
   compareFiles,
   defaultBranch,
+  headChecks,
   mergeBaseIntoBranch,
   mergePull,
   openPullsWithHead,
@@ -555,7 +556,7 @@ const bringUpToDate = (
           type: BASE_MERGE_EVENT,
           payload: { repository, branch, base, sha: merged.sha }
         });
-        const text = `Merged ${base} into PR #${prNumber} (${behind} new ${behind === 1 ? 'commit' : 'commits'}) to bring it up to date, as it must be to merge. Approve and merge works once its checks pass; no new review is needed.`;
+        const text = `Merged ${base} into PR #${prNumber} (${behind} new ${behind === 1 ? 'commit' : 'commits'}) to bring it up to date, as it must be to merge. No new review is needed; the checks run again on the new head, and I’ll say here when they pass.`;
         await Promise.all([
           postActivity(workItem, { type: 'thought', body: text }),
           replyInThread(project, workItem, text)
@@ -2614,11 +2615,9 @@ const handleMergeTap = async (
     return;
   }
   try {
-    const [pull, accepted, checks] = await Promise.all([
-      pullForMerge(repository, prNumber),
-      acceptedHead(workItem),
-      branchChecks(repository, branch)
-    ]);
+    const [pull, accepted] = await Promise.all([pullForMerge(repository, prNumber), acceptedHead(workItem)]);
+    // The same checks the card counts, so a tap is refused only when the card says why.
+    const { state: checks } = await headChecks(repository, pull.head);
     const refusal = mergeRefusal(prNumber, { pull, acceptedHead: accepted, checks });
     if (refusal !== undefined || accepted === null) {
       log('info', 'merge from slack refused', { issue, login: connection.login, refusal });
@@ -3437,6 +3436,80 @@ const findWorkItemForPr = async (event: Extract<GitHubEvent, { kind: 'pr_closed'
   return workItem;
 };
 
+const CHECKS_PASSED_EVENT = 'checks_passed';
+
+// Once every check passes on a head the console brought up to date, the assignee hears in the thread, as the message
+// that brought it up to date said they would: the merge was held for these checks. Said once per head.
+const announceChecksPassed = async (project: FactoryConfig, workItem: WorkItem, sha: string): Promise<void> => {
+  const { prNumber, repository } = workItem;
+  if (!prNumber) {
+    return;
+  }
+  const [broughtUpToDate] = await getDb()
+    .select({ id: events.id })
+    .from(events)
+    .where(and(eq(events.type, BASE_MERGE_EVENT), eq(events.deliveryId, `base-merge:${sha}`)))
+    .limit(1);
+  if (!broughtUpToDate) {
+    return;
+  }
+  const { head } = await pullHead(repository, prNumber);
+  if (head !== sha) {
+    return;
+  }
+  const summary = await headChecks(repository, head);
+  if (summary.state !== 'passing') {
+    return;
+  }
+  const first = await recordEvent({
+    source: 'github',
+    deliveryId: `checks-passed:${sha}`,
+    type: CHECKS_PASSED_EVENT,
+    payload: { repository, prNumber, sha }
+  });
+  if (first) {
+    await replyInThread(project, workItem, askingFor(project, workItem)(checksPassedText(prNumber, summary)));
+  }
+};
+
+// A check started or finished, or a commit status changed: the card of a PR waiting at the merge gate shows its checks,
+// so it's redrawn. Nothing else here acts on checks; a failure starts its fix from the workflow run (`ci_failed`).
+const handleChecksChanged = async (event: Extract<GitHubEvent, { kind: 'checks_changed' }>): Promise<void> => {
+  const waiting = await getDb()
+    .select()
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.repository, event.repository),
+        eq(workItems.stage, 'awaiting_merge'),
+        isNotNull(workItems.prNumber)
+      )
+    );
+  if (waiting.length === 0) {
+    return;
+  }
+  // A commit status, or a check on a deployment, names its commit, not its PR.
+  const prNumbers =
+    event.prNumbers.length > 0
+      ? event.prNumbers
+      : await openPullsWithHead(event.repository, event.sha).catch((error: unknown) => {
+          log('warn', 'pulls for commit failed', { sha: event.sha, error: errorMessage(error) });
+          return [];
+        });
+  const matched = waiting.filter(({ prNumber }) => prNumber !== null && prNumbers.includes(prNumber));
+  await Promise.all(
+    matched.map(async (workItem) => {
+      touchCard(workItem.id);
+      const project = findProject(workItem.project);
+      if (project) {
+        await attempt('checks passed', { issue: workItem.issueIdentifier, sha: event.sha }, () =>
+          announceChecksPassed(project, workItem, event.sha)
+        );
+      }
+    })
+  );
+};
+
 const handleCiFailure = async (event: Extract<GitHubEvent, { kind: 'ci_failed' }>): Promise<void> => {
   // A deployment's checks name the commit; the PR is the open one whose head it still is.
   const prNumbers =
@@ -3681,6 +3754,10 @@ export const handleGitHubEvent = withCards(async (eventName: string, payload: un
   }
   if (event.kind === 'ci_failed') {
     await handleCiFailure(event);
+    return;
+  }
+  if (event.kind === 'checks_changed') {
+    await handleChecksChanged(event);
     return;
   }
   if (event.kind === 'default_branch_moved') {

@@ -386,3 +386,31 @@ describe('stop copy', () => {
     expect(stoppedText({ kind: 'console', login: 'milobedini' })).toBe('Stopped from the console by milobedini.');
   });
 });
+
+describe('parseGitHubEvent for checks', () => {
+  const sha = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+  const repository = { full_name: 'milobedini/tastebook' };
+
+  it('reads a check run on a PR’s head', () => {
+    expect(
+      parseGitHubEvent('check_run', {
+        action: 'completed',
+        repository,
+        check_run: { name: 'Frontend', head_sha: sha, pull_requests: [{ number: 122 }] }
+      })
+    ).toEqual({ kind: 'checks_changed', repository: 'milobedini/tastebook', sha, prNumbers: [122] });
+  });
+
+  it('reads a commit status by its commit, for the console to find the PR', () => {
+    expect(parseGitHubEvent('status', { repository, sha, context: 'Vercel', state: 'success' })).toEqual({
+      kind: 'checks_changed',
+      repository: 'milobedini/tastebook',
+      sha,
+      prNumbers: []
+    });
+  });
+
+  it('ignores a check without a commit', () => {
+    expect(parseGitHubEvent('check_run', { repository, check_run: { name: 'Frontend' } })).toBeUndefined();
+  });
+});
