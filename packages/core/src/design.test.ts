@@ -8,6 +8,7 @@ import {
   dinoWaitText,
   latestCanvas,
   latestSpecDesign,
+  picksSpecChange,
   readCanvas,
   readDesignComponents,
   readDesignFiles,
@@ -132,7 +133,24 @@ describe('readDesignVariants', () => {
   ];
 
   it('reads two or three variants, recommended first', () => {
-    expect(readDesignVariants({ stage: 'design', variants })).toEqual(variants);
+    expect(readDesignVariants({ stage: 'design', variants })).toEqual(
+      variants.map((variant) => ({ ...variant, specChange: null }))
+    );
+  });
+
+  it('reads a spec change on any variant but the recommended one, which always fits the spec', () => {
+    const changes = 'Fields move into a sheet.';
+    expect(
+      readDesignVariants({
+        variants: [
+          { name: 'A', title: 'Stacked', specChange: 'Ignored.' },
+          { name: 'B', title: 'List and sheet', specChange: changes }
+        ]
+      })
+    ).toEqual([
+      { name: 'A', title: 'Stacked', specChange: null },
+      { name: 'B', title: 'List and sheet', specChange: changes }
+    ]);
   });
 
   it('reads none from a report without them, with one, with too many or with a name used twice', () => {
@@ -146,7 +164,19 @@ describe('readDesignVariants', () => {
   });
 
   it('turns a pick into a reply the design run revises from', () => {
-    expect(useVariantReply({ name: 'B', title: 'One row a line' })).toBe('Use variant B: One row a line');
+    expect(useVariantReply({ name: 'B', title: 'One row a line', specChange: null })).toBe(
+      'Use variant B: One row a line'
+    );
+  });
+
+  it('turns a pick that changes the spec into what the spec run changes', () => {
+    const reply = useVariantReply({ name: 'C', title: 'List and sheet', specChange: 'Fields move into a sheet.' });
+    expect(reply).toBe(
+      "Use variant C, which changes the spec: List and sheet. Fields move into a sheet. Record the pick in the spec's Decisions, so the design is redrawn around variant C once the spec is approved."
+    );
+    expect(picksSpecChange(reply)).toBe(true);
+    expect(readVariantPick(reply)).toBe('C');
+    expect(picksSpecChange('Use variant B: One row a line')).toBe(false);
   });
 
   it('reads the variant a reply picks, and nothing from any other reply', () => {

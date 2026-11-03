@@ -170,9 +170,9 @@ describe('the design gate', () => {
 
   it('offers the recommended variant to approve and the others to use, listing them all', () => {
     const variants = [
-      { name: 'A', title: 'Stacked fieldsets' },
-      { name: 'B', title: 'One row a line' },
-      { name: 'C', title: 'A table <wide>' }
+      { name: 'A', title: 'Stacked fieldsets', specChange: null },
+      { name: 'B', title: 'One row a line', specChange: null },
+      { name: 'C', title: 'A table <wide>', specChange: 'Fields move into a sheet.' }
     ];
     const blocks = blocksOf(slackDesignGateMessage(workItemId, { canvasUrl: canvas, issueUrl, variants }));
     expect(blocks[0]?.text?.text).toBe(
@@ -180,7 +180,7 @@ describe('the design gate', () => {
         `<${canvas}|The design> is ready for review, with 3 variants to pick from:`,
         '• (R) *A*: Stacked fieldsets, drawn in full',
         '• *B*: One row a line',
-        '• *C*: A table &lt;wide&gt;',
+        '• *C*: A table &lt;wide&gt; · changes the spec, so the spec is revised first: Fields move into a sheet.',
         'Approve A to start building, use another and I’ll draw it in full, say what should change, or go back to the spec.'
       ].join('\n')
     );
@@ -195,7 +195,7 @@ describe('the design gate', () => {
     expect(buttons.map(({ value }) => JSON.parse(value ?? '{}').a)).toEqual([
       'Approve',
       'Use variant B: One row a line',
-      'Use variant C: A table <wide>',
+      "Use variant C, which changes the spec: A table <wide>. Fields move into a sheet. Record the pick in the spec's Decisions, so the design is redrawn around variant C once the spec is approved.",
       'Change something',
       'Back to spec'
     ]);
@@ -207,6 +207,9 @@ describe('the design gate', () => {
     );
     expect(blocksOf(slackDesignGateSettled('changes', 'by Milo', canvas, 'B'))[0]?.text?.text).toBe(
       `Variant B of <${canvas}|the design> was picked by Milo. I’ll draw it in full.`
+    );
+    expect(blocksOf(slackDesignGateSettled('back_to_spec', 'by Milo', canvas, 'C'))[0]?.text?.text).toBe(
+      `Variant C of <${canvas}|the design> was picked by Milo. It changes the spec, so the spec is revised first, and the design is redrawn around it once the spec is approved.`
     );
     expect(blocksOf(slackDesignGateSettled('changes', 'by Milo', canvas))[0]?.text?.text).toBe(
       `Changes to <${canvas}|the design> were asked for by Milo.`

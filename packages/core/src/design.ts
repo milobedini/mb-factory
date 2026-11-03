@@ -60,17 +60,20 @@ const reportCanvasSchema = z.looseObject({ canvas: z.string().trim().regex(CANVA
 export const readCanvas = (report: unknown): string | null => reportCanvasSchema.safeParse(report).data?.canvas ?? null;
 
 // A variant of the design's main board, drawn side by side with the others for the person to pick from. The first is
-// the one recommended, and the only one drawn in full.
-export type DesignVariant = { name: string; title: string };
+// the one recommended, and the only one drawn in full; it always fits the spec. Another may need the spec changed
+// first: `specChange` says how.
+export type DesignVariant = { name: string; title: string; specChange: string | null };
 
 const MAX_VARIANTS = 3;
+const MAX_SPEC_CHANGE = 300;
 
 const variantSchema = z.object({
   name: z
     .string()
     .trim()
     .regex(/^[A-Z]$/),
-  title: z.string().trim().min(1).max(MAX_NAME)
+  title: z.string().trim().min(1).max(MAX_NAME),
+  specChange: z.string().trim().min(1).max(MAX_SPEC_CHANGE).nullish()
 });
 
 const reportVariantsSchema = z.looseObject({ variants: z.array(variantSchema).min(2).max(MAX_VARIANTS) });
@@ -79,14 +82,28 @@ const reportVariantsSchema = z.looseObject({ variants: z.array(variantSchema).mi
 export const readDesignVariants = (report: unknown): DesignVariant[] => {
   const variants = reportVariantsSchema.safeParse(report).data?.variants ?? [];
   return new Set(variants.map(({ name }) => name)).size === variants.length
-    ? variants.map(({ name, title }) => ({ name, title }))
+    ? variants.map(({ name, title, specChange }, index) => ({
+        name,
+        title,
+        specChange: index === 0 ? null : (specChange ?? null)
+      }))
     : [];
 };
 
-// The reply a variant's button sends: not an approval, so the design run revises the canvas around that variant.
-export const useVariantReply = ({ name, title }: DesignVariant): string => `Use variant ${name}: ${title}`;
+const SPEC_CHANGING = ', which changes the spec';
+
+// The reply a variant's button sends: not an approval, so the design run revises the canvas around that variant, or,
+// when the variant changes the spec, the spec is revised first with the reply as what to change.
+export const useVariantReply = ({ name, title, specChange }: DesignVariant): string =>
+  specChange
+    ? `Use variant ${name}${SPEC_CHANGING}: ${title}. ${specChange} Record the pick in the spec's Decisions, so the design is redrawn around variant ${name} once the spec is approved.`
+    : `Use variant ${name}: ${title}`;
 
 const VARIANT_PICK = /^use variant ([A-Z])\b/i;
+const SPEC_CHANGING_PICK = /^use variant [A-Z], which changes the spec\b/i;
+
+// Whether a reply picks a variant that needs the spec changed first, as its Use button words it.
+export const picksSpecChange = (body: string): boolean => SPEC_CHANGING_PICK.test(body.trim());
 
 // The variant a reply picks, as the Use button words it; null for any other reply.
 export const readVariantPick = (body: string): string | null =>

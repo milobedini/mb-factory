@@ -298,7 +298,10 @@ const variantsText = (canvasUrl: string | null, [recommended, ...others]: Design
   [
     `${canvasLink(canvasUrl, 'The design')} is ready for review, with ${others.length + 1} variants to pick from:`,
     ...(recommended ? [`• ${RECOMMENDED}*${recommended.name}*: ${escapeSlack(recommended.title)}, drawn in full`] : []),
-    ...others.map(({ name, title }) => `• *${name}*: ${escapeSlack(title)}`),
+    ...others.map(
+      ({ name, title, specChange }) =>
+        `• *${name}*: ${escapeSlack(title)}${specChange ? ` · changes the spec, so the spec is revised first: ${escapeSlack(specChange)}` : ''}`
+    ),
     `Approve ${recommended?.name ?? 'it'} to start building, use another and I’ll draw it in full, say what should change, or go back to the spec.`
   ].join('\n');
 
@@ -348,23 +351,28 @@ export const slackDesignGateSettled = (
   variant: string | null = null
 ): SlackMessage => {
   const picked = outcome === 'changes' && variant !== null;
+  const pickedForSpec = outcome === 'back_to_spec' && variant !== null;
   const text =
     outcome === 'approved'
       ? `✓ ${canvasLink(canvas, 'The design')} was approved ${escapeSlack(by)}. Building starts next.`
-      : picked
-        ? `Variant ${variant} of ${canvasLink(canvas, 'the design')} was picked ${escapeSlack(by)}. I’ll draw it in full.`
-        : outcome === 'changes'
-          ? `Changes to ${canvasLink(canvas, 'the design')} were asked for ${escapeSlack(by)}.`
-          : `The spec was reopened ${escapeSlack(by)}, from ${canvasLink(canvas, 'the design')}.`;
+      : pickedForSpec
+        ? `Variant ${variant} of ${canvasLink(canvas, 'the design')} was picked ${escapeSlack(by)}. It changes the spec, so the spec is revised first, and the design is redrawn around it once the spec is approved.`
+        : picked
+          ? `Variant ${variant} of ${canvasLink(canvas, 'the design')} was picked ${escapeSlack(by)}. I’ll draw it in full.`
+          : outcome === 'changes'
+            ? `Changes to ${canvasLink(canvas, 'the design')} were asked for ${escapeSlack(by)}.`
+            : `The spec was reopened ${escapeSlack(by)}, from ${canvasLink(canvas, 'the design')}.`;
   return {
     text:
       outcome === 'approved'
         ? 'The design was approved.'
-        : picked
-          ? `Variant ${variant} of the design was picked.`
-          : outcome === 'changes'
-            ? 'Changes to the design were asked for.'
-            : 'The spec was reopened from the design.',
+        : pickedForSpec
+          ? `Variant ${variant} was picked, and the spec is revised first.`
+          : picked
+            ? `Variant ${variant} of the design was picked.`
+            : outcome === 'changes'
+              ? 'Changes to the design were asked for.'
+              : 'The spec was reopened from the design.',
     blocks: [section(text)]
   };
 };

@@ -130,6 +130,7 @@ import {
   personForGitHub,
   personForSlack,
   personName,
+  picksSpecChange,
   prClosedText,
   QUESTION_GONE,
   questionElicitation,
@@ -1803,7 +1804,11 @@ const settleGate = async (
         )
       : workItem.stage === 'design_review'
         ? slackDesignGateSettled(
-            request?.trigger === 'design_approved' ? 'approved' : isBackToSpec(body) ? 'back_to_spec' : 'changes',
+            request?.trigger === 'design_approved'
+              ? 'approved'
+              : isBackToSpec(body) || picksSpecChange(body)
+                ? 'back_to_spec'
+                : 'changes',
             by,
             latestCanvas(await finishedReports(workItem, 'design')),
             readVariantPick(body)
@@ -1814,6 +1819,9 @@ const settleGate = async (
     getDb().update(workItems).set({ gateSlackTs: null }).where(eq(workItems.id, workItem.id))
   ]);
 };
+
+// Design Review's own answers: Back to spec, and picking a variant. A tap on one at Spec Review is from a gate that's gone.
+const designOnlyReply = (body: string): boolean => isBackToSpec(body) || readVariantPick(body) !== null;
 
 // A human's reply, from the Linear session or the Slack thread: mirrored to the other, then it answers the open
 // question, or the spec gate, or goes to the agent for the work item's stage.
@@ -1838,6 +1846,16 @@ const handleReply = async (project: FactoryConfig, workItem: WorkItem, body: str
       postActivity(workItem, { type: 'elicitation', body: BACK_TO_SPEC_QUESTION }),
       replyInThread(project, workItem, BACK_TO_SPEC_QUESTION)
     ]);
+    return;
+  }
+  if (workItem.stage === 'design_review' && picksSpecChange(body)) {
+    // A variant that needs the spec changed: the pick is what to change, so the spec is revised now, and approving it
+    // designs again around that variant.
+    await moveWorkItem(project, workItem, 'spec_review');
+    await dispatchRun(
+      project,
+      await createRun(project, workItem, { agent: 'spec', trigger: 'prompted', priority: 'in_flight', prompt: body })
+    );
     return;
   }
   if (atReportedGate && onlyAsksForChanges(body)) {
@@ -2918,9 +2936,9 @@ const handleTap = async (
   const reviewing = workItem.stage === 'spec_review' || workItem.stage === 'design_review';
   if (
     action.kind === 'spec_gate' &&
-    (!reviewing || (isBackToSpec(action.body) && workItem.stage !== 'design_review'))
+    (!reviewing || (designOnlyReply(action.body) && workItem.stage !== 'design_review'))
   ) {
-    await tellTapper(isBackToSpec(action.body) ? DESIGN_GATE_GONE : SPEC_GATE_GONE);
+    await tellTapper(designOnlyReply(action.body) ? DESIGN_GATE_GONE : SPEC_GATE_GONE);
     return;
   }
   if (

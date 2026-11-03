@@ -102,6 +102,7 @@ export {
   dinoWaitText,
   latestCanvas,
   latestSpecDesign,
+  picksSpecChange,
   readCanvas,
   readDesignComponents,
   readDesignFiles,
