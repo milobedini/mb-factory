@@ -7,7 +7,7 @@ import type { Gate } from './gates';
 import type { HoldReason } from './governor';
 import type { InboxEntry, InboxQuestion, InboxRun } from './inbox';
 import { inboxEntry } from './inbox';
-import { mergeButton } from './merge';
+import { checksAllowMerge, mergeButton } from './merge';
 import { queuedThought } from './router';
 import type { RunTrigger } from './runs';
 import { formatRunTime, isOpenRun, runTotals } from './runs';
@@ -445,12 +445,9 @@ const cardButtons = (input: CardInput, status: CardStatus, entry: InboxEntry | u
     ];
   }
   if (status === 'ready') {
-    // Approve and merge shows once the checks pass, so the card never offers a merge the tap would refuse. Unread
-    // checks keep it: the tap reads them again before merging.
-    const mergeable = !input.checks || input.checks.state === 'passing' || input.checks.state === 'none';
     return prUrl && workItem.prNumber
       ? [
-          ...(mergeable
+          ...(checksAllowMerge(input.checks)
             ? [
                 mergeButton(workItem.id, workItem.prNumber, {
                   beforeMerging: input.beforeMerging,

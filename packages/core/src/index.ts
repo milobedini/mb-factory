@@ -189,12 +189,14 @@ export { isLinearPassFor, isReadOnlyDocument, signLinearPass } from './linear-pr
 export type { AcceptedPr, PullForMerge } from './merge';
 export {
   approveRefusedText,
+  checksAllowMerge,
   checksUnreadText,
   closedLine,
   connectGitHubMessage,
   MERGE_ACTION,
   mergeButton,
   mergedLine,
+  mergeHeldLine,
   mergeNotSetUpText,
   mergeRefusal,
   mergeRefusedText,
@@ -202,6 +204,7 @@ export {
   notWaitingToMergeText,
   readBeforeMerging,
   slackAcceptedMessage,
+  slackMergeGated,
   slackMergeSettled,
   withConnectInstead
 } from './merge';

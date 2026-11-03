@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { ChecksSummary } from './checks';
 import type { ChecksState } from './inbox';
 import type { SlackBlock, SlackMessage } from './slack';
 import { button, escapeSlack } from './slack';
@@ -91,16 +92,73 @@ export const slackAcceptedMessage = (finishedText: string, pr: AcceptedPr): Slac
   };
 };
 
+// The merge message's buttons and its held line, named once the checks have held the merge so they're found again.
+const MERGE_GATE_BLOCK = 'merge_gate';
+const MERGE_HELD_BLOCK = 'merge_held';
+const FIX_TICKED_ACTION = 'findings_fix';
+
+const actionIds = (block: SlackBlock): unknown[] =>
+  Array.isArray(block.elements) ? block.elements.map((element: { action_id?: unknown }) => element.action_id) : [];
+
+// The buttons Approve and merge sits among: beside Fix ticked under findings, or before Open PR on the accepted message.
 const isMergeActions = (block: SlackBlock): boolean =>
   block.type === 'actions' &&
-  Array.isArray(block.elements) &&
-  block.elements.some((element: { action_id?: unknown }) => element.action_id === MERGE_ACTION);
+  (block.block_id === MERGE_GATE_BLOCK ||
+    actionIds(block).some((id) => id === MERGE_ACTION || id === FIX_TICKED_ACTION));
 
-// The message carrying Approve and merge once its PR is merged, closed or moved on, as Slack sends it back: the buttons
-// and any findings' Fix boxes go, a line says what happened.
+// Approve and merge shows once the checks pass, so nothing offers a merge the tap would refuse. Unread checks (null)
+// keep it: the tap reads them again before merging.
+export const checksAllowMerge = (checks: ChecksSummary | null | undefined): boolean =>
+  !checks || checks.state === 'passing' || checks.state === 'none';
+
+// Said on the merge message while the checks hold Approve and merge back.
+export const mergeHeldLine = (prNumber: number, state: ChecksState): string =>
+  state === 'failing'
+    ? `A check failed on PR #${prNumber}, so Approve and merge is held. The card says which.`
+    : `PR #${prNumber}’s checks are running, so Approve and merge comes back here once they pass. The card shows them live.`;
+
+const heldLineText = (block: SlackBlock): string | undefined =>
+  block.block_id === MERGE_HELD_BLOCK ? (block.elements as { text?: string }[] | undefined)?.[0]?.text : undefined;
+
+// The message carrying Approve and merge, as Slack sends it back, kept in step with the PR's checks: `held` is the line
+// shown in the button's place while they hold the merge, undefined once they allow it. Undefined when the message is
+// already so, so Slack is only written to when something changes.
+export const slackMergeGated = (
+  blocks: SlackBlock[],
+  { workItemId, prNumber, notes, held }: { workItemId: string; prNumber: number; notes: MergeNotes; held?: string }
+): SlackBlock[] | undefined => {
+  const gate = blocks.find(isMergeActions);
+  if (!gate) {
+    return undefined;
+  }
+  const showing = actionIds(gate).includes(MERGE_ACTION);
+  const shownLine = blocks.map(heldLineText).find((text) => text !== undefined);
+  if (held === undefined ? showing && shownLine === undefined : !showing && shownLine === held) {
+    return undefined;
+  }
+  const others = (gate.elements as SlackBlock[]).filter((element) => element.action_id !== MERGE_ACTION);
+  // Back where it was: beside Fix ticked under findings, otherwise first and primary.
+  const fixAt = others.findIndex((element) => element.action_id === FIX_TICKED_ACTION);
+  const elements =
+    held !== undefined
+      ? others
+      : fixAt >= 0
+        ? [...others.slice(0, fixAt + 1), mergeButton(workItemId, prNumber, notes, false), ...others.slice(fixAt + 1)]
+        : [mergeButton(workItemId, prNumber, notes), ...others];
+  const heldBlock: SlackBlock[] =
+    held === undefined
+      ? []
+      : [{ type: 'context', block_id: MERGE_HELD_BLOCK, elements: [{ type: 'mrkdwn', text: held }] }];
+  return blocks
+    .filter((block) => block.block_id !== MERGE_HELD_BLOCK)
+    .flatMap((block) => (block === gate ? [...heldBlock, { ...gate, block_id: MERGE_GATE_BLOCK, elements }] : [block]));
+};
+
+// The message carrying Approve and merge once its PR is merged, closed or moved on, as Slack sends it back: the buttons,
+// any findings' Fix boxes and any held line go, a line says what happened.
 export const slackMergeSettled = (blocks: SlackBlock[], line: string): SlackBlock[] => [
   ...blocks
-    .filter((block) => !isMergeActions(block))
+    .filter((block) => !isMergeActions(block) && block.block_id !== MERGE_HELD_BLOCK)
     .map((block) => {
       const { accessory, ...rest } = block;
       return (accessory as { type?: unknown } | undefined)?.type === 'checkboxes' ? rest : block;

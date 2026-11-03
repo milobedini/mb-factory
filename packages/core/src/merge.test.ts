@@ -2,15 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import type { PullForMerge } from './merge';
 import {
+  checksAllowMerge,
   closedLine,
   connectGitHubMessage,
   mergeButton,
   mergedLine,
+  mergeHeldLine,
   mergeRefusal,
   mergeRefusedText,
   movedOnLine,
   readBeforeMerging,
   slackAcceptedMessage,
+  slackMergeGated,
   slackMergeSettled,
   withConnectInstead
 } from './merge';
@@ -262,5 +265,97 @@ describe('Approve and merge beside the findings', () => {
       type: 'section',
       text: { type: 'mrkdwn', text: '✓ Merged by Milo Bedini at 21:10' }
     });
+  });
+});
+
+// TAS-115, 3 Nov: the card held Approve and merge while checks ran, but the findings message in the thread still
+// offered it, and the tap was refused.
+describe('the merge message held by the checks', () => {
+  const notes = { beforeMerging: undefined, mergeEffect: 'deploys it to production', findingsLeft: 1 };
+  const findingsMessage = slackFindingsMessage(
+    { id: '33333333-3333-4333-8333-333333333333', round: 2 },
+    [{ tier: 'nit', summary: 'Scroll the shot to the button' }],
+    { repository: 'o/r', branch: 'tas-115-edit' },
+    true,
+    mergeButton(workItemId, 124, notes, false)
+  );
+  const accepted = slackAcceptedMessage('Accepted.', {
+    workItemId,
+    prNumber: 124,
+    prUrl: 'https://github.com/o/r/pull/124',
+    beforeMerging: undefined,
+    mergeEffect: undefined
+  });
+  const running = mergeHeldLine(124, 'pending');
+  const gate = { workItemId, prNumber: 124, notes };
+  const actionIdsOf = (blocks: SlackBlock[]): unknown[] =>
+    blocks
+      .filter((block) => block.type === 'actions')
+      .flatMap((block) => (block.elements as SlackBlock[]).map(({ action_id }) => action_id));
+  const heldText = (blocks: SlackBlock[]): string | undefined =>
+    (blocks.find((block) => block.block_id === 'merge_held')?.elements as { text: string }[] | undefined)?.[0]?.text;
+
+  it('follows the card’s rule: unread or passing checks allow the merge, running or failing ones hold it', () => {
+    const summary = (state: 'passing' | 'pending' | 'failing' | 'none') => ({
+      state,
+      total: 7,
+      passed: 4,
+      running: [],
+      waiting: [],
+      failed: [],
+      finishedAt: null
+    });
+    expect(checksAllowMerge(undefined)).toBe(true);
+    expect(checksAllowMerge(null)).toBe(true);
+    expect(checksAllowMerge(summary('none'))).toBe(true);
+    expect(checksAllowMerge(summary('passing'))).toBe(true);
+    expect(checksAllowMerge(summary('pending'))).toBe(false);
+    expect(checksAllowMerge(summary('failing'))).toBe(false);
+  });
+
+  it('takes Approve and merge off the findings message while checks run, keeping Fix ticked, and says why', () => {
+    const held = slackMergeGated(findingsMessage.blocks, { ...gate, held: running });
+    expect(held && actionIdsOf(held)).toEqual(['findings_fix']);
+    expect(held && heldText(held)).toBe(
+      'PR #124’s checks are running, so Approve and merge comes back here once they pass. The card shows them live.'
+    );
+  });
+
+  it('puts it back beside Fix ticked, unstyled, with the same confirm once they pass', () => {
+    const held = slackMergeGated(findingsMessage.blocks, { ...gate, held: running }) ?? [];
+    const back = slackMergeGated(held, gate) ?? [];
+    expect(actionIdsOf(back)).toEqual(['findings_fix', 'merge']);
+    expect(heldText(back)).toBeUndefined();
+    const merge = back
+      .filter((block) => block.type === 'actions')
+      .flatMap((block) => block.elements as SlackBlock[])
+      .find(({ action_id }) => action_id === 'merge');
+    expect(merge).toEqual(mergeButton(workItemId, 124, notes, false));
+  });
+
+  it('holds and restores it first and primary on the accepted message, beside Open PR', () => {
+    const held = slackMergeGated(accepted.blocks, { ...gate, held: running }) ?? [];
+    expect(actionIdsOf(held)).toEqual(['pr_open']);
+    const back = slackMergeGated(held, gate) ?? [];
+    expect(actionIdsOf(back)).toEqual(['merge', 'pr_open']);
+    expect(back.find((block) => block.type === 'actions')?.elements).toContainEqual(
+      expect.objectContaining({ action_id: 'merge', style: 'primary' })
+    );
+  });
+
+  it('leaves Slack alone when nothing changes, and rewrites the line when the checks fail', () => {
+    expect(slackMergeGated(findingsMessage.blocks, gate)).toBeUndefined();
+    const held = slackMergeGated(findingsMessage.blocks, { ...gate, held: running }) ?? [];
+    expect(slackMergeGated(held, { ...gate, held: running })).toBeUndefined();
+    const failed = slackMergeGated(held, { ...gate, held: mergeHeldLine(124, 'failing') }) ?? [];
+    expect(heldText(failed)).toBe('A check failed on PR #124, so Approve and merge is held. The card says which.');
+    expect(failed.filter((block) => block.block_id === 'merge_held')).toHaveLength(1);
+  });
+
+  it('settles a held message without Fix ticked or the held line', () => {
+    const held = slackMergeGated(findingsMessage.blocks, { ...gate, held: running }) ?? [];
+    const settled = slackMergeSettled(held, movedOnLine('implement'));
+    expect(settled.some((block) => block.type === 'actions' || 'accessory' in block)).toBe(false);
+    expect(heldText(settled)).toBeUndefined();
   });
 });
