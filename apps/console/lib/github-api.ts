@@ -210,9 +210,11 @@ const githubGet = async <T>(path: string, action: string): Promise<T> => {
 // grow to a little over two minutes in all; the push check runs after the webhook has been answered.
 const MERGEABLE_PAUSES_MS = [2, 2, 2, 2, 2, 5, 10, 20, 30, 60].map((seconds) => seconds * 1000);
 
-export type MergeState = { mergeable: boolean | null; base: string };
+// `open` is false once the PR is merged or closed: its branch may be gone, and nothing about merging it applies.
+export type MergeState = { mergeable: boolean | null; base: string; open: boolean };
 
 type Pull = {
+  state: 'open' | 'closed';
   mergeable: boolean | null;
   merge_commit_sha: string | null;
   base: { ref: string };
@@ -228,6 +230,10 @@ export const pullMergeState = async (
   pauses: number[] = MERGEABLE_PAUSES_MS
 ): Promise<MergeState> => {
   const pull = await githubGet<Pull>(`/repos/${repository}/pulls/${prNumber}`, 'pull request');
+  if (pull.state !== 'open') {
+    // A merge moves the base branch, whose push can arrive before the PR's own closing.
+    return { mergeable: null, base: pull.base.ref, open: false };
+  }
   const [branch, testMerge] = await Promise.all([
     githubGet<{ commit: { sha: string } }>(
       `/repos/${repository}/branches/${encodeURIComponent(pull.base.ref)}`,
@@ -245,7 +251,7 @@ export const pullMergeState = async (
   });
   const [pause, ...rest] = pauses;
   if (mergeable !== null || pause === undefined) {
-    return { mergeable, base: pull.base.ref };
+    return { mergeable, base: pull.base.ref, open: true };
   }
   await sleep(pause);
   return pullMergeState(repository, prNumber, rest);

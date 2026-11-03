@@ -115,6 +115,11 @@ describe('parseGitHubEvent', () => {
     ).toMatchObject({ kind: 'human_push', commits: 1 });
   });
 
+  it('leaves out the console’s commit of an approved design', () => {
+    const design = { id: 'd1', distinct: true, message: 'Add the approved design for TAS-114\n\nCo-authored-by: Milo' };
+    expect(parseGitHubEvent('push', push({ commits: [design] }))).toBeUndefined();
+  });
+
   it('counts a force push that leaves no new commits', () => {
     expect(parseGitHubEvent('push', push({ forced: true, commits: [] }))).toMatchObject({ commits: 0 });
   });

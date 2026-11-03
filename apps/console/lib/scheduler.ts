@@ -12,13 +12,13 @@ import { bookNextWake, nextJobSlots } from './wake';
 export type WakeResult = { waiting: number; probing: boolean; nextWake: string | null };
 
 // One wake-up, from a delayed message, the hourly cron or the governor job: start any job whose slot has come, end
-// dispatched runs that never started, release what's free, start a probe when held work or a job about to start would
+// dispatched runs that never started, release what's free (runs waiting on blockers too), start a probe when held work or a job about to start would
 // otherwise be judged on stale readings, and book the next wake-up.
 // Safe to run any number of times.
 export const wake = async (cause: string): Promise<WakeResult> => {
   await fireDueJobs(new Date());
   await endLapsedDispatches(new Date());
-  await releaseQueue();
+  await releaseQueue({ blocked: true });
   const [waiting, readings, pause] = await Promise.all([countWaiting(), latestReadings(), currentPause()]);
   // While paused only runs someone allowed once can go, and a probe can't change that.
   const probing =

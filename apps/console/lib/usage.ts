@@ -1,6 +1,6 @@
 import type { RunUsageReading, UsageReading, UsageSource, UsageWindow } from '@mb-factory/core';
 import { USAGE_WINDOWS } from '@mb-factory/core';
-import { desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
 import { queue, usageReadings } from '@/db/schema';
@@ -27,7 +27,9 @@ export const latestReadings = async (): Promise<Partial<Record<UsageWindow, Usag
   );
 };
 
-export const countWaiting = async (): Promise<number> => getDb().$count(queue, isNull(queue.releasedAt));
+// Held work a usage probe could release: not runs waiting on blockers.
+export const countWaiting = async (): Promise<number> =>
+  getDb().$count(queue, and(isNull(queue.releasedAt), ne(queue.reason, 'blocked')));
 
 // The status line reports many times a minute while you work: an unchanged local reading only refreshes its time.
 const recordReading = async (reading: RunUsageReading, source: UsageSource, now: Date): Promise<void> => {

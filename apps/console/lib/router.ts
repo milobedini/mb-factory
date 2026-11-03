@@ -36,6 +36,7 @@ import {
   askTicketIssue,
   BACK_TO_SPEC_QUESTION,
   BLOCKING_OUTCOMES,
+  blockedThought,
   briefRound,
   buildDispatchPayload,
   CHANGES_QUESTION,
@@ -181,11 +182,13 @@ import {
   TERMINAL_STAGES,
   unblockedBy,
   unblockedHeading,
+  waitsOnBlockers,
   withFindings,
   withRerunButton,
+  workaroundsText,
   wrongChannelText
 } from '@mb-factory/core';
-import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
 import { asks, events, questions, queue, runs, stageChanges, workItems } from '@/db/schema';
@@ -229,7 +232,7 @@ import {
   sendStageDispatch
 } from './github-api';
 import { connectStartUrl, userGitHubToken } from './github-connect';
-import { fileGuards } from './guards';
+import { fileGuards, fileWorkarounds } from './guards';
 import { publishHome } from './home';
 import { findJob, jobBriefFor, jobTitleOf, postJobMessage } from './job-runs';
 import type { AgentActivityContent } from './linear-api';
@@ -252,7 +255,7 @@ import {
 import { log } from './log';
 import { currentPause, pauseFactory, resumeFactory } from './pause';
 import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
-import { loadReadyList, postReadyMessage, readyMessage } from './ready';
+import { loadReadyList, postReadyMessage, readyMessage, unfinishedBlockers } from './ready';
 import { touchCard, withCards } from './redraw';
 import { fireRoutine } from './routines';
 import type { RunWithWorkItem } from './runs';
@@ -470,6 +473,9 @@ const checkConflict = async (
     log('warn', 'merge state check failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
     return undefined;
   });
+  if (state && !state.open) {
+    return 'clean';
+  }
   if (state?.mergeable === null) {
     log('warn', 'merge state unknown', { issue: workItem.issueIdentifier, pr: prNumber });
   }
@@ -957,6 +963,59 @@ const startAskRun = async (project: FactoryConfig, run: Run, now: Date): Promise
   return 'started';
 };
 
+// Implement's first run waits, with the Blocked label, while the issue's blockers in Linear are unfinished (a spec can be
+// approved before them). It's checked until it first clears, then left to the governor: a later usage hold re-dispatches
+// on every webhook and needn't ask Linear each time.
+const heldForBlockers = async (project: FactoryConfig, run: Run, workItem: WorkItem): Promise<boolean> => {
+  const db = getDb();
+  const [[open], earlierImplementRuns] = await Promise.all([
+    db
+      .select({ reason: queue.reason })
+      .from(queue)
+      .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)))
+      .limit(1),
+    db.$count(
+      runs,
+      and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'implement'), lt(runs.createdAt, run.createdAt))
+    )
+  ]);
+  if (!waitsOnBlockers(run.agent, earlierImplementRuns) || (open && open.reason !== 'blocked')) {
+    return false;
+  }
+  const waitingOn = await unfinishedBlockers(workItem.linearOrganizationId, workItem.linearIssueId).catch(
+    (error: unknown) => {
+      // Linear failing mustn't stop the work: build, as before blockers were checked.
+      log('error', 'blockers check failed', {
+        runId: run.id,
+        issue: workItem.issueIdentifier,
+        error: errorMessage(error)
+      });
+      return [];
+    }
+  );
+  if (waitingOn.length === 0) {
+    if (open) {
+      log('info', 'blockers finished', { runId: run.id, issue: workItem.issueIdentifier });
+      await attempt('linear blocked label', { issue: workItem.issueIdentifier }, () =>
+        setBlockedLabel(workItem.linearOrganizationId, workItem.linearIssueId, false)
+      );
+    }
+    return false;
+  }
+  const text = blockedThought(waitingOn);
+  await holdRun(run, { kind: 'hold', state: 'open', reason: 'blocked' }, () =>
+    Promise.all([
+      postActivity(workItem, { type: 'thought', body: text }),
+      replyInThread(project, workItem, text),
+      attempt('linear blocked label', { issue: workItem.issueIdentifier }, () =>
+        setBlockedLabel(workItem.linearOrganizationId, workItem.linearIssueId, true)
+      )
+    ])
+  );
+  log('info', 'held for blockers', { runId: run.id, issue: workItem.issueIdentifier, waitingOn });
+  return true;
+};
+
 // Runs the governor for one queued run, then dispatches it or holds it in the queue.
 export const dispatchRun = withCards(async (project: FactoryConfig, runId: string, retried = false): Promise<void> => {
   const found = await findAnyRun(runId);
@@ -964,6 +1023,9 @@ export const dispatchRun = withCards(async (project: FactoryConfig, runId: strin
     return;
   }
   const { run, workItem } = found;
+  if (workItem && (await heldForBlockers(project, run, workItem))) {
+    return;
+  }
   const db = getDb();
   const [readings, pause, runningCount, busyCount] = await Promise.all([
     latestReadings(),
@@ -1311,12 +1373,14 @@ const answerQuestion = async (
 // Takes the Blocked label off once the work moves on, when its latest run had put it there.
 const clearBlocked = async (workItem: WorkItem): Promise<void> => {
   const [latest] = await getDb()
-    .select({ status: runs.status, outcome: runs.outcome })
+    .select({ status: runs.status, outcome: runs.outcome, agent: runs.agent, trigger: runs.trigger })
     .from(runs)
     .where(eq(runs.workItemId, workItem.id))
     .orderBy(desc(runs.createdAt))
     .limit(1);
-  if (latest?.status === 'finished' && BLOCKING_OUTCOMES.includes(latest.outcome)) {
+  // A design hand-off that filed Dino issues finished `done` but left the feature waiting with the label (`waitOnDino`).
+  const waitedOnDino = latest?.agent === 'design' && latest.trigger === 'design_approved';
+  if (latest?.status === 'finished' && (BLOCKING_OUTCOMES.includes(latest.outcome) || waitedOnDino)) {
     await attempt('linear blocked label', { issue: workItem.issueIdentifier }, () =>
       setBlockedLabel(workItem.linearOrganizationId, workItem.linearIssueId, false)
     );
@@ -1454,8 +1518,9 @@ export const allowRunOnce = withCards(async (runId: string, login: string): Prom
   return true;
 });
 
-// Releases held runs, highest priority first, for as long as the governor allows.
-export const releaseQueue = withCards(async (): Promise<void> => {
+// Releases held runs, highest priority first, for as long as the governor allows. Runs held for blockers are tried only
+// with `blocked` (a wake-up, or an issue finishing), since each try asks Linear.
+export const releaseQueue = withCards(async ({ blocked = false }: { blocked?: boolean } = {}): Promise<void> => {
   const waiting = await getDb()
     .select({
       runId: queue.runId,
@@ -1467,7 +1532,7 @@ export const releaseQueue = withCards(async (): Promise<void> => {
     .from(queue)
     .innerJoin(runs, eq(queue.runId, runs.id))
     .leftJoin(workItems, eq(runs.workItemId, workItems.id))
-    .where(isNull(queue.releasedAt));
+    .where(and(isNull(queue.releasedAt), blocked ? undefined : ne(queue.reason, 'blocked')));
   await orderQueue(waiting).reduce(async (previous, entry) => {
     await previous;
     const project = findProject(entry.project);
@@ -1724,7 +1789,12 @@ const settleGate = async (
   const gate = atStageGate ? undefined : await reportedGate(workItem);
   const settled =
     workItem.stage === 'spec_review'
-      ? slackSpecGateSettled(request?.trigger === 'spec_approved' ? 'approved' : 'changes', by, specUrl(workItem))
+      ? slackSpecGateSettled(
+          request?.trigger === 'spec_approved' ? 'approved' : 'changes',
+          by,
+          specUrl(workItem),
+          request?.agent === 'design' ? 'design' : 'building'
+        )
       : workItem.stage === 'design_review'
         ? slackDesignGateSettled(
             request?.trigger === 'design_approved' ? 'approved' : isBackToSpec(body) ? 'back_to_spec' : 'changes',
@@ -3212,6 +3282,13 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       postActivity(workItem, { type: 'thought', body: filedFollowUpsText(requested, 'markdown') })
     ]);
   }
+  const worked = await fileWorkarounds(project, found);
+  if (worked.length > 0) {
+    await Promise.all([
+      replyInThread(project, workItem, workaroundsText(worked)),
+      postActivity(workItem, { type: 'thought', body: workaroundsText(worked, 'markdown') })
+    ]);
+  }
   if (readyToMerge && replyTs && !mergeNotes.findingsLeft) {
     await getDb().update(workItems).set({ mergeSlackTs: replyTs }).where(eq(workItems.id, workItem.id));
   }
@@ -3300,6 +3377,7 @@ export const handleIssueUpdate = withCards(async (payload: unknown): Promise<voi
     await attempt('ready announcement', { issue: update.identifier }, () =>
       announceUnblocked(teamKey, update.identifier, state.type === 'canceled')
     );
+    await releaseQueue({ blocked: true });
   }
   const [workItem] = await getDb()
     .select()

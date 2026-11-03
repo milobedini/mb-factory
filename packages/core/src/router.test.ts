@@ -7,6 +7,7 @@ import type { SpecDesign } from './design';
 import type { UsageReading } from './governor';
 import {
   afterSpecApproval,
+  blockedThought,
   briefRound,
   canRerun,
   closingActivity,
@@ -50,6 +51,7 @@ import {
   slackThreadText,
   stageForAgent,
   startsReviewLoop,
+  waitsOnBlockers,
   withFindings
 } from './router';
 
@@ -565,6 +567,23 @@ describe('queuedThought', () => {
   it('says what it is waiting for when there is no release time', () => {
     expect(queuedThought({ reason: 'concurrency' }, now, 'Europe/London')).toBe(
       'Queued: the factory is already running as many stages as it allows. It starts as soon as that clears.'
+    );
+  });
+});
+
+describe('waitsOnBlockers', () => {
+  it('holds only implement’s first run for the issue’s blockers', () => {
+    expect(waitsOnBlockers('implement', 0)).toBe(true);
+    expect(waitsOnBlockers('implement', 1)).toBe(false);
+    expect(waitsOnBlockers('spec', 0)).toBe(false);
+  });
+});
+
+describe('blockedThought', () => {
+  it('names the blockers it waits on', () => {
+    expect(blockedThought(['TAS-86'])).toBe('Waiting on TAS-86 before building: it starts once that’s finished.');
+    expect(blockedThought(['TAS-86', 'TAS-90'])).toBe(
+      'Waiting on TAS-86, TAS-90 before building: it starts once they’re finished.'
     );
   });
 });

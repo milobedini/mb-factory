@@ -1,4 +1,4 @@
-import type { IssueUpdate } from '@mb-factory/core';
+import type { FactoryConfig, IssueUpdate } from '@mb-factory/core';
 import { modelFor, needsSizing, readSizeReport, sizedComment, unsizedComment } from '@mb-factory/core';
 import { and, eq, gt, inArray, or } from 'drizzle-orm';
 
@@ -8,7 +8,7 @@ import { runs } from '@/db/schema';
 import { requireEnv } from './env';
 import { commentOnIssue, issueToSize, sizeIssue } from './linear-api';
 import { log } from './log';
-import { findProjectByTeamKey } from './projects';
+import { findProject, findProjectByTeamKey } from './projects';
 import { dispatchRun, releaseQueue } from './router';
 import { findAnyRun } from './runs';
 
@@ -65,6 +65,25 @@ export const sizeOnAccept = async (update: IssueUpdate, appUserId: string): Prom
   await dispatchRun(project, run.id);
 };
 
+const sizeAgain = async (project: FactoryConfig, run: { id: string; prompt: string | null }): Promise<void> => {
+  const [again] = await getDb()
+    .insert(runs)
+    .values({
+      project: project.name,
+      parentRunId: run.id,
+      agent: 'size',
+      model: modelFor(project, 'size', false),
+      trigger: 'accepted',
+      priority: 'scheduled',
+      prompt: run.prompt,
+      status: 'queued'
+    })
+    .returning({ id: runs.id });
+  if (again) {
+    await dispatchRun(project, again.id);
+  }
+};
+
 // After a size run reports: the estimate and a comment on the issue, unless someone sized it meanwhile.
 export const handleSizeRunFinished = async (runId: string): Promise<void> => {
   const found = await findAnyRun(runId);
@@ -73,10 +92,16 @@ export const handleSizeRunFinished = async (runId: string): Promise<void> => {
     return;
   }
   const report = run.status === 'finished' ? readSizeReport(run.report) : undefined;
+  const project = run.project ? findProject(run.project) : undefined;
   const organizationId = requireEnv('LINEAR_ALLOWED_ORGANIZATION_ID');
   try {
     const issue = await issueToSize(organizationId, run.prompt);
-    if (!report) {
+    if (!report && issue && issue.estimate === null && !run.parentRunId && project) {
+      // About one size run in six has ended in seconds without a report (28–29 Oct), and a second try has always been
+      // cheap: try once more before telling the issue nobody sized it.
+      log('warn', 'size run gave no size, trying again', { runId, status: run.status, outcome: run.outcome });
+      await sizeAgain(project, run);
+    } else if (!report) {
       log('warn', 'size run gave no size', { runId, status: run.status, outcome: run.outcome, summary: run.summary });
       if (issue && issue.estimate === null) {
         await commentOnIssue(organizationId, run.prompt, unsizedComment(run.summary, run.actionsRunUrl));

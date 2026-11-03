@@ -260,11 +260,12 @@ export const slackSpecGateMessage = (
 export const slackSpecGateSettled = (
   outcome: 'approved' | 'changes',
   by: string,
-  spec: string | null
+  spec: string | null,
+  next: 'design' | 'building' = 'building'
 ): SlackMessage => {
   const text =
     outcome === 'approved'
-      ? `✓ ${specLink(spec, 'The spec')} was approved ${escapeSlack(by)}. Building starts next.`
+      ? `✓ ${specLink(spec, 'The spec')} was approved ${escapeSlack(by)}. ${next === 'design' ? 'Design' : 'Building'} starts next.`
       : `Changes to ${specLink(spec, 'the spec')} were asked for ${escapeSlack(by)}.`;
   return {
     text: outcome === 'approved' ? 'The spec was approved.' : 'Changes to the spec were asked for.',

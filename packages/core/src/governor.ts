@@ -34,7 +34,9 @@ export const HOLD_REASONS = [
   'five_hour_throttle',
   'five_hour_pause',
   'weekly_pacing',
-  'weekly_pause'
+  'weekly_pause',
+  // Not the governor's: a run that starts building waits while its issue has unfinished blockers in Linear.
+  'blocked'
 ] as const;
 
 export type HoldReason = (typeof HOLD_REASONS)[number];

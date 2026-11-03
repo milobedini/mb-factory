@@ -28,11 +28,11 @@ export const readGuards = (report: unknown): Guard[] =>
     })
     .slice(0, MAX_GUARDS);
 
-const flatten = (text: string): string => text.replace(/\s+/g, ' ').trim();
+export const flatten = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 // One guard per work item and title, so a later revision reporting it again finds the first issue. The title is the
 // agent's text, so only a slug of it goes in the fingerprint, which the issue shows in a code span.
-const slug = (text: string): string =>
+export const slug = (text: string): string =>
   text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

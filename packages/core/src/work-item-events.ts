@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { FactoryConfig } from './config';
 import type { DependencyPr } from './dependencies';
 import { DEPENDABOT_LOGIN } from './dependencies';
+import { DESIGN_COMMIT_SUBJECT } from './design';
 import { linearStatusFor } from './router';
 import type { Stage } from './stages';
 import { STAGES, TERMINAL_STAGES, transition } from './stages';
@@ -161,11 +162,15 @@ export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEve
     return undefined;
   }
   const { ref, deleted, forced, repository, sender, commits } = parsed.data;
-  // Commits already in the repo (the default branch's, brought in by a merge) and the merge that brings the default
-  // branch in, from a person's Update branch or the console's, aren't work on the branch.
+  // Commits already in the repo (the default branch's, brought in by a merge), the merge that brings the default
+  // branch in, from a person's Update branch or the console's, and the console's commit of an approved design aren't a
+  // person's work on the branch.
   const baseMerge = repository.default_branch ? `Merge branch '${repository.default_branch}' into ` : undefined;
   const count = (commits ?? []).filter(
-    ({ distinct, message }) => distinct !== false && !(baseMerge && message?.startsWith(baseMerge))
+    ({ distinct, message }) =>
+      distinct !== false &&
+      !(baseMerge && message?.startsWith(baseMerge)) &&
+      !message?.startsWith(DESIGN_COMMIT_SUBJECT)
   ).length;
   // Anything landing on the default branch, a merge or a direct push, can make open PRs conflict.
   if (!deleted && repository.default_branch && ref === `${BRANCH_REF}${repository.default_branch}`) {

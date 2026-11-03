@@ -904,8 +904,18 @@ const HOLD_COPY: Record<HoldReason, string> = {
   five_hour_throttle: 'usage in the 5-hour window is high, so only work already in flight runs',
   five_hour_pause: 'usage in the 5-hour window is close to the limit',
   weekly_pacing: 'weekly usage is ahead of pace',
-  weekly_pause: 'weekly usage is close to the limit'
+  weekly_pause: 'weekly usage is close to the limit',
+  blocked: 'an issue blocking this one isn’t finished yet'
 };
+
+// Implement's first run builds the issue, so it waits for the issue's blockers in Linear to finish; later runs fix a PR
+// that already exists and go ahead.
+export const waitsOnBlockers = (agent: AgentRole, earlierImplementRuns: number): boolean =>
+  agent === 'implement' && earlierImplementRuns === 0;
+
+// Said once in the session and thread when building waits on blockers.
+export const blockedThought = (waitingOn: string[]): string =>
+  `Waiting on ${waitingOn.join(', ')} before building: it starts once ${waitingOn.length === 1 ? 'that’s' : 'they’re'} finished.`;
 
 const dayKey = (at: Date, timeZone: string): string => at.toLocaleDateString('en-GB', { timeZone });
 

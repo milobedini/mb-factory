@@ -262,6 +262,7 @@ export type {
 export {
   afterSpecApproval,
   BLOCKING_OUTCOMES,
+  blockedThought,
   briefRound,
   CHANGES_QUESTION,
   canRerun,
@@ -319,6 +320,7 @@ export {
   stageForAgent,
   startedThought,
   startsReviewLoop,
+  waitsOnBlockers,
   withFindings
 } from './router';
 export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } from './run-report';
@@ -430,3 +432,5 @@ export {
   stageForLinearState,
   stoppedText
 } from './work-item-events';
+export type { Workaround } from './workarounds';
+export { readWorkarounds, workaroundFingerprint, workaroundIssue, workaroundsText } from './workarounds';

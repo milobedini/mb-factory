@@ -48,11 +48,31 @@ const FINISHED_STATES = ['completed', 'canceled'];
 
 // A `blocks` relation reads "issue blocks relatedIssue", and Linear lists it under the blocker's `relations` and the
 // blocked issue's `inverseRelations`. Both lists are read, so the direction never depends on which one carries it.
-const blockersOf = (node: CandidateNode): CandidateIssue['blockers'] =>
+type RelatedNode = Pick<CandidateNode, 'identifier' | 'relations' | 'inverseRelations'>;
+
+const blockersOf = (node: RelatedNode): CandidateIssue['blockers'] =>
   [...node.relations.nodes, ...node.inverseRelations.nodes]
     .filter(({ type, relatedIssue }) => type === 'blocks' && relatedIssue.identifier === node.identifier)
     .map(({ issue }) => ({ identifier: issue.identifier, finished: FINISHED_STATES.includes(issue.state.type) }))
     .filter((blocker, index, all) => all.findIndex(({ identifier }) => identifier === blocker.identifier) === index);
+
+// The issues blocking this one that aren't finished yet, by identifier.
+export const unfinishedBlockers = async (organizationId: string, issueId: string): Promise<string[]> => {
+  const { issue } = await linearGraphql<{ issue: RelatedNode | null }>(
+    organizationId,
+    `query IssueBlockers($id: String!) { issue(id: $id) {
+      identifier
+      relations(first: 10) { nodes { type issue { identifier state { type } } relatedIssue { identifier } } }
+      inverseRelations(first: 10) { nodes { type issue { identifier state { type } } relatedIssue { identifier } } }
+    } }`,
+    { id: issueId }
+  );
+  return issue
+    ? blockersOf(issue)
+        .filter(({ finished }) => !finished)
+        .map(({ identifier }) => identifier)
+    : [];
+};
 
 const toCandidate = (node: CandidateNode): CandidateIssue => ({
   id: node.id,

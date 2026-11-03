@@ -10,7 +10,7 @@ import {
   WAKE_TOPIC,
   wakeBooking
 } from '@mb-factory/core';
-import { send } from '@vercel/queue';
+import { QueueClient } from '@vercel/queue';
 import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
@@ -24,6 +24,11 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
 
 // A booked moment is only needed until its wake-up has been delivered.
 const WAKE_BOOKING_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+// Unpinned: by default a message goes back to the deployment that sent it, so every deployment that ever booked a
+// wake-up kept its own chain going with its own code (48 deployments answered wakes on 3 Nov). Unpinned, each wake-up
+// reaches the deployment serving production when it's due.
+const { send } = new QueueClient({ deploymentId: null });
 
 const wakeKey = (): Uint8Array => deriveKey(requireEnv('TOKEN_ENCRYPTION_KEY'), 'scheduler-wake');
 

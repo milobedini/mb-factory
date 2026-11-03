@@ -23,7 +23,8 @@ const REASON_COPY: Record<HoldReason, string> = {
   five_hour_throttle: '5-hour throttle',
   five_hour_pause: '5-hour pause',
   weekly_pacing: 'Ahead of weekly pace',
-  weekly_pause: 'Weekly pause'
+  weekly_pause: 'Weekly pause',
+  blocked: 'Blocked in Linear'
 };
 
 const STATE_EXPLANATION: Record<UsageSummary['state'], string> = {

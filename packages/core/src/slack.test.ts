@@ -215,6 +215,9 @@ describe('the spec gate', () => {
     expect(blocksOf(slackSpecGateSettled('approved', 'by Milo', pr))[0]?.text?.text).toBe(
       `✓ <${pr}|The spec> was approved by Milo. Building starts next.`
     );
+    expect(blocksOf(slackSpecGateSettled('approved', 'by Milo', pr, 'design'))[0]?.text?.text).toBe(
+      `✓ <${pr}|The spec> was approved by Milo. Design starts next.`
+    );
     expect(blocksOf(slackSpecGateSettled('changes', 'in Linear', null))[0]?.text?.text).toBe(
       'Changes to the spec were asked for in Linear.'
     );

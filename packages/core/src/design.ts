@@ -142,10 +142,11 @@ export const readDesignFiles = (body: unknown): DesignFile[] | null | undefined 
 
 export const designFolder = (issueIdentifier: string): string => `specs/${issueIdentifier}/design`;
 
+// The console commits an approved design with a person's token, so its push reads as theirs: the subject tells it apart.
+export const DESIGN_COMMIT_SUBJECT = 'Add the approved design for ';
+
 export const designCommitMessage = (issueIdentifier: string, coAuthor: string | null): string =>
-  [`Add the approved design for ${issueIdentifier}`, ...(coAuthor ? ['', `Co-authored-by: ${coAuthor}`] : [])].join(
-    '\n'
-  );
+  [`${DESIGN_COMMIT_SUBJECT}${issueIdentifier}`, ...(coAuthor ? ['', `Co-authored-by: ${coAuthor}`] : [])].join('\n');
 
 const reportComponentsSchema = z.looseObject({ components: z.array(z.unknown()).nullish() });
 
