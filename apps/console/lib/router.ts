@@ -4,6 +4,7 @@ import type {
   ChangedFile,
   DependencyPr,
   DependencyWork,
+  EarlierVerify,
   FactoryConfig,
   FiledIssue,
   Gate,
@@ -112,6 +113,7 @@ import {
   notAllowedText,
   notAllowedToStartText,
   nothingReadyText,
+  notOnScreenReason,
   notReadyText,
   notWaitingToMergeText,
   onlyAsksForChanges,
@@ -3105,31 +3107,38 @@ const headKeepingReviewedChanges = async (
   }
 };
 
-// When an earlier verify run on the work item met every criterion, as the thread shows the time.
-// Only the latest verify run counts: one that met everything before a later run found something not met proves nothing.
-const verifiedAt = async (project: FactoryConfig, workItemId: string): Promise<string | undefined> => {
-  const [latest] = await getDb()
+// What settled verify for a work item before a revision, as the thread shows the time: its latest verify run, when that
+// met every criterion (one that met everything before a later run found something not met proves nothing); when verify
+// never ran, the latest implement run that skipped it as nothing a person sees changed.
+const earlierVerify = async (project: FactoryConfig, workItemId: string): Promise<EarlierVerify | undefined> => {
+  const finishedDone = (agent: AgentRole) =>
+    and(eq(runs.workItemId, workItemId), eq(runs.agent, agent), eq(runs.status, 'finished'), eq(runs.outcome, 'done'));
+  const [verified] = await getDb()
     .select({ report: runs.report, finishedAt: runs.finishedAt })
     .from(runs)
-    .where(
-      and(
-        eq(runs.workItemId, workItemId),
-        eq(runs.agent, 'verify'),
-        eq(runs.status, 'finished'),
-        eq(runs.outcome, 'done')
-      )
-    )
+    .where(finishedDone('verify'))
     .orderBy(desc(runs.finishedAt))
     .limit(1);
-  return latest?.finishedAt && metEveryCriterion(latest.report)
-    ? formatReleaseAt(latest.finishedAt, new Date(), project.timeZone)
+  if (verified) {
+    return verified.finishedAt && metEveryCriterion(verified.report)
+      ? { verifiedAt: formatReleaseAt(verified.finishedAt, new Date(), project.timeZone) }
+      : undefined;
+  }
+  const [skipped] = await getDb()
+    .select({ report: runs.report, finishedAt: runs.finishedAt })
+    .from(runs)
+    .where(and(finishedDone('implement'), sql`${runs.report}->>'notOnScreen' is not null`))
+    .orderBy(desc(runs.finishedAt))
+    .limit(1);
+  const reason = skipped && notOnScreenReason(skipped.report);
+  return skipped?.finishedAt && reason
+    ? { skippedAt: formatReleaseAt(skipped.finishedAt, new Date(), project.timeZone), reason }
     : undefined;
 };
 
 // Whether a delivered PR is verified, from GitHub's list of its files, the implement run's report and, for a revision
-// that fixes review findings, the last verify run: any other revision (a reply asking for a change, a CI or conflict
-// fix) is verified again. When GitHub can't say, it's verified: a run spent for nothing costs less than a change nobody
-// looked at.
+// that reverifies only on request, what settled verify before. When GitHub can't say, it's verified: a run spent for
+// nothing costs less than a change nobody looked at.
 const needsVerify = async (
   project: FactoryConfig,
   run: { agent: AgentRole; trigger: RunTrigger; status: RunStatus; outcome: RunOutcome | null; report: unknown },
@@ -3146,11 +3155,11 @@ const needsVerify = async (
     return { verify: false };
   }
   try {
-    const [files, verified] = await Promise.all([
+    const [files, earlier] = await Promise.all([
       pullFiles(repository, prNumber),
-      reverifiesOnRequest(run.trigger) ? verifiedAt(project, workItem.id) : undefined
+      reverifiesOnRequest(run.trigger) ? earlierVerify(project, workItem.id) : undefined
     ]);
-    return decideVerify(project.verify.paths, files, run.report, verified);
+    return decideVerify(project.verify.paths, files, run.report, earlier);
   } catch (error) {
     log('warn', 'verify check failed', { issue: workItem.issueIdentifier, pr: prNumber, error: errorMessage(error) });
     return { verify: true };

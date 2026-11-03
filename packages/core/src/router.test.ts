@@ -27,6 +27,7 @@ import {
   neverStarted,
   newestMergedBase,
   nextStepAfterRun,
+  notOnScreenReason,
   onlyLockfilesChanged,
   orderQueue,
   parseSessionEvent,
@@ -459,26 +460,57 @@ describe('decideVerify', () => {
   });
 
   it('skips verify once an earlier run met every criterion, saying when', () => {
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], null, '15:24')).toEqual({
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], null, { verifiedAt: '15:24' })).toEqual({
       verify: false,
       skipped: 'already verified at 15:24, and nothing it checked was unmet'
     });
   });
 
+  // TAS-153, 3 Nov: the first delivery skipped verify (a test-only seed endpoint), but the review-fix revision didn't
+  // repeat its reason, so verify ran and found nothing on screen to check.
+  it('carries an earlier skip to a revision that gave no reason of its own, saying when', () => {
+    expect(decideVerify(screen, ['frontend/e2e/seed.ts'], { next: 'review' }, { skippedAt: '14:23', reason })).toEqual({
+      verify: false,
+      skipped: `already skipped at 14:23: ${reason}`
+    });
+  });
+
+  it('verifies despite an earlier skip when the revision asks again', () => {
+    expect(
+      decideVerify(
+        screen,
+        ['frontend/src/app.tsx'],
+        { verifyAgain: 'The form now shows' },
+        { skippedAt: '14:23', reason }
+      )
+    ).toEqual({ verify: true, again: 'The form now shows' });
+  });
+
   it('verifies when the implement run asks again, whatever else holds, passing on why', () => {
     const asked = { verifyAgain: ' The admin criterion needs a screenshot\n' };
-    expect(decideVerify(screen, ['backend/admin.py'], asked, '15:24')).toEqual({
+    expect(decideVerify(screen, ['backend/admin.py'], asked, { verifiedAt: '15:24' })).toEqual({
       verify: true,
       again: 'The admin criterion needs a screenshot'
     });
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], { verifyAgain: '  ' }, '15:24').verify).toBe(false);
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], { verifyAgain: '  ' }, { verifiedAt: '15:24' }).verify).toBe(
+      false
+    );
   });
 
   it('gives the implement run’s reason over the earlier verify', () => {
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], { notOnScreen: reason }, '15:24')).toEqual({
+    expect(decideVerify(screen, ['frontend/src/app.tsx'], { notOnScreen: reason }, { verifiedAt: '15:24' })).toEqual({
       verify: false,
       skipped: reason
     });
+  });
+});
+
+describe('notOnScreenReason', () => {
+  it('gives the reason on one line, and nothing for a blank or missing one', () => {
+    expect(notOnScreenReason({ notOnScreen: ' Only the\n seed endpoint ' })).toBe('Only the seed endpoint');
+    expect(notOnScreenReason({ notOnScreen: '  ' })).toBeUndefined();
+    expect(notOnScreenReason({ next: 'review' })).toBeUndefined();
+    expect(notOnScreenReason(null)).toBeUndefined();
   });
 });
 

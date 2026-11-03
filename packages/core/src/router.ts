@@ -320,6 +320,10 @@ const verifyAgainSchema = z.looseObject({ verifyAgain: z.string().trim().min(1).
 // `again` is the implement run's reason for asking, passed on to the verify run.
 export type VerifyDecision = { verify: boolean; skipped?: string; again?: string };
 
+// What settled verify for a work item before a revision: a verify run that met every criterion, or, when verify never
+// ran, an earlier implement run that skipped it as nothing a person sees changed. Times are as the thread shows them.
+export type EarlierVerify = { verifiedAt: string } | { skippedAt: string; reason: string };
+
 const criteriaSchema = z.looseObject({ criteria: z.array(z.looseObject({ result: z.string() })) });
 
 // Whether a verify run showed the whole change working: at least one criterion met and none not met. Anything less,
@@ -334,22 +338,26 @@ export const metEveryCriterion = (report: unknown): boolean => {
   return results.includes('met') && !results.includes('not met');
 };
 
-// Revisions that don't redo a verify run that met every criterion, unless they ask for it with `verifyAgain`: fixing
-// review findings, making the changes a human's answers to review asked for, fixing a failed check, and merging the
-// default branch in to clear a conflict (its own changes were verified on their PRs).
+// An implement run's reason that nothing a person sees changed, on one line, when it gave one.
+export const notOnScreenReason = (report: unknown): string | undefined =>
+  notOnScreenSchema.safeParse(report).data?.notOnScreen?.replace(/\s+/g, ' ');
+
+// Revisions that don't redo what settled verify (a verify run that met every criterion, or an earlier skip), unless
+// they ask for it with `verifyAgain`: fixing review findings, making the changes a human's answers to review asked
+// for, fixing a failed check, and merging the default branch in to clear a conflict (its own changes were verified on
+// their PRs).
 const REVERIFY_ON_REQUEST: RunTrigger[] = ['review_findings', 'answered', 'ci_failed', 'conflict'];
 
 export const reverifiesOnRequest = (trigger: RunTrigger): boolean => REVERIFY_ON_REQUEST.includes(trigger);
 
 // Whether a delivered PR is verified in the app: when the implement run asks for it again, with why; otherwise when it
-// touches a path that shows on screen, unless the implement run said why nothing a person sees changed, or an earlier
-// verify run on the work item already met every criterion (`verifiedAt`, as the thread shows it), for a revision that
-// reverifies only on request.
+// touches a path that shows on screen, unless the implement run said why nothing a person sees changed, or, for a
+// revision that reverifies only on request, what settled verify before still holds (`earlier`).
 export const decideVerify = (
   paths: string[],
   changedFiles: string[],
   report: unknown,
-  verifiedAt?: string
+  earlier?: EarlierVerify
 ): VerifyDecision => {
   const again = verifyAgainSchema.safeParse(report).data?.verifyAgain?.replace(/\s+/g, ' ');
   if (again) {
@@ -358,13 +366,16 @@ export const decideVerify = (
   if (!showsOnScreen(paths, changedFiles)) {
     return { verify: false };
   }
-  const reason = notOnScreenSchema.safeParse(report).data?.notOnScreen?.replace(/\s+/g, ' ');
+  const reason = notOnScreenReason(report);
   if (reason) {
     return { verify: false, skipped: reason };
   }
-  return verifiedAt
-    ? { verify: false, skipped: `already verified at ${verifiedAt}, and nothing it checked was unmet` }
-    : { verify: true };
+  if (!earlier) {
+    return { verify: true };
+  }
+  return 'verifiedAt' in earlier
+    ? { verify: false, skipped: `already verified at ${earlier.verifiedAt}, and nothing it checked was unmet` }
+    : { verify: false, skipped: `already skipped at ${earlier.skippedAt}: ${earlier.reason}` };
 };
 
 type StatusKey = keyof FactoryConfig['linear']['statuses'];
