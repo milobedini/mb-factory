@@ -67,6 +67,10 @@ const listText = (items: string[]): string =>
 const clock = (at: Date, timeZone: string): string =>
   new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
 
+// A check's link comes from whoever reported it (a commit status's target URL is anyone's with status access), so it's
+// linked only when it's plain https that can't close Slack's `<url|text>` early.
+const linkable = (url: string | null): url is string => url !== null && /^https:\/\/[^\s<>|]+$/.test(url);
+
 const CHECKS_EMOJI: Record<Exclude<ChecksState, 'none'>, string> = {
   passing: 'done',
   pending: 'running',
@@ -88,7 +92,9 @@ export const checksLine = (
     return `${emoji} *Checks passed:* ${count}${at}.`;
   }
   if (summary.state === 'failing') {
-    const names = summary.failed.map(({ name, url }) => (url ? `<${url}|${escapeSlack(name)}>` : escapeSlack(name)));
+    const names = summary.failed.map(({ name, url }) =>
+      linkable(url) ? `<${url}|${escapeSlack(name)}>` : escapeSlack(name)
+    );
     return `${emoji} *Checks failing:* ${listText(names)}.`;
   }
   const running = summary.running.map(escapeSlack);

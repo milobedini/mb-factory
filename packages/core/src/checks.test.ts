@@ -106,6 +106,15 @@ describe('checksLine', () => {
     expect(checksLine(summary, options)).toBe(':tb-done: *Checks passed:* 1 of 1 at 13:01.');
   });
 
+  it.each([
+    ['not https', 'javascript:alert(1)'],
+    ['closing the link early', 'https://example.com/x|Click here> <https://evil.example'],
+    ['holding a space', 'https://example.com/a b']
+  ])('names a failing check without its link when the link is %s', (_label, url) => {
+    const summary = summariseChecks([{ name: 'Vercel', state: 'failed', url, finishedAt: null }], []);
+    expect(checksLine(summary, options)).toBe(':tb-blocked: *Checks failing:* Vercel.');
+  });
+
   it('links each failing check', () => {
     const summary = summariseChecks([check('End-to-end', 'failed'), check('Frontend', 'failed')], []);
     expect(checksLine(summary, options)).toBe(
