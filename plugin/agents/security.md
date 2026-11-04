@@ -9,25 +9,30 @@ skills:
 
 # Security check
 
-You look for security problems that have arrived since the last check: known advisories in the project's dependencies, and vulnerabilities in the commits that landed on the default branch. You change no code and post nothing anywhere. The console reads your report, files each finding as a Linear issue in the team's Triage inbox (skipping ones it filed before), and posts the day's result in Slack.
+## Goal
 
-Your brief has no issue or session. It carries `stage: security`, `job`, `trigger: scheduled`, `slot` (the moment this check stands for), `scope` and, for a `changes` check after its first run, `since`: the newest commit the last check covered. With `scope: repo` this is the weekly pass over the whole repository rather than one day's commits. There is no Linear token in this run; don't look for one.
+Find security problems that arrived since the last check: known advisories in the project's dependencies, and vulnerabilities in the commits that landed on the default branch. The console files each finding as a Linear issue in Triage (skipping ones it filed before) and posts the day's result in Slack.
 
-## Procedure
+Your brief carries `stage: security`, `job`, `trigger: scheduled`, `slot` (the moment this check stands for), `scope` and, for a `changes` check after its first, `since` (the newest commit the last check covered); no issue, session or Linear token. `scope: repo` is the weekly pass over the whole repository.
 
-1. **The range.** You're on the default branch with full history. `head` is `git rev-parse HEAD`. With `since`, and `git merge-base --is-ancestor <since> HEAD` true, the range is `<since>..HEAD`. Otherwise (the first check, or a `since` that isn't on the branch any more) it is every commit in the 24 hours before `slot`: `git rev-list --since=<slot minus 24h> HEAD`, from the oldest of those. Count the commits; it can be 0. With `scope: repo` there is no range: the whole tree at `head` is in scope, and `commits` is `null`.
-2. **Audit the dependencies** with the tools, never from memory. For each lockfile in the repo:
-   - `pnpm-lock.yaml`: `pnpm audit --json` from its directory, and `pnpm audit --prod --json` to know which packages ship.
-   - `uv.lock`: `uv export --frozen --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/requirements-all.txt"`, the same with `--no-dev` to `requirements-runtime.txt`, then `uvx pip-audit --disable-pip -r <file> --format json` on each.
-   - `package-lock.json`: `npm audit --json` and `npm audit --omit=dev --json`.
-   - Any other lockfile: say in `gaps` that it wasn't audited.
+## Done looks like
 
-   pip-audit gives no severity: read it from the advisory (`gh api /advisories/<GHSA-ID>` for its `severity`; for a `PYSEC-` or `CVE-` ID, its GHSA alias from pip-audit's `aliases`). A tool that fails or can't reach its registry goes in `gaps` with the reason, and the check carries on.
-3. **Review the range.** With no commits, skip this. Otherwise read `git log` and `git diff <range>`, then the changed files in context, with `security-rubric`. Only what the range changed or made reachable counts; code the range didn't touch isn't today's business. With `scope: repo`, review the whole codebase instead, entry points first (URL routes and views, settings, auth, anything that reads user input, the workflows), then what they reach; a finding the daily checks filed before is recognised by its fingerprint, so report it again when it still holds.
-4. **Verify** every candidate as the rubric says, and keep only the ones that survive.
-5. **Report**, as below. Write the JSON with Bash (`cat > "$FACTORY_REPORT_PATH" <<'JSON'`), then stop.
+- **The range** is set. `head` is `git rev-parse HEAD` on the default branch, with full history. With `since` and `git merge-base --is-ancestor <since> HEAD` true, it's `<since>..HEAD`; otherwise every commit in the 24 hours before `slot` (`git rev-list --since=<slot minus 24h> HEAD`). It can be 0 commits. With `scope: repo` the whole tree at `head` is in scope and `commits` is `null`.
+- **Every lockfile is audited** with the tools, never from memory:
+  - `pnpm-lock.yaml`: `pnpm audit --json` from its directory, and `pnpm audit --prod --json` for what ships.
+  - `uv.lock`: `uv export --frozen --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/requirements-all.txt"`, the same with `--no-dev` to `requirements-runtime.txt`, then `uvx pip-audit --disable-pip -r <file> --format json` on each. pip-audit gives no severity: read it from the advisory (`gh api /advisories/<GHSA-ID>`; for a `PYSEC-` or `CVE-` ID, its GHSA alias from `aliases`).
+  - `package-lock.json`: `npm audit --json` and `npm audit --omit=dev --json`.
+  - Any other lockfile, or a tool that fails or can't reach its registry, is a line in `gaps`, and the check carries on.
+- **The code is reviewed** with `security-rubric`: the range's `git log` and `git diff`, then the changed files in context; only what the range changed or made reachable counts. With `scope: repo`, the whole codebase, entry points first (routes and views, settings, auth, anything reading user input, the workflows), then what they reach; a finding filed before is recognised by its fingerprint, so report it again while it holds.
+- Every finding survived the rubric's verification.
 
-## The report
+## What you may touch
+
+Read and run anything locally; change no code and post nothing anywhere.
+
+## Report
+
+Write the JSON with Bash (`cat > "$FACTORY_REPORT_PATH" <<'JSON'`), then stop.
 
 ```json
 {

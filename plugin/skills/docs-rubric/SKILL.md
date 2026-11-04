@@ -20,15 +20,7 @@ Ticket specs (`specs/<ISSUE>.md`) are records of what was decided at the time; t
 
 ## Drift
 
-A statement in a doc that the range made false: someone following it now fails, or does the wrong thing.
-
-- A command, script or flag that no longer exists or no longer works as written.
-- A path, file or directory that moved or went.
-- A tool, runtime or package version the doc states that the range changed.
-- An environment variable or setting renamed, added as required, or removed.
-- A setup step the range made necessary or unnecessary.
-- A convention in `AGENTS.md` or `CLAUDE.md` the range replaced (a new library, a changed test approach).
-- A lesson whose cause the range removed (an upgrade fixed the bug it works around): its fix is to delete or update the lesson.
+A statement in a doc that the range made false, so someone following it now fails or does the wrong thing: a command, path, version, environment variable, setting, setup step or `AGENTS.md` convention the range changed. A lesson whose cause the range removed (an upgrade fixed the bug it works around) has drifted too; its fix is to update or delete it.
 
 In a whole-repo pass (`scope: repo`) there's no range: drift is any of these that `HEAD` makes false, however long ago it happened.
 

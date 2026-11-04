@@ -15,22 +15,7 @@ Every finding becomes a Linear issue that a person has to read, accept or declin
 - File runtime packages at `moderate` or worse, and dev-only packages at `high` or worse. The console drops anything below that bar.
 - `severity` is the worst of the package's advisories. The fix is the lowest version that fixes all of them, and where to change it. If no fixed version exists, say so and suggest the mitigation from the advisory.
 
-**Code**, in the range only: a concrete vulnerability, with the path and line, the way an attacker reaches it, and the fix. Categories (the fingerprint uses these names):
-
-| Category | For example |
-| --- | --- |
-| `injection` | Raw SQL with string formatting, `extra()`/`raw()` with user input, shell commands built from input, `dangerouslySetInnerHTML` or `mark_safe` on user content |
-| `authorisation` | A view or endpoint with `AllowAny` or no permission check that changes or reads someone else's data; object access without an ownership check |
-| `authentication` | Login, session or token handling that can be bypassed, tokens in URLs or logs |
-| `secrets` | A credential, key or token committed (even in tests or examples, if it looks real) |
-| `settings` | `DEBUG` on outside development, `ALLOWED_HOSTS = ['*']`, `CORS_ALLOW_ALL_ORIGINS`, CSRF exemptions, security middleware removed, cookies without `Secure`/`HttpOnly` in production settings |
-| `deserialisation` | `pickle`, `yaml.load` without a safe loader, `eval` on input |
-| `ssrf` | Server-side requests to a URL the user controls |
-| `path-traversal` | File paths built from input without normalising and confining them |
-| `data-exposure` | A serializer or response that leaks fields it shouldn't (password hashes, emails, internal IDs) |
-| `open-redirect` | Redirects to a URL from the request without an allow-list |
-| `workflow` | GitHub Actions: `pull_request_target` checking out untrusted code, untrusted input (`github.event.*` titles, bodies, branch names) interpolated into `run:`, permissions broader than needed, third-party actions not pinned to a commit |
-| `cryptography` | Home-made crypto, weak hashes for passwords, predictable tokens (`random` instead of `secrets`) |
+**Code**, in the range only: a concrete vulnerability, with the path and line, how an attacker reaches it, and the fix. Its category, which the fingerprint uses, is one of `injection`, `authorisation`, `authentication`, `secrets` (a real-looking credential committed, even in tests), `settings` (production settings such as `DEBUG`, hosts, CORS, CSRF, cookies), `deserialisation`, `ssrf`, `path-traversal`, `data-exposure`, `open-redirect`, `workflow` (GitHub Actions: `pull_request_target` checking out untrusted code, `github.event.*` text interpolated into `run:`, broad permissions, actions not pinned to a commit) or `cryptography`.
 
 ## What not to file
 
