@@ -566,3 +566,30 @@ export const approvePull = (token: string, repository: string, prNumber: number,
 // A merge commit keeps the co-authors' credit; `sha` makes GitHub refuse if the head moved since.
 export const mergePull = (token: string, repository: string, prNumber: number, sha: string) =>
   asPerson(token, 'PUT', `/repos/${repository}/pulls/${prNumber}/merge`, { merge_method: 'merge', sha });
+
+export type ProductionDeploy = { state: string; url: string | null; at: Date };
+
+// The newest production deploy of a commit, as Vercel reports it to GitHub, with its latest status; undefined when
+// none has appeared.
+export const productionDeploy = async (repository: string, sha: string): Promise<ProductionDeploy | undefined> => {
+  const deployments = await githubGet<{ id: number; environment: string; production_environment?: boolean }[]>(
+    `/repos/${repository}/deployments?sha=${sha}&per_page=10`,
+    'deployments'
+  );
+  const deployment = deployments.find(
+    ({ environment, production_environment }) => production_environment === true || environment === 'Production'
+  );
+  if (!deployment) {
+    return undefined;
+  }
+  const [status] = await githubGet<
+    { state: string; log_url?: string | null; target_url?: string | null; created_at: string }[]
+  >(`/repos/${repository}/deployments/${deployment.id}/statuses?per_page=1`, 'deployment statuses');
+  return status
+    ? { state: status.state, url: status.log_url ?? status.target_url ?? null, at: new Date(status.created_at) }
+    : { state: 'pending', url: null, at: new Date() };
+};
+
+// A PR's GraphQL node ID, for mutations that name it.
+export const pullNodeId = async (repository: string, prNumber: number): Promise<string> =>
+  (await githubGet<{ node_id: string }>(`/repos/${repository}/pulls/${prNumber}`, 'pull request')).node_id;

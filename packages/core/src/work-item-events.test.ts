@@ -42,6 +42,26 @@ const push = (overrides: Record<string, unknown>) => ({
 });
 
 describe('parseGitHubEvent', () => {
+  const deployStatus = (environment: string, production: boolean | undefined) => ({
+    repository: { full_name: 'milobedini/tastebook' },
+    deployment_status: { state: 'failure', log_url: 'https://vercel.com/x/logs', target_url: 'https://x.vercel.app' },
+    deployment: { sha: 'a'.repeat(40), environment, production_environment: production }
+  });
+
+  it('reads a production deploy’s status, and nothing from a preview', () => {
+    expect(parseGitHubEvent('deployment_status', deployStatus('Production', true))).toEqual({
+      kind: 'production_deploy',
+      repository: 'milobedini/tastebook',
+      sha: 'a'.repeat(40),
+      state: 'failure',
+      url: 'https://vercel.com/x/logs'
+    });
+    expect(parseGitHubEvent('deployment_status', deployStatus('Production', undefined))).toMatchObject({
+      kind: 'production_deploy'
+    });
+    expect(parseGitHubEvent('deployment_status', deployStatus('Preview', false))).toBeUndefined();
+  });
+
   it.each([true, false])('reads a closed pull request with merged=%s', (merged) => {
     expect(parseGitHubEvent('pull_request', pullRequestClosed(merged))).toEqual({
       kind: 'pr_closed',

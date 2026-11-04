@@ -63,3 +63,34 @@ export const appToken = async (repository: string): Promise<string> => {
   tokens.set(repository, { token: created.token, expiresAt: Date.parse(created.expires_at) });
   return created.token;
 };
+
+// GitHub's own revert of a merged PR, opened as the App: a branch with the revert commit and a PR for it.
+export const openRevertPull = async (
+  repository: string,
+  pullRequestId: string,
+  body: string
+): Promise<{ number: number; url: string; head: string }> => {
+  const response = await fetch(`${API_URL}/graphql`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await appToken(repository)}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: `mutation ($id: ID!, $body: String!) {
+        revertPullRequest(input: { pullRequestId: $id, body: $body }) { revertPullRequest { number url headRefOid } }
+      }`,
+      variables: { id: pullRequestId, body }
+    })
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    data?: {
+      revertPullRequest?: { revertPullRequest?: { number: number; url: string; headRefOid: string } | null } | null;
+    };
+    errors?: { message: string }[];
+  };
+  const pull = result.data?.revertPullRequest?.revertPullRequest;
+  if (!response.ok || !pull) {
+    throw new Error(
+      `GitHub revert failed with ${response.status}: ${result.errors?.map(({ message }) => message).join('; ') ?? 'no PR'}`
+    );
+  }
+  return { number: pull.number, url: pull.url, head: pull.headRefOid };
+};

@@ -264,7 +264,9 @@ Rejected:
 - **The watch.** For 30 minutes after an auto-merge, the console checks the production deploy succeeded and looks for new Sentry issues.
 - **On a problem**, it posts in the item's thread with a **Revert** button, which opens a revert PR and merges it. A revert is low risk, so it auto-merges under the rules above.
 - **No automatic revert.**
-- **It needs a deploy signal** the console doesn't get today (see the factory backlog's "Spend and deploys"): the App's webhook events or a read-only Vercel token. That's a person's step.
+- **The deploy signal (4 Nov):** Vercel reports each Tastebook deploy to GitHub as a deployment, so the repo's webhook sends the console `deployment_status` (added by the user) and no Vercel token is needed. A failed production deploy of a watched merge is said at once; at the watch's end the console reads the merge's production deploy from GitHub's deployments API, so a missed webhook only delays the news.
+- **How it's built (4 Nov, [canvas](https://claude.ai/artifact/JZn12XQLW7gUQukZ7EgJMa)):** only PRs the factory's App merged are watched. The watch is recorded as events (`merge_watch`, ended by `merge_watch_end`) with a wake-up booked for its end, and the scheduler books the end again if that's lost. At the end, the thread hears one grey all-clear line, or the problems with Revert: a failed deploy, new Sentry issues first seen since the merge (which "may not come from it"), a deploy that never appeared or is still going (no Revert), or Sentry unread (said, never taken as all clear).
+- **Revert** opens GitHub's own revert PR (`revertPullRequest`, as the App) after Slack's confirm, once per PR. It merges itself once every check passes, skipping the merge rules: a person asked for it, and reverting a PR that added tests would otherwise always wait. Only GitHub's own revert commit merges so: the head is pinned when the PR opens, and a branch that moved goes to the person, said once in the thread. The Linear issue stays Done; the thread says to reopen it if the work should come back.
 
 ### Keeping it clean
 

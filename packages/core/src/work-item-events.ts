@@ -65,6 +65,21 @@ const checkRunEventSchema = z.looseObject({
 
 const statusEventSchema = z.looseObject({ repository: repositorySchema, sha });
 
+// A deployment's status changing: Vercel reports each deploy to GitHub, production included.
+const deploymentStatusEventSchema = z.looseObject({
+  repository: repositorySchema,
+  deployment_status: z.looseObject({
+    state: z.string(),
+    log_url: z.url({ protocol: /^https$/ }).nullish(),
+    target_url: z.url({ protocol: /^https$/ }).nullish()
+  }),
+  deployment: z.looseObject({
+    sha,
+    environment: z.string(),
+    production_environment: z.boolean().nullish()
+  })
+});
+
 export type GitHubEvent =
   | {
       kind: 'pr_closed';
@@ -89,7 +104,9 @@ export type GitHubEvent =
       headSha?: string;
     }
   // The PRs are empty when GitHub doesn't tie the check to one (a commit status, a deployment's checks).
-  | { kind: 'checks_changed'; repository: string; sha: string; prNumbers: number[] };
+  | { kind: 'checks_changed'; repository: string; sha: string; prNumbers: number[] }
+  // A production deploy's status, for the watch after an auto-merge.
+  | { kind: 'production_deploy'; repository: string; sha: string; state: string; url: string | null };
 
 const FAILED_CONCLUSIONS = ['failure', 'timed_out'];
 
@@ -138,6 +155,21 @@ export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEve
           repository: parsed.data.repository.full_name,
           sha: parsed.data.check_run.head_sha,
           prNumbers: (parsed.data.check_run.pull_requests ?? []).map(({ number }) => number)
+        }
+      : undefined;
+  }
+  if (eventName === 'deployment_status') {
+    const parsed = deploymentStatusEventSchema.safeParse(payload);
+    const deployment = parsed.data?.deployment;
+    return parsed.data &&
+      deployment &&
+      (deployment.production_environment === true || deployment.environment === 'Production')
+      ? {
+          kind: 'production_deploy',
+          repository: parsed.data.repository.full_name,
+          sha: deployment.sha,
+          state: parsed.data.deployment_status.state,
+          url: parsed.data.deployment_status.log_url ?? parsed.data.deployment_status.target_url ?? null
         }
       : undefined;
   }

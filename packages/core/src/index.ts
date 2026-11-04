@@ -458,6 +458,26 @@ export type { UsageSummary, WindowSummary } from './usage';
 export { formatDuration, needsProbe, readingsFromStatusLine, statusLineUsageSchema, summariseUsage } from './usage';
 export type { Visual } from './visual';
 export { readVisual, visualBlocks } from './visual';
+export type { DeployState, MergeWatch, Revert, WatchFindings } from './watch';
+export {
+  deployStateOf,
+  MERGE_WATCH_END_EVENT,
+  MERGE_WATCH_EVENT,
+  mergeWatch,
+  REVERT_ACTION,
+  REVERT_EVENT,
+  readMergeWatch,
+  readRevert,
+  revertExistsText,
+  revertMergedText,
+  revertMovedText,
+  revertOpenedText,
+  revertRefusedText,
+  slackDeployFailedMessage,
+  slackRevertSettled,
+  slackWatchEndMessage,
+  WATCH_MINUTES
+} from './watch';
 export type { GitHubEvent, IssueUpdate, IssueUpdateActions, LinearState, StopCause } from './work-item-events';
 export {
   decideIssueUpdate,

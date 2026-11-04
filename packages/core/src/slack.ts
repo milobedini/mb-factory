@@ -89,6 +89,8 @@ const buttonValueSchema = z.union([
   z.object({ r: z.uuid() }),
   // Approve and merge a work item's PR.
   z.object({ m: z.uuid() }),
+  // Revert a work item's PR after the watch found a problem.
+  z.object({ v: z.uuid() }),
   // Review findings: fix the ticked ones, or leave them all.
   z.object({ f: z.uuid(), a: z.enum(['fix', 'keep']) }),
   z.object({ h: z.enum(HOME_ACTIONS) }),
@@ -672,6 +674,7 @@ export type SlackAction = {
   | { kind: 'delegate'; identifiers: string[]; message: TappedMessage | null }
   | { kind: 'rerun'; runId: string }
   | { kind: 'merge'; workItemId: string }
+  | { kind: 'revert'; workItemId: string; message: TappedMessage | null }
   // `unticked` are the findings whose Fix box was cleared, by their index in the review's report.
   | { kind: 'findings'; runId: string; choice: 'fix' | 'keep'; unticked: number[]; messageTs: string | null }
   | { kind: 'home'; action: HomeAction }
@@ -735,6 +738,15 @@ export const parseSlackAction = (payload: unknown): SlackAction | undefined => {
   }
   if ('m' in value) {
     return { ...base, kind: 'merge', workItemId: value.m };
+  }
+  if ('v' in value) {
+    const { message } = parsed;
+    return {
+      ...base,
+      kind: 'revert',
+      workItemId: value.v,
+      message: message ? { ts: message.ts, text: message.text ?? '', blocks: message.blocks ?? [] } : null
+    };
   }
   if ('f' in value) {
     return {

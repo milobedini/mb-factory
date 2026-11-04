@@ -10,10 +10,12 @@ import type {
   GitHubEvent,
   GovernedDecision,
   MergeRoute,
+  MergeWatch,
   NextIssue,
   Question,
   ReadyIssue,
   ReadyOutcome,
+  Revert,
   ReviewFinding,
   RunRequest,
   RunStatus,
@@ -65,6 +67,7 @@ import {
   delegateFailedText,
   dependencyIssue,
   dependencyTakenText,
+  deployStateOf,
   designFireText,
   designRunLapsesAt,
   designStageOn,
@@ -95,6 +98,8 @@ import {
   linearSlackReplyText,
   linearStatusFor,
   MAX_READY_ROWS,
+  MERGE_WATCH_END_EVENT,
+  MERGE_WATCH_EVENT,
   madeOnlyBy,
   mentioning,
   mergeButton,
@@ -103,6 +108,7 @@ import {
   mergeRefusal,
   mergeRefusedText,
   mergeRoute,
+  mergeWatch,
   modelFor,
   movedOnLine,
   neutraliseMarkdown,
@@ -136,6 +142,7 @@ import {
   READY_HEADING,
   READY_UNREADABLE,
   RERUN_GONE,
+  REVERT_EVENT,
   readAskReport,
   readBeforeMerging,
   readBump,
@@ -144,11 +151,18 @@ import {
   readDesignVariants,
   readFixableFindings,
   readGate,
+  readMergeWatch,
   readQuestions,
+  readRevert,
   readVariantPick,
   readVisual,
   resumeRequestFor,
   retryText,
+  revertExistsText,
+  revertMergedText,
+  revertMovedText,
+  revertOpenedText,
+  revertRefusedText,
   reviewersFor,
   reviewHolds,
   reviewThreadsToResolve,
@@ -163,6 +177,7 @@ import {
   shouldResume,
   shouldRetry,
   slackAcceptedMessage,
+  slackDeployFailedMessage,
   slackDesignGateMessage,
   slackDesignGateSettled,
   slackFindingsMessage,
@@ -175,9 +190,11 @@ import {
   slackMergeSettled,
   slackQuestionCard,
   slackReplyText,
+  slackRevertSettled,
   slackSpecGateMessage,
   slackSpecGateSettled,
   slackThreadText,
+  slackWatchEndMessage,
   specUrl,
   stageAfterPrClosed,
   stageForAgent,
@@ -195,7 +212,7 @@ import {
   workBranchName,
   wrongChannelText
 } from '@mb-factory/core';
-import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
 import { asks, events, questions, queue, runs, stageChanges, workItems } from '@/db/schema';
@@ -229,9 +246,11 @@ import {
   mergeBaseIntoBranch,
   mergePull,
   openPullsWithHead,
+  productionDeploy,
   pullForMerge,
   pullHead,
   pullMergeState,
+  pullNodeId,
   pullRequestInfo,
   pullReviewThreads,
   requestReviewers,
@@ -239,7 +258,7 @@ import {
   resolveReviewThread,
   sendStageDispatch
 } from './github-api';
-import { appToken } from './github-app';
+import { appToken, openRevertPull } from './github-app';
 import { connectStartUrl, userGitHubToken } from './github-connect';
 import { fileGuards, fileWorkarounds } from './guards';
 import { publishHome } from './home';
@@ -269,6 +288,7 @@ import { touchCard, withCards } from './redraw';
 import { fireRoutine } from './routines';
 import type { RunWithWorkItem } from './runs';
 import { findAnyRun, findRun } from './runs';
+import { newSentryIssues } from './sentry-api';
 import { sizeOnAccept } from './sizing';
 import {
   addSlackReaction,
@@ -448,6 +468,310 @@ const mergeByItself = async (project: FactoryConfig, workItem: WorkItem): Promis
     type: 'thought',
     body: `Merged PR #${prNumber} by itself: an express PR the merge rules leave to the factory, with every check passing.`
   });
+};
+
+// The watch after an auto-merge (docs/express.md, "After merging"): recorded as events, so a watch needs no table.
+const DEPLOY_FAILED_EVENT = 'deploy_failed';
+const REVERT_CLAIM_EVENT = 'revert_claim';
+const REVERT_MERGE_EVENT = 'revert_merge';
+// Watches and reverts are looked for among the last two days' events: a watch lasts 30 minutes.
+const WATCH_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
+
+const recentEvents = (type: string) =>
+  getDb()
+    .select({ deliveryId: events.deliveryId, payload: events.payload })
+    .from(events)
+    .where(and(eq(events.type, type), gt(events.receivedAt, new Date(Date.now() - WATCH_LOOKBACK_MS))));
+
+const eventRecorded = async (deliveryId: string): Promise<boolean> =>
+  (await getDb().select({ id: events.id }).from(events).where(eq(events.deliveryId, deliveryId)).limit(1)).length > 0;
+
+const watchId = (repository: string, prNumber: number): string => `merge-watch:${repository}#${prNumber}`;
+
+// A PR the factory's App merged is watched for 30 minutes, ending with a wake-up booked now.
+const startMergeWatch = async (
+  workItem: WorkItem,
+  { repository, number, mergeCommitSha }: { repository: string; number: number; mergeCommitSha: string }
+): Promise<void> => {
+  const watch = mergeWatch({ workItemId: workItem.id, repository, prNumber: number, sha: mergeCommitSha }, new Date());
+  const first = await recordEvent({
+    source: 'github',
+    deliveryId: watchId(repository, number),
+    type: MERGE_WATCH_EVENT,
+    payload: watch
+  });
+  if (first) {
+    log('info', 'merge watch started', { issue: workItem.issueIdentifier, pr: number, endsAt: watch.endsAt });
+    await bookWake(new Date(watch.endsAt), 'merge watch');
+  }
+};
+
+// A failed production deploy of a watched merge is said at once, with Revert. Said once per commit.
+const handleProductionDeploy = async (event: Extract<GitHubEvent, { kind: 'production_deploy' }>): Promise<void> => {
+  if (deployStateOf(event.state) !== 'failed') {
+    return;
+  }
+  const watch = (await recentEvents(MERGE_WATCH_EVENT))
+    .map(({ payload }) => readMergeWatch(payload))
+    .find((candidate) => candidate?.repository === event.repository && candidate.sha === event.sha);
+  const workItem = watch && (await findWorkItemById(watch.workItemId));
+  const project = workItem && findProject(workItem.project);
+  if (!watch || !workItem || !project) {
+    return;
+  }
+  const first = await recordEvent({
+    source: 'github',
+    deliveryId: `deploy-failed:${event.repository}:${event.sha}`,
+    type: DEPLOY_FAILED_EVENT,
+    payload: { ...event }
+  });
+  if (!first) {
+    return;
+  }
+  log('warn', 'watched deploy failed', { issue: workItem.issueIdentifier, pr: watch.prNumber, sha: event.sha });
+  const message = slackDeployFailedMessage({ workItemId: workItem.id, prNumber: watch.prNumber }, event.url);
+  await Promise.all([
+    replyInThread(project, workItem, askingFor(project, workItem)(message)),
+    postActivity(workItem, {
+      type: 'error',
+      body: `The production deploy of PR #${watch.prNumber}, which merged itself, failed. Revert is offered in Slack.`
+    })
+  ]);
+};
+
+// Each watch whose 30 minutes are up: the production deploy of its merge and new Sentry issues since, said in the
+// thread. Run on every wake-up; each watch ends once.
+export const endMergeWatches = async (): Promise<void> => {
+  const now = new Date();
+  const due = (await recentEvents(MERGE_WATCH_EVENT))
+    .map(({ payload }) => readMergeWatch(payload))
+    .filter((watch): watch is MergeWatch => watch !== undefined && new Date(watch.endsAt) <= now);
+  await Promise.all(
+    due.map((watch) =>
+      attempt('merge watch end', { pr: watch.prNumber }, async () => {
+        const first = await recordEvent({
+          source: 'github',
+          deliveryId: `${watchId(watch.repository, watch.prNumber)}:end`,
+          type: MERGE_WATCH_END_EVENT,
+          payload: watch
+        });
+        if (first) {
+          await endMergeWatch(watch);
+        }
+      })
+    )
+  );
+};
+
+const endMergeWatch = async (watch: MergeWatch): Promise<void> => {
+  const workItem = await findWorkItemById(watch.workItemId);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project) {
+    return;
+  }
+  const { repository, sha, prNumber } = watch;
+  const [deploy, issues, failureSaid] = await Promise.all([
+    productionDeploy(repository, sha).catch((error: unknown) => {
+      log('warn', 'watched deploy unread', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+      return null;
+    }),
+    project.sentry
+      ? newSentryIssues(project.sentry, new Date(watch.mergedAt)).catch((error: unknown) => {
+          log('warn', 'sentry issues failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+          return null;
+        })
+      : null,
+    eventRecorded(`deploy-failed:${repository}:${sha}`)
+  ]);
+  const found = {
+    // Unread counts as not seen, which says so rather than claiming all clear.
+    deploy: deploy ? deployStateOf(deploy.state) : ('none' as const),
+    deployUrl: deploy?.url ?? null,
+    deployedAt: deploy ? clock(deploy.at, project.timeZone) : null,
+    deployFailureSaid: failureSaid,
+    issues: issues?.filter(({ firstSeen }) => firstSeen <= new Date(watch.endsAt)) ?? null
+  };
+  const message = slackWatchEndMessage(
+    { workItemId: workItem.id, prNumber, time: clock(new Date(), project.timeZone) },
+    found
+  );
+  const clear = found.deploy === 'success' && found.issues?.length === 0;
+  log(clear ? 'info' : 'warn', 'merge watch ended', {
+    issue: workItem.issueIdentifier,
+    pr: prNumber,
+    deploy: found.deploy,
+    sentryIssues: found.issues?.length ?? 'unread'
+  });
+  await Promise.all([
+    replyInThread(
+      project,
+      workItem,
+      clear || (found.deploy === 'failed' && failureSaid && found.issues?.length === 0)
+        ? message
+        : askingFor(project, workItem)(message)
+    ),
+    postActivity(workItem, { type: clear ? 'thought' : 'error', body: message.text })
+  ]);
+};
+
+// Revert, from a watch's message: GitHub's revert PR, opened as the App, which merges itself once its checks pass.
+// Asked once per PR; a second tap is told where the first went.
+const handleRevertTap = async (
+  action: Extract<SlackAction, { kind: 'revert' }>,
+  tellTapper: (message: string | SlackMessage) => Promise<void>
+): Promise<void> => {
+  const workItem = await findWorkItemById(action.workItemId);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project || !workItem.prNumber) {
+    return;
+  }
+  const { repository, prNumber, issueIdentifier: issue } = workItem;
+  if (!isAllowedSlackUser(project, action.userId)) {
+    log('info', 'slack tap from someone not allowed', { issue, user: action.userId });
+    await tellTapper(notAllowedText(project));
+    return;
+  }
+  log('info', 'slack tap', { issue, user: action.userId, kind: action.kind });
+  const revertId = `revert:${repository}#${prNumber}`;
+  const claimed = await recordEvent({
+    source: 'github',
+    deliveryId: `${revertId}:claim`,
+    type: REVERT_CLAIM_EVENT,
+    payload: { repository, prNumber }
+  });
+  if (!claimed) {
+    const [existing] = await getDb()
+      .select({ payload: events.payload })
+      .from(events)
+      .where(eq(events.deliveryId, revertId))
+      .limit(1);
+    const revert = readRevert(existing?.payload);
+    await tellTapper(revert ? revertExistsText(revert) : `A revert of PR #${prNumber} is already being opened.`);
+    return;
+  }
+  const name = await slackUserName(action.userId).catch(() => action.userId);
+  const opened = await (async () => {
+    try {
+      return await openRevertPull(
+        repository,
+        await pullNodeId(repository, prNumber),
+        `Reverts #${prNumber}: ${name} asked for it in Slack after the watch after merging found a problem.`
+      );
+    } catch (error) {
+      log('error', 'revert failed', { issue, pr: prNumber, error: errorMessage(error) });
+      await getDb()
+        .delete(events)
+        .where(eq(events.deliveryId, `${revertId}:claim`));
+      await tellTapper(
+        `I couldn’t open a revert of PR #${prNumber}: ${errorMessage(error)}. Revert it on GitHub instead.`
+      );
+      return undefined;
+    }
+  })();
+  if (!opened) {
+    return;
+  }
+  const revert = {
+    workItemId: workItem.id,
+    repository,
+    of: prNumber,
+    prNumber: opened.number,
+    url: opened.url,
+    head: opened.head
+  };
+  await recordEvent({ source: 'github', deliveryId: revertId, type: REVERT_EVENT, payload: revert });
+  log('info', 'revert opened', { issue, pr: prNumber, revert: opened.number });
+  const time = clock(new Date(), project.timeZone);
+  await Promise.all([
+    action.message
+      ? editInThread(project, workItem, action.message.ts, {
+          text: action.message.text,
+          blocks: slackRevertSettled(action.message.blocks, `${name} asked for a revert at ${time}.`)
+        })
+      : undefined,
+    replyInThread(project, workItem, revertOpenedText(name, revert)),
+    postActivity(workItem, { type: 'thought', body: `${name} asked for a revert of PR #${prNumber}: ${opened.url}` })
+  ]);
+};
+
+// A revert the console opened merges as the App once every check passes on its head. It skips the merge rules: a person
+// asked for it, and it puts back what was on main before. Tried once per head.
+const mergeRevertsByThemselves = async (event: Extract<GitHubEvent, { kind: 'checks_changed' }>): Promise<void> => {
+  const pending = (await recentEvents(REVERT_EVENT))
+    .map(({ payload }) => readRevert(payload))
+    .filter((revert): revert is Revert => revert?.repository === event.repository);
+  await Promise.all(
+    pending.map((revert) =>
+      attempt('revert merge', { pr: revert.prNumber }, async () => {
+        if (event.prNumbers.length > 0 && !event.prNumbers.includes(revert.prNumber)) {
+          return;
+        }
+        const pull = await pullForMerge(revert.repository, revert.prNumber);
+        if (pull.state !== 'open' || pull.head !== event.sha) {
+          return;
+        }
+        // Only GitHub's own revert commit merges unreviewed; anything pushed on top goes to a person, said once.
+        if (pull.head !== revert.head) {
+          const first = await recordEvent({
+            source: 'github',
+            deliveryId: `revert-moved:${revert.repository}#${revert.prNumber}`,
+            type: REVERT_MERGE_EVENT,
+            payload: { ...revert, moved: pull.head }
+          });
+          const workItem = first ? await findWorkItemById(revert.workItemId) : undefined;
+          const project = workItem && findProject(workItem.project);
+          if (workItem && project) {
+            log('warn', 'revert moved', { issue: workItem.issueIdentifier, pr: revert.prNumber, head: pull.head });
+            await replyInThread(project, workItem, askingFor(project, workItem)(revertMovedText(revert)));
+          }
+          return;
+        }
+        const checks = await headChecks(revert.repository, pull.head);
+        if (
+          checks.state !== 'passing' ||
+          mergeRefusal(revert.prNumber, { pull, acceptedHead: revert.head, checks: checks.state })
+        ) {
+          return;
+        }
+        const first = await recordEvent({
+          source: 'github',
+          deliveryId: `revert-merge:${revert.repository}#${revert.prNumber}:${pull.head}`,
+          type: REVERT_MERGE_EVENT,
+          payload: revert
+        });
+        const workItem = first ? await findWorkItemById(revert.workItemId) : undefined;
+        const project = workItem && findProject(workItem.project);
+        if (!workItem || !project) {
+          return;
+        }
+        const merged = await appToken(revert.repository).then(
+          (token) => mergePull(token, revert.repository, revert.prNumber, revert.head),
+          (error: unknown): GitHubRefusal => ({ ok: false, message: errorMessage(error) })
+        );
+        if (!merged.ok) {
+          log('warn', 'revert merge refused', {
+            issue: workItem.issueIdentifier,
+            pr: revert.prNumber,
+            message: merged.message
+          });
+          await replyInThread(
+            project,
+            workItem,
+            askingFor(project, workItem)(revertRefusedText(revert, merged.message))
+          );
+          return;
+        }
+        log('info', 'revert merged', { issue: workItem.issueIdentifier, pr: revert.prNumber, of: revert.of });
+        await Promise.all([
+          replyInThread(project, workItem, revertMergedText(revert, workItem.issueIdentifier)),
+          postActivity(workItem, {
+            type: 'thought',
+            body: `Reverted: PR #${revert.prNumber} merged, undoing PR #${revert.of}.`
+          })
+        ]);
+      })
+    )
+  );
 };
 
 // The PR's visual, from the newest implement run that has one, so a revision that changed nothing on screen keeps it.
@@ -3090,6 +3414,10 @@ const handleTap = async (
     await handleMergeTap(action, tellTapper);
     return;
   }
+  if (action.kind === 'revert') {
+    await handleRevertTap(action, tellTapper);
+    return;
+  }
   if (action.kind === 'ask_ticket') {
     await handleAskTicketTap(action, tellTapper);
     return;
@@ -3933,7 +4261,11 @@ export const handleGitHubEvent = withCards(async (eventName: string, payload: un
     return;
   }
   if (event.kind === 'checks_changed') {
-    await handleChecksChanged(event);
+    await Promise.all([handleChecksChanged(event), mergeRevertsByThemselves(event)]);
+    return;
+  }
+  if (event.kind === 'production_deploy') {
+    await handleProductionDeploy(event);
     return;
   }
   if (event.kind === 'default_branch_moved') {
@@ -3975,6 +4307,10 @@ export const handleGitHubEvent = withCards(async (eventName: string, payload: un
   // The accepted message says it in place of a reply, so nobody following the thread is notified again.
   if (!(await settleMergeMessage(project, workItem, event))) {
     await replyInThread(project, workItem, prClosedText(event.number, event.merged));
+  }
+  // Only what the factory merged itself is watched: the person who merges watches their own.
+  if (event.merged && event.mergeCommitSha && event.mergedBy?.login.endsWith('[bot]')) {
+    await startMergeWatch(workItem, { ...event, mergeCommitSha: event.mergeCommitSha });
   }
   await stopForCause(project, workItem, { kind: 'pr_closed', number: event.number, merged: event.merged });
 });

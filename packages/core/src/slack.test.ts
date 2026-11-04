@@ -359,6 +359,14 @@ describe('parseSlackAction', () => {
     });
   });
 
+  it('reads Revert with the message it sits in', () => {
+    expect(parseSlackAction(payload(JSON.stringify({ v: questionId })))).toMatchObject({
+      kind: 'revert',
+      workItemId: questionId,
+      message: { ts: '1792947100.000300', text: '', blocks: [] }
+    });
+  });
+
   it('reads Fix ticked with the findings whose box was cleared, taking a box with no state as ticked', () => {
     const tap = {
       ...payload(JSON.stringify({ f: questionId, a: 'fix' })),

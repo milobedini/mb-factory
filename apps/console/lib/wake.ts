@@ -3,9 +3,12 @@ import {
   designRunLapsesAt,
   dispatchLapsesAt,
   isSignedWake,
+  MERGE_WATCH_END_EVENT,
+  MERGE_WATCH_EVENT,
   nextSlot,
   nextWake,
   probeMoments,
+  readMergeWatch,
   signWake,
   WAKE_TOPIC,
   type WakeMessage,
@@ -13,10 +16,10 @@ import {
   wakeDelivery
 } from '@mb-factory/core';
 import { QueueClient } from '@vercel/queue';
-import { and, eq, gt, isNull, lt } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
-import { queue, runs, wakeBookings } from '@/db/schema';
+import { events, queue, runs, wakeBookings } from '@/db/schema';
 
 import { requireEnv } from './env';
 import { log } from './log';
@@ -92,11 +95,31 @@ export const bookWake = async (at: Date, cause: string): Promise<void> => {
 export const nextJobSlots = (now: Date): Date[] =>
   allProjects().flatMap((project) => project.jobs.map((job) => nextSlot(job, now, project.timeZone)));
 
-// The next moment anything is due: the earliest release time of held work, the moment a dispatched run that hasn't
+// When each open watch after an auto-merge ends (router's `endMergeWatches`), in case its own booking was lost.
+const mergeWatchEnds = async (now: Date): Promise<Date[]> => {
+  const recorded = await getDb()
+    .select({ deliveryId: events.deliveryId, type: events.type, payload: events.payload })
+    .from(events)
+    .where(
+      and(
+        inArray(events.type, [MERGE_WATCH_EVENT, MERGE_WATCH_END_EVENT]),
+        gt(events.receivedAt, new Date(now.getTime() - WAKE_BOOKING_RETENTION_MS))
+      )
+    );
+  const ended = new Set(
+    recorded.filter(({ type }) => type === MERGE_WATCH_END_EVENT).map(({ deliveryId }) => deliveryId)
+  );
+  return recorded.flatMap(({ deliveryId, type, payload }) => {
+    const watch = type === MERGE_WATCH_EVENT ? readMergeWatch(payload) : undefined;
+    return watch && !ended.has(`${deliveryId}:end`) ? [new Date(watch.endsAt)] : [];
+  });
+};
+
+// The next moment anything is due: the earliest release time of held work, the end of a watch after an auto-merge, the moment a dispatched run that hasn't
 // started counts as lost or a design session that hasn't reported is ended, the next slot of a scheduled job, or the probe before it.
 export const bookNextWake = async (cause: string): Promise<Date | undefined> => {
   const now = new Date();
-  const [held, dispatched, designing] = await Promise.all([
+  const [held, dispatched, designing, , watchEnds] = await Promise.all([
     getDb()
       .select({ releaseAt: queue.releaseAt })
       .from(queue)
@@ -108,7 +131,8 @@ export const bookNextWake = async (cause: string): Promise<Date | undefined> => 
       .where(and(eq(runs.status, 'running'), eq(runs.agent, 'design'))),
     getDb()
       .delete(wakeBookings)
-      .where(lt(wakeBookings.at, new Date(now.getTime() - WAKE_BOOKING_RETENTION_MS)))
+      .where(lt(wakeBookings.at, new Date(now.getTime() - WAKE_BOOKING_RETENTION_MS))),
+    mergeWatchEnds(now)
   ]);
   const slots = allProjects().flatMap((project) =>
     [...project.jobs, ...(project.health ? [project.health] : [])].map((slot) => nextSlot(slot, now, project.timeZone))
@@ -119,6 +143,7 @@ export const bookNextWake = async (cause: string): Promise<Date | undefined> => 
       ...dispatched.map(({ dispatchedAt }) => dispatchedAt && dispatchLapsesAt(dispatchedAt)),
       ...designing.map(({ startedAt }) => startedAt && designRunLapsesAt(startedAt)),
       ...slots,
+      ...watchEnds,
       ...probeMoments(nextJobSlots(now))
     ],
     now

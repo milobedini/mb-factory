@@ -5,7 +5,7 @@ import { endLapsedDispatches, fireDueJobs } from './jobs';
 import { log } from './log';
 import { currentPause } from './pause';
 import { staleAfterMinutes } from './projects';
-import { releaseQueue } from './router';
+import { endMergeWatches, releaseQueue } from './router';
 import { countWaiting, latestReadings } from './usage';
 import { bookNextWake, nextJobSlots } from './wake';
 
@@ -19,6 +19,9 @@ export const wake = async (cause: string): Promise<WakeResult> => {
   await fireDueJobs(new Date());
   await endLapsedDispatches(new Date());
   await releaseQueue({ blocked: true });
+  await endMergeWatches().catch((error: unknown) =>
+    log('error', 'merge watches failed', { cause, error: error instanceof Error ? error.message : String(error) })
+  );
   const [waiting, readings, pause] = await Promise.all([countWaiting(), latestReadings(), currentPause()]);
   // While paused only runs someone allowed once can go, and a probe can't change that.
   const probing =
