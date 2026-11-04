@@ -22,7 +22,8 @@ denied() { [[ "$(guard "$1" | jq -r '.hookSpecificOutput.permissionDecision // e
 
 echo 'guard-bash'
 for command in 'git push origin main' 'git push origin HEAD:refs/heads/main' 'git push --force origin tas-1-work' \
-  'git push -f' 'git commit --no-verify -m x' 'gh pr merge 42 --merge' \
+  'git push -f' 'git commit --no-verify -m x' 'gh pr merge 42 --merge' 'git push origin "main"' \
+  'git -C . push origin main' 'git -c push.default=current push --force' "git push origin 'HEAD:main'" \
   $'git commit -m "Fix it\n\nCo-Authored-By: Claude <noreply@anthropic.com>"' 'gh pr create --body "🤖 Generated with [Claude Code](https://claude.com)"'; do
   if denied "$command"; then pass "denies: ${command%%$'\n'*}"; else fail "should deny: $command"; fi
 done

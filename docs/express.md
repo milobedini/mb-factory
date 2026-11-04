@@ -379,7 +379,7 @@ Four steps, each usable by itself. Each step's work is the factory's own (`mb-fa
 
 ## Still to settle while building
 
-- **Rulesets:** check that a ruleset's bypass actor bypasses only that ruleset's rules (hence two rulesets), and that the bot's merge is still a merge commit co-authored as before.
+- **Rulesets:** check that a ruleset's bypass actor bypasses only that ruleset's rules (hence two rulesets), and that the bot's merge is still a merge commit co-authored as before. The bot's bypass must never let it push to the default branch, force-push or delete it: `plugin/hooks/guard-bash.sh` refuses those early but reads only the command's text, so GitHub's protection is what holds (security review, 4 Nov).
 - **Deploy signal:** the App's webhook events or a read-only Vercel token (the factory backlog's "Spend and deploys").
 - **The visual in Slack:** a Block Kit image block plays no video, so a flow's video may need a poster image linking to it, or a GIF. Decide at step 1.
 - **Which questions wait:** watch the first weeks of express for infrastructure questions that should have waited, and approach questions that were defaulted. Tune the line in `implement.md`.
