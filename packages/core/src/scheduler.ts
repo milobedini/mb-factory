@@ -68,3 +68,11 @@ export const isSignedWake = (message: unknown, key: Uint8Array): message is Wake
   const given = Buffer.from(signature, 'hex');
   return given.length === expected.length && timingSafeEqual(given, expected);
 };
+
+export type WakeDelivery = { kind: 'wake' } | { kind: 'forward'; to: string };
+
+// Where a delivered wake-up runs. Queues hands a wake-up back to the deployment that booked it, so one no longer serving
+// production passes it to the one that is, rather than running its own older code. When either deployment is unknown
+// (in development, or the lookup failed) it wakes where it is: a missed moment costs more than old code running once.
+export const wakeDelivery = (own: string | undefined, production: string | undefined): WakeDelivery =>
+  own && production && own !== production ? { kind: 'forward', to: production } : { kind: 'wake' };

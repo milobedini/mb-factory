@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isSignedWake, jobSlotSoon, nextWake, probeMoments, signWake, wakeBooking } from './scheduler';
+import { isSignedWake, jobSlotSoon, nextWake, probeMoments, signWake, wakeBooking, wakeDelivery } from './scheduler';
 
 const now = new Date('2026-10-26T12:00:00Z');
 const later = (minutes: number): Date => new Date(now.getTime() + minutes * 60_000);
@@ -63,5 +63,21 @@ describe('probing before a job', () => {
     expect(jobSlotSoon([slot], new Date('2026-10-28T05:52:30Z'))).toBe(true);
     expect(jobSlotSoon([slot], new Date('2026-10-28T05:50:00Z'))).toBe(false);
     expect(jobSlotSoon([slot], new Date('2026-10-28T06:00:30Z'))).toBe(false);
+  });
+});
+
+describe('wakeDelivery', () => {
+  // 3 Nov: unpinned wake-ups reached no deployment at all, so only the hourly cron woke the scheduler until 4 Nov.
+  it('passes a wake-up from a deployment no longer in production to the one that is', () => {
+    expect(wakeDelivery('dpl_old', 'dpl_live')).toEqual({ kind: 'forward', to: 'dpl_live' });
+  });
+
+  it('wakes in the deployment serving production', () => {
+    expect(wakeDelivery('dpl_live', 'dpl_live')).toEqual({ kind: 'wake' });
+  });
+
+  it('wakes where it is when either deployment is unknown', () => {
+    expect(wakeDelivery(undefined, 'dpl_live')).toEqual({ kind: 'wake' });
+    expect(wakeDelivery('dpl_old', undefined)).toEqual({ kind: 'wake' });
   });
 });

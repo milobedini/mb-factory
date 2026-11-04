@@ -8,7 +8,9 @@ import {
   probeMoments,
   signWake,
   WAKE_TOPIC,
-  wakeBooking
+  type WakeMessage,
+  wakeBooking,
+  wakeDelivery
 } from '@mb-factory/core';
 import { QueueClient } from '@vercel/queue';
 import { and, eq, gt, isNull, lt } from 'drizzle-orm';
@@ -25,15 +27,43 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
 // A booked moment is only needed until its wake-up has been delivered.
 const WAKE_BOOKING_RETENTION_MS = 24 * 60 * 60 * 1000;
 
-// Unpinned: by default a message goes back to the deployment that sent it, so every deployment that ever booked a
-// wake-up kept its own chain going with its own code (48 deployments answered wakes on 3 Nov). Unpinned, each wake-up
-// reaches the deployment serving production when it's due.
-const { send } = new QueueClient({ deploymentId: null });
+// Pinned to this deployment, as Queues delivers a pushed message only to the deployment that sent it: unpinned wake-ups
+// (3 to 4 Nov) reached none. A deployment no longer in production passes each wake-up on (`forwardWake`), so old
+// deployments don't keep chains of their own going (48 answered wakes on 3 Nov).
+const { send } = new QueueClient();
 
 const wakeKey = (): Uint8Array => deriveKey(requireEnv('TOKEN_ENCRYPTION_KEY'), 'scheduler-wake');
 
 // Whether a delivered message is a wake-up the console booked itself.
-export const isOwnWake = (message: unknown): boolean => isSignedWake(message, wakeKey());
+export const isOwnWake = (message: unknown): message is WakeMessage => isSignedWake(message, wakeKey());
+
+// The deployment serving production, as it says itself; undefined when it can't be asked.
+const productionDeployment = async (): Promise<string | undefined> => {
+  try {
+    const response = await fetch(`${requireEnv('CONSOLE_URL')}/api/scheduler/deployment`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000)
+    });
+    const { deploymentId } = (await response.json()) as { deploymentId?: unknown };
+    return typeof deploymentId === 'string' ? deploymentId : undefined;
+  } catch (error) {
+    log('warn', 'production deployment lookup failed', { error: errorMessage(error) });
+    return undefined;
+  }
+};
+
+// Passes a delivered wake-up to the deployment serving production when this one no longer is, and says whether it did.
+// It goes out at once, signed as booked; a failed send throws, so Queues delivers the wake-up here again.
+export const forwardWake = async (message: WakeMessage): Promise<boolean> => {
+  const own = process.env.VERCEL_DEPLOYMENT_ID;
+  const delivery = wakeDelivery(own, await productionDeployment());
+  if (delivery.kind === 'wake') {
+    return false;
+  }
+  const { messageId } = await new QueueClient({ deploymentId: delivery.to }).send(WAKE_TOPIC, message);
+  log('info', 'wake forwarded', { at: message.at, from: own, to: delivery.to, messageId });
+  return true;
+};
 
 // Books the console's own wake-up at `at`, once: a moment already booked is skipped, and a failure is logged and frees
 // the moment, so the next wake-up or the hourly backstop books it again.

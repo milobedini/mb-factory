@@ -357,8 +357,17 @@ export {
   runTotals,
   WORK_ORIGINS
 } from './runs';
-export type { WakeBooking, WakeMessage } from './scheduler';
-export { isSignedWake, jobSlotSoon, nextWake, probeMoments, signWake, WAKE_TOPIC, wakeBooking } from './scheduler';
+export type { WakeBooking, WakeDelivery, WakeMessage } from './scheduler';
+export {
+  isSignedWake,
+  jobSlotSoon,
+  nextWake,
+  probeMoments,
+  signWake,
+  WAKE_TOPIC,
+  wakeBooking,
+  wakeDelivery
+} from './scheduler';
 export { decryptSecret, deriveKey, encryptSecret } from './secrets';
 export type { Verification } from './signatures';
 export { verifyGitHubWebhook, verifyLinearWebhook, verifySlackRequest } from './signatures';
