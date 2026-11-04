@@ -213,6 +213,7 @@ import { designPass } from './design-pass';
 import { requireEnv } from './env';
 import { recordEvent } from './events';
 import { fileFollowUps, fileRequestedIssues } from './follow-ups';
+import type { GitHubRefusal } from './github-api';
 import {
   approvePull,
   behindBy,
@@ -428,7 +429,11 @@ const mergeByItself = async (project: FactoryConfig, workItem: WorkItem): Promis
   if (!first) {
     return;
   }
-  const merged = await mergePull(await appToken(repository), repository, prNumber, pull.head);
+  // A token that can't be had (no key, or the App not installed) is refused like a merge, so the thread hears of it.
+  const merged = await appToken(repository).then(
+    (token) => mergePull(token, repository, prNumber, pull.head),
+    (error: unknown): GitHubRefusal => ({ ok: false, message: errorMessage(error) })
+  );
   if (!merged.ok) {
     log('warn', 'auto-merge refused', { issue, pr: prNumber, message: merged.message });
     const text = `I couldn’t merge PR #${prNumber} by myself: GitHub said “${merged.message}”. It’s yours to merge.`;
