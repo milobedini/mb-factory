@@ -114,6 +114,30 @@ export {
   readSpecDesign,
   readVariantPick
 } from './design';
+export type {
+  DashboardAnswer,
+  ExpressColumn,
+  ExpressComparison,
+  ExpressInput,
+  ExpressVerdict,
+  Fix,
+  FixedPr,
+  FixKind,
+  MergedPr
+} from './express-metrics';
+export {
+  EXPRESS_BASELINE,
+  EXPRESS_DAYS,
+  expressAgainstBaseline,
+  FIX_KINDS,
+  FIX_WINDOW_DAYS,
+  fixesBy,
+  issueOfBranch,
+  mergedPrFrom,
+  namedFixes,
+  SENTRY_WINDOW_MINUTES,
+  tapsFor
+} from './express-metrics';
 export type { FollowUpContext, RequestedContext, RequestedIssue } from './follow-ups';
 export { filedFollowUpsText, followUpIssue, readRequestedIssues, requestedIssue } from './follow-ups';
 export type { Gate } from './gates';

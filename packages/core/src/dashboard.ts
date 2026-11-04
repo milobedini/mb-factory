@@ -2,6 +2,7 @@ import { BLOCKING_OUTCOMES, reviewVerdict } from './router';
 import type { RunOutcome, RunStatus, RunTrigger, WorkOrigin } from './runs';
 import type { AgentRole, Stage } from './stages';
 import { HUMAN_GATES, STAGES, TERMINAL_STAGES } from './stages';
+import type { Track } from './track';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -22,12 +23,18 @@ export const sizeLabel = (estimate: number | null): string => (estimate !== null
 
 export type DashboardWorkItem = {
   id: string;
+  // The factory project it belongs to, and its PR.
+  project: string;
+  repository: string;
+  prNumber: number | null;
   identifier: string;
   title: string | null;
   url: string;
   origin: WorkOrigin;
   estimate: number | null;
   humanPushes: number;
+  // Empty for work from before Express.
+  track: Track | null;
   createdAt: Date;
   // From the PR's webhooks; a PR closed unmerged has `closedAt` and no `mergedAt`.
   prOpenedAt: Date | null;
@@ -38,6 +45,9 @@ export type DashboardWorkItem = {
 export type DashboardStageChange = { workItemId: string; stage: Stage; at: Date };
 
 export type DashboardRun = {
+  id: string;
+  // The run that led to it, such as the review whose findings a fix run takes on.
+  parentRunId: string | null;
   // Empty for a scheduled job's run.
   workItemId: string | null;
   agent: AgentRole;
@@ -126,7 +136,7 @@ export const median = (values: number[]): number | null => {
   return sorted.length % 2 === 1 ? (sorted[middle] ?? null) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 };
 
-const groupBy = <T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> =>
+export const groupBy = <T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> =>
   items.reduce(
     (groups, item) => groups.set(keyOf(item), [...(groups.get(keyOf(item)) ?? []), item]),
     new Map<string, T[]>()
@@ -137,7 +147,7 @@ const sumOrNull = (values: (number | null)[]): number | null => {
   return known.length > 0 ? known.reduce((sum, value) => sum + value, 0) : null;
 };
 
-const within = (at: Date | null, from: Date, to: Date): at is Date =>
+export const within = (at: Date | null, from: Date, to: Date): at is Date =>
   at !== null && at.getTime() >= from.getTime() && at.getTime() <= to.getTime();
 
 const runTokens = (run: DashboardRun): number | null =>
@@ -216,6 +226,31 @@ export const blockedWaitMs = (itemRuns: DashboardRun[], end: Date): number => {
   }, 0);
 };
 
+export type MergedCycle = {
+  stages: Map<Stage, number>;
+  answeringMs: number;
+  blockedMs: number;
+  // Delegation to merge, and the part of it spent waiting on the person: at the gates, answering and blocked.
+  cycleMs: number;
+  humanWaitMs: number;
+};
+
+// A merged PR's cycle from its work item's stage changes, runs and questions.
+export const mergedCycle = (
+  item: DashboardWorkItem,
+  changes: DashboardStageChange[],
+  itemRuns: DashboardRun[],
+  itemQuestions: DashboardQuestion[]
+): MergedCycle => {
+  const mergedAt = item.mergedAt ?? item.createdAt;
+  const stages = timeInStages(changes, mergedAt);
+  const gateMs = HUMAN_GATES.reduce((total, stage) => total + (stages.get(stage) ?? 0), 0);
+  const answeringMs = questionWaitMs(itemQuestions, item.createdAt, mergedAt);
+  const blockedMs = blockedWaitMs(itemRuns, mergedAt);
+  const cycleMs = mergedAt.getTime() - item.createdAt.getTime();
+  return { stages, answeringMs, blockedMs, cycleMs, humanWaitMs: Math.min(gateMs + answeringMs + blockedMs, cycleMs) };
+};
+
 type Wait = { label: string; stage?: Stage; of?: 'answering' | 'blocked' };
 
 const WAITS: Wait[] = [
@@ -247,20 +282,10 @@ export const dashboardMetrics = ({
   const merged = workItems
     .filter(({ mergedAt }) => within(mergedAt, from, to))
     .map((item) => {
-      const mergedAt = item.mergedAt ?? to;
-      const stages = timeInStages(changesFor.get(item.id) ?? [], mergedAt);
-      const gateMs = HUMAN_GATES.reduce((total, stage) => total + (stages.get(stage) ?? 0), 0);
-      const answeringMs = questionWaitMs(questionsFor.get(item.id) ?? [], item.createdAt, mergedAt);
-      const cycleMs = mergedAt.getTime() - item.createdAt.getTime();
       const itemRuns = runsFor.get(item.id) ?? [];
-      const blockedMs = blockedWaitMs(itemRuns, mergedAt);
       return {
         item,
-        stages,
-        answeringMs,
-        blockedMs,
-        cycleMs,
-        humanWaitMs: Math.min(gateMs + answeringMs + blockedMs, cycleMs),
+        ...mergedCycle(item, changesFor.get(item.id) ?? [], itemRuns, questionsFor.get(item.id) ?? []),
         costUsd: sumOrNull(itemRuns.map(({ costUsd }) => costUsd)),
         tokens: sumOrNull(itemRuns.map(runTokens)),
         runMs: sumOrNull(itemRuns.map(runMs))

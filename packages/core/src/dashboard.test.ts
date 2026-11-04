@@ -9,12 +9,16 @@ const at = (iso: string): Date => new Date(iso);
 const minutesAfter = (start: Date, minutes: number): Date => new Date(start.getTime() + minutes * MINUTE);
 
 const workItem = (overrides: Partial<DashboardWorkItem> & Pick<DashboardWorkItem, 'id'>): DashboardWorkItem => ({
+  project: 'tastebook',
+  repository: 'milobedini/tastebook',
+  prNumber: null,
   identifier: overrides.id.toUpperCase(),
   title: `Work on ${overrides.id}`,
   url: `https://linear.app/tastebook/issue/${overrides.id}`,
   origin: 'linear',
   estimate: 2,
   humanPushes: 0,
+  track: null,
   createdAt: at('2026-10-25T09:00:00Z'),
   prOpenedAt: null,
   mergedAt: null,
@@ -23,6 +27,8 @@ const workItem = (overrides: Partial<DashboardWorkItem> & Pick<DashboardWorkItem
 });
 
 const run = (overrides: Partial<DashboardRun> = {}): DashboardRun => ({
+  id: 'run',
+  parentRunId: null,
   workItemId: 'a',
   agent: 'implement',
   model: 'opus',

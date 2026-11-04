@@ -1,6 +1,7 @@
 import {
   AGENT_ROLES,
   ANSWER_SOURCES,
+  FIX_KINDS,
   HOLD_REASONS,
   PRIORITIES,
   PROBLEM_LEVELS,
@@ -189,6 +190,28 @@ export const stageChanges = pgTable(
     at: timestamp({ withTimezone: true }).notNull().defaultNow()
   },
   (table) => [index('stage_changes_work_item_idx').on(table.workItemId, table.at)]
+);
+
+// A later PR that fixed or reverted one merged in the 7 days before it (core `fixesBy`), recorded when the later one
+// merges, for the dashboard's fixes or reverts within 7 days. Phase 4's baseline was backfilled once from git. Any PR
+// in a project's repository counts, the factory's or not; each issue is its work item's, else read from its branch.
+export const prFixes = pgTable(
+  'pr_fixes',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    repository: text().notNull(),
+    // The earlier PR, fixed or reverted.
+    prNumber: integer().notNull(),
+    issueIdentifier: text(),
+    mergedAt: timestamp({ withTimezone: true }).notNull(),
+    // The later PR that fixed or reverted it.
+    byPrNumber: integer().notNull(),
+    byIssueIdentifier: text(),
+    byMergedAt: timestamp({ withTimezone: true }).notNull(),
+    kind: text({ enum: FIX_KINDS }).notNull(),
+    recordedAt: timestamp({ withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [uniqueIndex('pr_fixes_pair_idx').on(table.repository, table.prNumber, table.byPrNumber)]
 );
 
 // One row per scheduled slot that fired: inserting it is what fires the slot, so it runs once however many wakes

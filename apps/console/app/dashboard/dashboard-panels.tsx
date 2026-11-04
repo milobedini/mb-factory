@@ -6,6 +6,8 @@ import type { ReactNode } from 'react';
 import type { DashboardView } from '@/lib/dashboard-view';
 import { loadDashboardView } from '@/lib/dashboard-view';
 
+import { ExpressPanel } from './express-panel';
+
 const STAGE_NAMES: Record<Stage, string> = {
   researching: 'Researching',
   spec: 'Spec',
@@ -185,7 +187,7 @@ const RangePicker = ({ days }: Pick<DashboardView, 'days'>) => (
 
 export const DashboardPanels = async ({ searchParams }: { searchParams: PageProps<'/dashboard'>['searchParams'] }) => {
   const { days: requested } = await searchParams;
-  const { days, dashboard } = await loadDashboardView(readDashboardRange(requested));
+  const { days, dashboard, express } = await loadDashboardView(readDashboardRange(requested));
   const { prs, autonomy, cycle, review } = dashboard;
   return (
     <div className="flex flex-col gap-10">
@@ -213,6 +215,8 @@ export const DashboardPanels = async ({ searchParams }: { searchParams: PageProp
           detail={`Over the ${prs.merged} merged PRs, every run included`}
         />
       </div>
+
+      <ExpressPanel express={express} days={days} />
 
       <Section
         title="PRs opened and merged"

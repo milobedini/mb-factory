@@ -229,6 +229,7 @@ import {
 import { designPass } from './design-pass';
 import { requireEnv } from './env';
 import { recordEvent } from './events';
+import { recordFixes } from './fixes';
 import { fileFollowUps, fileRequestedIssues } from './follow-ups';
 import type { GitHubRefusal } from './github-api';
 import {
@@ -4259,6 +4260,10 @@ const handleDefaultBranchMoved = async (event: Extract<GitHubEvent, { kind: 'def
 // A factory PR merged or closed settles its work item; a person pushing to its branch counts against autonomy; a
 // failed check on a delivered PR, or one that stops merging, goes back to implement.
 export const handleGitHubEvent = withCards(async (eventName: string, payload: unknown): Promise<void> => {
+  // Any merged PR, the factory's or not, may fix or revert an earlier one.
+  if (eventName === 'pull_request') {
+    await attempt('fix record', {}, () => recordFixes(payload));
+  }
   const event = parseGitHubEvent(eventName, payload);
   if (!event) {
     return;
