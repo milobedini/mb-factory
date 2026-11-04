@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import type { Job } from './config';
 import { WEEKDAYS } from './config';
+import { readReviewFindings } from './router';
 import { ESTIMATES, SIZES } from './sizes';
 import type { JobAgent } from './stages';
 
@@ -82,23 +83,27 @@ export const FINDING_SEVERITIES = ['critical', 'high', 'moderate', 'low'] as con
 
 export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
 
-export const FINDING_KINDS = ['advisory', 'code', 'docs'] as const;
+export const FINDING_KINDS = ['advisory', 'code', 'docs', 'cleanup', 'enforce'] as const;
 
 export type FindingKind = (typeof FINDING_KINDS)[number];
 
 // The kinds each job may report; anything else in its report is dropped.
-const JOB_KINDS: Record<JobAgent, FindingKind[]> = { security: ['advisory', 'code'], docs: ['docs'] };
+const JOB_KINDS: Record<JobAgent, FindingKind[]> = {
+  security: ['advisory', 'code'],
+  docs: ['docs'],
+  cleanup: ['cleanup', 'enforce']
+};
 
 const MAX_FINDINGS = 20;
 
 const findingSchema = z
   .looseObject({
     // Stable across runs, so a finding already filed is recognised: `advisory:<package>@<version>`,
-    // `code:<category>:<path>` or `docs:<path>:<topic>`.
+    // `code:<category>:<path>`, `docs:<path>:<topic>`, `cleanup:<category>:<path>` or `enforce:<rule>`.
     fingerprint: z
       .string()
       .trim()
-      .regex(/^(advisory|code|docs):[A-Za-z0-9._@/:+-]{1,200}$/),
+      .regex(/^(advisory|code|docs|cleanup|enforce):[A-Za-z0-9._@/:+-]{1,200}$/),
     kind: z.enum(FINDING_KINDS),
     title: z.string().trim().min(1).max(200),
     severity: z.enum(FINDING_SEVERITIES),
@@ -237,8 +242,20 @@ const SEVERITY_LABEL: Record<FindingSeverity, string> = {
 
 const MAX_TITLE = 80;
 
-const KIND_LABEL: Record<FindingKind, string> = { advisory: 'dependency advisory', code: 'code', docs: 'docs drift' };
-const TITLE_PREFIX: Record<FindingKind, string> = { advisory: 'Security', code: 'Security', docs: 'Docs' };
+const KIND_LABEL: Record<FindingKind, string> = {
+  advisory: 'dependency advisory',
+  code: 'code',
+  docs: 'docs drift',
+  cleanup: 'clean-up',
+  enforce: 'rule to enforce'
+};
+const TITLE_PREFIX: Record<FindingKind, string> = {
+  advisory: 'Security',
+  code: 'Security',
+  docs: 'Docs',
+  cleanup: 'Clean-up',
+  enforce: 'Enforce'
+};
 
 // The agent read public repo content to write a finding, so its text is untrusted: an image would load as soon as
 // someone opened the issue, and a link could hide where it goes. Escaping the brackets and angle brackets means no
@@ -318,7 +335,9 @@ export const groupFindings = <T extends { finding: Finding }>(items: T[]): T[][]
 const KIND_NOUN: Record<FindingKind, [string, string]> = {
   advisory: ['advisory', 'advisories'],
   code: ['finding', 'findings'],
-  docs: ['finding', 'findings']
+  docs: ['finding', 'findings'],
+  cleanup: ['finding', 'findings'],
+  enforce: ['rule', 'rules']
 };
 
 // A group as one issue, at its worst severity and largest size, since one change fixes them all; a group of one is
@@ -363,12 +382,48 @@ export const groupIssue = (items: FilingFinding[], context: Omit<FindingContext,
   };
 };
 
+// A review run of the clean-up job's week, with its work item's issue.
+export type WeekReview = { issue: string; report: unknown };
+
+// About a week's worth (120 findings in the week to 4 Nov 2026) in under 40 KB of dispatch payload.
+const MAX_REVIEW_FINDINGS = 120;
+const MAX_REVIEW_SUMMARY = 160;
+const MAX_REVIEW_GUARD = 120;
+
+// The week's review findings for the clean-up job's brief, one line each: the issue, tier, place, what was found and the
+// guard review suggested, so the job can tell what came up twice. Clipped, so a busy week can't crowd out the brief.
+export const reviewFindingLines = (reviews: WeekReview[]): string[] => {
+  const lines = reviews.flatMap(({ issue, report }) =>
+    readReviewFindings(report).map(({ tier, path, line, summary, guard }) =>
+      [
+        issue,
+        tier ?? 'finding',
+        path ? clip(`${path}${line ? `:${line}` : ''}`, 80) : undefined,
+        '—',
+        clip(summary.replace(/\s+/g, ' ').trim(), MAX_REVIEW_SUMMARY),
+        guard ? `(guard: ${clip(guard.replace(/\s+/g, ' ').trim(), MAX_REVIEW_GUARD)})` : undefined
+      ]
+        .filter((part) => part !== undefined)
+        .join(' ')
+    )
+  );
+  // The newest are kept: the oldest week's findings are the likeliest to have been dealt with.
+  const cut = lines.length - MAX_REVIEW_FINDINGS;
+  return cut > 0 ? [`(${cut} older findings left out)`, ...lines.slice(cut)] : lines;
+};
+
+const JOB_NAMES: Record<JobAgent, string> = { security: 'security', docs: 'docs', cleanup: 'clean-up' };
+
 // "Daily security check", or "Weekly docs pass over the whole repo".
 export const jobTitle = ({ agent, day, scope }: Pick<Job, 'agent' | 'day' | 'scope'>): string =>
-  `${day === undefined ? 'Daily' : 'Weekly'} ${agent} ${scope === 'repo' ? 'pass over the whole repo' : 'check'}`;
+  `${day === undefined ? 'Daily' : 'Weekly'} ${JOB_NAMES[agent]} ${scope === 'repo' ? 'pass over the whole repo' : 'check'}`;
 
 // Labels on every issue the job files, so Triage shows where it came from.
-const JOB_LABELS: Record<JobAgent, string[]> = { security: ['security', 'factory'], docs: ['docs', 'factory'] };
+const JOB_LABELS: Record<JobAgent, string[]> = {
+  security: ['security', 'factory'],
+  docs: ['docs', 'factory'],
+  cleanup: ['cleanup', 'factory']
+};
 
 export const jobLabels = (agent: JobAgent): string[] => JOB_LABELS[agent];
 

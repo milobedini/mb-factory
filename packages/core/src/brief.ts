@@ -29,6 +29,8 @@ export type JobBrief = {
   scope: JobScope;
   // The newest commit on the default branch the job's last run covered; never for a whole-repo job.
   since?: string;
+  // The clean-up job's: the week's review findings, one line each (`reviewFindingLines`).
+  reviewFindings?: string[];
 };
 
 // A question asked from Slack: no issue, session or job, just the question and who asked it.
@@ -82,14 +84,17 @@ const renderBrief = ({ agent, issue, session, trigger, prompt, pr, branch, round
     .filter((line) => line !== undefined)
     .join('\n');
 
-const renderJobBrief = ({ agent, job, trigger, slot, scope, since }: JobBrief): string =>
+const renderJobBrief = ({ agent, job, trigger, slot, scope, since, reviewFindings }: JobBrief): string =>
   [
     `stage: ${agent}`,
     `job: ${oneLine(job)}`,
     `trigger: ${trigger}`,
     `slot: ${slot.toISOString()}`,
     `scope: ${scope}`,
-    since === undefined ? undefined : `since: ${oneLine(since)}`
+    since === undefined ? undefined : `since: ${oneLine(since)}`,
+    reviewFindings === undefined
+      ? undefined
+      : `review findings: |\n${indent(reviewFindings.length > 0 ? reviewFindings.map(oneLine).join('\n') : '(none)')}`
   ]
     .filter((line) => line !== undefined)
     .join('\n');

@@ -93,12 +93,13 @@ describe('people', () => {
 });
 
 describe('jobs', () => {
-  it('reads the daily checks and the weekly whole-repo passes, and defaults to no jobs', () => {
+  it('reads the daily checks, the weekly whole-repo passes and the clean-up, and defaults to no jobs', () => {
     expect(parseProject(tastebookConfig).jobs).toEqual([
       { name: 'security', agent: 'security', at: '06:00', scope: 'changes', model: 'sonnet' },
       { name: 'docs', agent: 'docs', at: '06:30', scope: 'changes', model: 'sonnet' },
       { name: 'security-weekly', agent: 'security', day: 'monday', at: '05:00', scope: 'repo', model: 'sonnet' },
-      { name: 'docs-weekly', agent: 'docs', day: 'monday', at: '05:30', scope: 'repo', model: 'sonnet' }
+      { name: 'docs-weekly', agent: 'docs', day: 'monday', at: '05:30', scope: 'repo', model: 'sonnet' },
+      { name: 'cleanup', agent: 'cleanup', day: 'monday', at: '07:00', scope: 'repo', model: 'sonnet' }
     ]);
     expect(parseProject(tastebookConfig.slice(0, tastebookConfig.indexOf('\njobs:'))).jobs).toEqual([]);
   });

@@ -202,7 +202,8 @@ export type {
   FindingIssue,
   FindingKind,
   FindingSeverity,
-  JobReport
+  JobReport,
+  WeekReview
 } from './jobs';
 export {
   coveredHead,
@@ -220,6 +221,7 @@ export {
   neutraliseMarkdown,
   nextSlot,
   readJobReport,
+  reviewFindingLines,
   slotDay
 } from './jobs';
 export { isLinearPassFor, isReadOnlyDocument, signLinearPass } from './linear-proxy';

@@ -292,6 +292,7 @@ const RUNNING: Record<AgentRole, string> = {
   review: 'Reviewing',
   security: 'Checking security',
   docs: 'Checking the docs',
+  cleanup: 'Looking for clean-up',
   ask: 'Looking into it',
   size: 'Sizing'
 };

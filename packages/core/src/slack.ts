@@ -125,6 +125,7 @@ const STAGE_NAMES: Record<AgentRole, string> = {
   verify: 'Verify',
   security: 'Security check',
   docs: 'Docs check',
+  cleanup: 'Clean-up',
   ask: 'Question',
   size: 'Sizing'
 };

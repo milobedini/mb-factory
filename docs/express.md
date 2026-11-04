@@ -277,6 +277,8 @@ Rejected:
 
   It files issues into Triage, as the security and docs jobs do. This is the trade for fewer per-PR gates: drift gets swept weekly instead of blocked per PR.
 
+- **How it's built (4 Nov):** a `cleanup` job agent (`plugin/agents/cleanup.md`, rubric `cleanup-rubric`) on Mondays at 07:00, reporting two finding kinds the console files like the other jobs': `enforce` ("Enforce: …", a class that came up twice, at the highest ladder step that fits, or the gap in a check that missed it) and `cleanup` ("Clean-up: …": `dead-code`, `duplication`, `empty-test`, `agents-drift`), labelled `cleanup` and `factory`. Its brief carries the week's review findings with review's `guard` for each, newest 120 kept; it reads the week's lessons from git. knip, vulture and jscpd give leads, never findings. It has the 50-minute limit of every stage but implement.
+
 - **Mutation testing** in that job: Stryker for the frontend and mutmut for the backend, on the week's changed files only. Surviving mutants in new tests become issues.
   - It answers TAS-137, 33 and 111.
   - A coverage floor was rejected: a test that tests nothing still raises coverage.

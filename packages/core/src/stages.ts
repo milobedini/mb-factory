@@ -25,13 +25,15 @@ export const AGENT_ROLES = [
   'review',
   'security',
   'docs',
+  // The weekly clean-up job (Express step 4): duplication, dead code, empty tests, drift and rules to enforce.
+  'cleanup',
   'ask',
   'size'
 ] as const;
 
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
-export const JOB_AGENTS = ['security', 'docs'] as const satisfies AgentRole[];
+export const JOB_AGENTS = ['security', 'docs', 'cleanup'] as const satisfies AgentRole[];
 
 export type JobAgent = (typeof JOB_AGENTS)[number];
 

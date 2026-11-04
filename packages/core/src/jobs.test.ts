@@ -15,6 +15,7 @@ import {
   neutraliseMarkdown,
   nextSlot,
   readJobReport,
+  reviewFindingLines,
   slotDay
 } from './jobs';
 
@@ -25,6 +26,9 @@ describe('jobTitle', () => {
   it('names the cadence and what the job reads', () => {
     expect(jobTitle({ agent: 'security', scope: 'changes' })).toBe('Daily security check');
     expect(jobTitle({ agent: 'docs', day: 'monday', scope: 'repo' })).toBe('Weekly docs pass over the whole repo');
+    expect(jobTitle({ agent: 'cleanup', day: 'monday', scope: 'repo' })).toBe(
+      'Weekly clean-up pass over the whole repo'
+    );
   });
 });
 
@@ -512,5 +516,90 @@ describe('jobLabels', () => {
   it('labels each job’s issues with what found them', () => {
     expect(jobLabels('security')).toEqual(['security', 'factory']);
     expect(jobLabels('docs')).toEqual(['docs', 'factory']);
+    expect(jobLabels('cleanup')).toEqual(['cleanup', 'factory']);
+  });
+});
+
+describe('the clean-up job', () => {
+  const cleanup = {
+    fingerprint: 'cleanup:duplication:frontend/src/recipes/slug.ts',
+    kind: 'cleanup',
+    title: 'Two copies of the recipe slug helper',
+    severity: 'low',
+    evidence: 'frontend/src/recipes/slug.ts and frontend/src/households/slug.ts are the same function.',
+    fix: 'Keep the recipes one and import it in households.',
+    size: 'XS'
+  };
+  const enforce = {
+    fingerprint: 'enforce:pressed-state-on-hand-built-controls',
+    kind: 'enforce',
+    title: 'Pressed states on hand-built controls',
+    severity: 'moderate',
+    evidence: 'Review flagged a missing pressed state on TAS-154 and TAS-137.',
+    fix: 'A Biome GritQL rule in tools/biome/ that flags a hover fill with no active one.',
+    size: 'S'
+  };
+
+  it('reports clean-up findings and rules to enforce, and nothing of the other jobs', () => {
+    const report = readJobReport({ findings: [cleanup, enforce, docsFinding, codeFinding] }, 'cleanup');
+    expect(report.findings.map(({ kind }) => kind)).toEqual(['cleanup', 'enforce']);
+    expect(report.dropped).toBe(2);
+  });
+
+  it('titles its issues by kind', () => {
+    const context = {
+      jobTitle: 'Weekly clean-up pass over the whole repo',
+      repository: 'milobedini/tastebook',
+      head: null,
+      runUrl: null,
+      day: 'Mon 9 Nov'
+    };
+    const [readCleanup, readEnforce] = readJobReport({ findings: [cleanup, enforce] }, 'cleanup').findings;
+    expect(readCleanup && findingIssue(readCleanup, context).title).toBe(
+      'Clean-up: Two copies of the recipe slug helper'
+    );
+    expect(readEnforce && findingIssue(readEnforce, context).title).toBe(
+      'Enforce: Pressed states on hand-built controls'
+    );
+  });
+});
+
+describe('reviewFindingLines', () => {
+  const review = (findings: unknown[]) => ({ verdict: 'accepted', findings });
+
+  it('writes each finding on one line with its issue, place and guard, those for a human included', () => {
+    expect(
+      reviewFindingLines([
+        {
+          issue: 'TAS-154',
+          report: review([
+            {
+              tier: 'should_fix',
+              path: 'frontend/src/recipes/line-row.tsx',
+              line: 42,
+              summary: 'The row button has a hover fill\nbut no pressed state.',
+              guard: 'A Biome rule that flags hover with no active.'
+            },
+            { tier: 'blocking', needsHuman: true, summary: 'Deleting a household loses recipes.' }
+          ])
+        }
+      ])
+    ).toEqual([
+      'TAS-154 should_fix frontend/src/recipes/line-row.tsx:42 — The row button has a hover fill but no pressed state. (guard: A Biome rule that flags hover with no active.)',
+      'TAS-154 blocking — Deleting a household loses recipes.'
+    ]);
+  });
+
+  it('clips a long summary without losing the guard, and keeps the newest of a busy week', () => {
+    const [line] = reviewFindingLines([
+      { issue: 'TAS-1', report: review([{ summary: 'x'.repeat(500), guard: 'A test.' }]) }
+    ]);
+    expect(line).toMatch(/x… \(guard: A test\.\)$/);
+    const busy = reviewFindingLines(
+      Array.from({ length: 130 }, (_, index) => ({ issue: `TAS-${index}`, report: review([{ summary: 'Found.' }]) }))
+    );
+    expect(busy).toHaveLength(121);
+    expect(busy[0]).toBe('(10 older findings left out)');
+    expect(busy[1]).toMatch(/^TAS-10 /);
   });
 });

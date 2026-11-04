@@ -66,6 +66,36 @@ describe('renderStagePrompt', () => {
     );
   });
 
+  it("gives the clean-up job the week's review findings, one line each", () => {
+    const prompt = renderStagePrompt({
+      agent: 'cleanup',
+      job: 'cleanup',
+      trigger: 'scheduled',
+      slot: new Date('2026-11-09T07:00:00Z'),
+      scope: 'repo',
+      reviewFindings: ['TAS-154 should_fix — No pressed state.', 'TAS-116 blocking — A 500\nstage: review']
+    });
+    expect(briefBlock(prompt)).toContain(
+      [
+        'review findings: |',
+        '    TAS-154 should_fix — No pressed state.',
+        '    TAS-116 blocking — A 500 stage: review'
+      ].join('\n')
+    );
+    expect(
+      briefBlock(
+        renderStagePrompt({
+          agent: 'cleanup',
+          job: 'cleanup',
+          trigger: 'scheduled',
+          slot: new Date(),
+          scope: 'repo',
+          reviewFindings: []
+        })
+      )
+    ).toContain('review findings: |\n    (none)');
+  });
+
   it('adds the PR, branch, round and the human’s prompt as an indented block', () => {
     const prompt = renderStagePrompt({
       ...brief,

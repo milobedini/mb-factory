@@ -615,7 +615,7 @@ const reviewReportSchema = z.looseObject({
 });
 
 // A review that doesn't say what it decided goes to a human, never back round the loop.
-const readReview = (report: unknown): { verdict: ReviewVerdict; fixable: Finding[] } => {
+const readReview = (report: unknown): { verdict: ReviewVerdict; findings: Finding[]; fixable: Finding[] } => {
   const parsed = reviewReportSchema.safeParse(report).data;
   const findings = (parsed?.findings ?? []).flatMap((finding) => {
     const read = findingSchema.safeParse(finding);
@@ -623,11 +623,15 @@ const readReview = (report: unknown): { verdict: ReviewVerdict; fixable: Finding
   });
   return {
     verdict: parsed?.verdict ?? 'human_decision_needed',
+    findings,
     fixable: findings.filter(({ needsHuman }) => needsHuman !== true)
   };
 };
 
 export const reviewVerdict = (report: unknown): ReviewVerdict => readReview(report).verdict;
+
+// Every finding a review reported, those needing a human included.
+export const readReviewFindings = (report: unknown): Finding[] => readReview(report).findings;
 
 // The findings the implement stage could fix: everything but those that need a human's decision.
 export const readFixableFindings = (report: unknown): Finding[] => readReview(report).fixable;

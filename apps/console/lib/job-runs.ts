@@ -1,9 +1,9 @@
 import type { FactoryConfig, Job, JobBrief } from '@mb-factory/core';
-import { coveredHead, jobTitle, readJobReport } from '@mb-factory/core';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { coveredHead, jobTitle, readJobReport, reviewFindingLines } from '@mb-factory/core';
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 
 import { getDb } from '@/db/client';
-import { jobFindings, jobSlots, runs } from '@/db/schema';
+import { jobFindings, jobSlots, runs, workItems } from '@/db/schema';
 
 import { log } from './log';
 import { postSlackMessage } from './slack-api';
@@ -62,9 +62,32 @@ export const slotOf = async (run: Run): Promise<Date> => {
   return slot?.slotAt ?? run.createdAt;
 };
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// The clean-up job's week of review findings: every finished review of the project's work in the 7 days before its slot.
+const weekReviewFindings = async (project: FactoryConfig, slot: Date): Promise<string[]> => {
+  const reviews = await getDb()
+    .select({ issue: workItems.issueIdentifier, report: runs.report })
+    .from(runs)
+    .innerJoin(workItems, eq(runs.workItemId, workItems.id))
+    .where(
+      and(
+        eq(workItems.project, project.name),
+        eq(runs.agent, 'review'),
+        eq(runs.status, 'finished'),
+        isNotNull(runs.report),
+        gte(runs.createdAt, new Date(slot.getTime() - WEEK_MS)),
+        lt(runs.createdAt, slot)
+      )
+    )
+    .orderBy(asc(runs.createdAt));
+  return reviewFindingLines(reviews);
+};
+
 export const jobBriefFor = async (project: FactoryConfig, job: Job, run: Run): Promise<JobBrief> => {
   const [slot, since] = await Promise.all([slotOf(run), job.scope === 'repo' ? undefined : lastHead(project, job)]);
-  return { agent: run.agent, job: job.name, trigger: run.trigger, slot, scope: job.scope, since };
+  const reviewFindings = job.agent === 'cleanup' ? await weekReviewFindings(project, slot) : undefined;
+  return { agent: run.agent, job: job.name, trigger: run.trigger, slot, scope: job.scope, since, reviewFindings };
 };
 
 // A job has no thread: it says what it did in one top-level message in the project's channel.

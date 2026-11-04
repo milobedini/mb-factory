@@ -179,3 +179,10 @@ jobs:
     at: "05:30"
     scope: repo
     model: sonnet
+  # Express step 4: the week's drift swept in one pass, and what reviews raised twice turned into checks.
+  - name: cleanup
+    agent: cleanup
+    day: monday
+    at: "07:00"
+    scope: repo
+    model: sonnet
