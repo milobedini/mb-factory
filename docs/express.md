@@ -202,6 +202,11 @@ Rejected:
   - **What:** implement makes one collage of the changed screens at phone width, with before beside after where an existing screen changed. When the change is an interaction or flow, it records a short video instead.
   - **Where:** it's uploaded to the evidence Blob store and goes at the top of the PR. In the Slack thread it's posted as an image with Ready to merge, or with "Merged" when auto-merged.
   - **Non-UI PRs** get two plain lines on what changed.
+  - **How** (settled 4 Nov on a [canvas](https://claude.ai/artifact/E4g3r5Xym15rN2eftMrdYX)): implement records the screens or the walk at 375 × 812 and names them in `visual.json`. A `visual` job builds the rest with no agent and no secret (`.github/scripts/visual.sh`), so every visual looks the same, and ImageMagick and ffmpeg never read the agent's files beside the store's token. The evidence job uploads the finished files and reports the run.
+    - A collage holds at most four screens on Tastebook's dark ground, each captioned, a changed screen's before beside its after, set apart by a divider.
+    - A video is converted to mp4 so it plays on a phone. Its poster is three of its frames with a play badge and its length.
+    - Slack shows the image under review's text, before *Before merging* and the buttons. A video's "Play the walkthrough" link is a context line rather than a button, so it stays when the buttons are cleared at merge.
+    - The console reads the visual from the newest implement run that has one, so a revision that changes nothing on screen keeps it. It reads only the store's public URLs, which the evidence job writes over whatever the agent put there.
 - **Review is narrowed:**
   - It checks correctness and security against the issue (or spec), in a fresh context.
   - It never reports a failing check or a Vercel preview: the router already handles CI.
@@ -381,7 +386,7 @@ Four steps, each usable by itself. Each step's work is the factory's own (`mb-fa
 
 - **Rulesets:** check that a ruleset's bypass actor bypasses only that ruleset's rules (hence two rulesets), and that the bot's merge is still a merge commit co-authored as before. The bot's bypass must never let it push to the default branch, force-push or delete it: `plugin/hooks/guard-bash.sh` refuses those early but reads only the command's text, so GitHub's protection is what holds (security review, 4 Nov).
 - **Deploy signal:** the App's webhook events or a read-only Vercel token (the factory backlog's "Spend and deploys").
-- **The visual in Slack** (settled 4 Nov): a flow's video goes to Slack as a poster frame linking to it, since an image block plays no video and a GIF is heavy and blurry. Implement makes the visual itself, rather than an agent-free step that would have to work out which screens changed.
+- **The visual in Slack** (settled 4 Nov): a flow's video goes to Slack as a poster frame linking to it, since an image block plays no video and a GIF is heavy and blurry. Implement chooses and records what to show; an agent-free step builds and uploads it ([How](#changes-in-both-tracks)).
 - **Which questions wait:** watch the first weeks of express for infrastructure questions that should have waited, and approach questions that were defaulted. Tune the line in `implement.md`.
 - **Mutation testing:** run time on the runner.
 - **Backlog items Express made moot** were removed from the plan when Phase 4 closed: triage's `next: verify` and verify on previews; review asking again about an accepted trade-off (TAS-81); review blaming a preview's setup (TAS-95); review reporting `human_decision_needed` with no question (TAS-95); a CI fix started for a failure kept at review (TAS-94).

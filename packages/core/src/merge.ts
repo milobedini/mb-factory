@@ -5,6 +5,8 @@ import type { ChecksState } from './inbox';
 import type { SlackBlock, SlackMessage } from './slack';
 import { button, escapeSlack } from './slack';
 import type { AgentRole } from './stages';
+import type { Visual } from './visual';
+import { visualBlocks } from './visual';
 
 // Approve and merge from Slack: a PR review accepted is approved on GitHub as the person who tapped, with their own
 // GitHub connection, and merged with a merge commit. Never without a tap, and only the commit review accepted.
@@ -70,16 +72,18 @@ const openPrButton = (prNumber: number, prUrl: string): SlackBlock => ({
   url: prUrl
 });
 
-export type AcceptedPr = { workItemId: string; prNumber: number; prUrl: string } & MergeNotes;
+export type AcceptedPr = { workItemId: string; prNumber: number; prUrl: string; visual?: Visual } & MergeNotes;
 
-// Review's finished message when the PR is ready to merge: what it said, what to check first, and the buttons. With
-// findings left to choose, Approve and merge sits beside Fix ticked under them instead, so there's one place to decide.
+// Review's finished message when the PR is ready to merge: what it said, the PR's visual, what to check first, and the
+// buttons. With findings left to choose, Approve and merge sits beside Fix ticked under them instead, so there's one
+// place to decide.
 export const slackAcceptedMessage = (finishedText: string, pr: AcceptedPr): SlackMessage => {
   const note = pr.beforeMerging ? beforeMergingLine(pr.beforeMerging) : undefined;
   return {
     text: note ? `${finishedText}\n${note}` : finishedText,
     blocks: [
       section(finishedText),
+      ...(pr.visual ? visualBlocks(pr.visual) : []),
       ...(note ? [section(note)] : []),
       {
         type: 'actions',

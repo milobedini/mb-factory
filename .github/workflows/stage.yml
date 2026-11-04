@@ -34,12 +34,12 @@ on:
         required: false
       FACTORY_APP_PRIVATE_KEY:
         required: false
-      # A read-write token for the project's public Blob store of verify evidence. Only the evidence job reads it: the
-      # stage job, where the agent runs with sudo, never references it.
+      # A read-write token for the project's public Blob store of PR visuals. Only the evidence job reads it: the stage
+      # job, where the agent runs with sudo, never references it.
       EVIDENCE_BLOB_READ_WRITE_TOKEN:
         required: false
       # A person's fine-grained token (contents and pull requests: read and write, on the project's repo only), which
-      # attaches the walkthrough to the PR so it plays there. GitHub refuses attachments from an app's token. Only the
+      # attaches a walkthrough to the PR so it plays there. GitHub refuses attachments from an app's token. Only the
       # evidence job reads it; without it the walkthrough stays a link.
       EVIDENCE_ATTACH_TOKEN:
         required: false
@@ -170,13 +170,14 @@ jobs:
           permission-statuses: read
 
       - name: Prepare the evidence folder
-        # Verify records its screenshots and video here and writes their URLs into the PR; the evidence job uploads them
-        # after this job ends. The URLs are fixed by the store, the repo and the run, so no token is needed to know them.
-        if: steps.start.outputs.agent == 'verify'
+        # Implement records a PR's screens or walkthrough here and writes the visual's URL into the PR; the evidence job
+        # builds the visual and uploads it after this job ends. The URL is fixed by the store, the repo and the run, so
+        # no token is needed to know it. Without a store, implement makes no visual.
+        if: steps.start.outputs.agent == 'implement'
         env:
           STORE: ${{ vars.EVIDENCE_BLOB_STORE_ID }}
         run: |
-          [[ "$STORE" =~ ^[A-Za-z0-9]+$ ]] || { echo "::error::EVIDENCE_BLOB_STORE_ID is not set in the factory environment"; exit 1; }
+          [[ "$STORE" =~ ^[A-Za-z0-9]+$ ]] || { echo "::warning::EVIDENCE_BLOB_STORE_ID is not set in the factory environment: no visual"; exit 0; }
           mkdir -p "$RUNNER_TEMP/evidence"
           {
             echo "EVIDENCE_DIR=$RUNNER_TEMP/evidence"
@@ -326,8 +327,9 @@ jobs:
             '{conclusion: $conclusion, report: $report, events: $events, stageSeconds: $seconds, timeoutMinutes: $limit}' > "$RUNNER_TEMP/run-report.json"
 
       - name: Report the run
-        # A verify run reports from the evidence job, once its files are up, so review never meets broken links.
-        if: always() && steps.start.outcome == 'success' && steps.start.outputs.agent != 'verify'
+        # An implement run reports from the evidence job, once its visual is up, so the PR and Slack never show a
+        # broken image.
+        if: always() && steps.start.outcome == 'success' && steps.start.outputs.agent != 'implement'
         run: |
           audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
           oidc=$(curl -sS --fail-with-body --retry 3 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
@@ -335,21 +337,69 @@ jobs:
           curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" -H 'Content-Type: application/json' \
             --data @"$RUNNER_TEMP/run-report.json" "$CONSOLE_URL/api/runs/$RUN_ID/report"
 
-      - name: Keep the report and evidence for the evidence job
-        if: always() && steps.start.outcome == 'success' && steps.start.outputs.agent == 'verify'
+      - name: Keep the report and recordings for the evidence job
+        if: always() && steps.start.outcome == 'success' && steps.start.outputs.agent == 'implement'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: verify-${{ inputs.run_id }}
+          name: evidence-${{ inputs.run_id }}
           path: |
             ${{ runner.temp }}/run-report.json
             ${{ runner.temp }}/evidence/
           retention-days: 1
 
-  # Uploads a verify run's evidence on a fresh runner the agent never touched: nothing it wrote to the stage job's
+  # Builds an implement run's visual from what it recorded, on a runner holding no secret: ImageMagick and ffmpeg read
+  # files the agent made, so whatever they might be made to do can reach nothing. Hands on only the finished files.
+  visual:
+    needs: stage
+    if: always() && needs.stage.outputs.agent == 'implement'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      recorded: ${{ steps.build.outputs.recorded }}
+      built: ${{ steps.build.outputs.built }}
+    env:
+      FACTORY_REF: ${{ inputs.factory_ref }}
+    steps:
+      - name: Get the recordings
+        id: download
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: evidence-${{ inputs.run_id }}
+          path: ${{ runner.temp }}/stage
+
+      - name: Build the visual
+        id: build
+        if: steps.download.outcome == 'success'
+        # The run's report goes on without it, saying so.
+        continue-on-error: true
+        run: |
+          # A PR that changes nothing on screen has no visual.json, and gets no visual.
+          [[ -f "$RUNNER_TEMP/stage/evidence/visual.json" ]] || { echo "Implement recorded no visual."; exit 0; }
+          echo "recorded=true" >> "$GITHUB_OUTPUT"
+          [[ "$FACTORY_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::factory_ref has unexpected characters"; exit 1; }
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends imagemagick ffmpeg fonts-dejavu-core > /dev/null
+          git clone --quiet --depth 1 --branch "$FACTORY_REF" https://github.com/milobedini/mb-factory.git "$RUNNER_TEMP/mb-factory"
+          mkdir -p "$RUNNER_TEMP/visual"
+          bash "$RUNNER_TEMP/mb-factory/.github/scripts/visual.sh" "$RUNNER_TEMP/stage/evidence" "$RUNNER_TEMP/visual/files" > "$RUNNER_TEMP/visual/visual.json"
+          cat "$RUNNER_TEMP/visual/visual.json"
+          echo "built=true" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the visual for the evidence job
+        if: steps.build.outputs.built == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-${{ inputs.run_id }}
+          path: ${{ runner.temp }}/visual/
+          retention-days: 1
+
+  # Uploads an implement run's visual, on a fresh runner the agent never touched: nothing it wrote to the stage job's
   # environment, and no process it left running, can reach the store's token. Then reports the run.
   evidence:
-    needs: stage
-    if: always() && needs.stage.outputs.agent == 'verify'
+    needs: [stage, visual]
+    if: always() && needs.stage.outputs.agent == 'implement'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: factory
@@ -361,36 +411,49 @@ jobs:
       RUN_ID: ${{ inputs.run_id }}
       CONSOLE_URL: ${{ inputs.console_url }}
     steps:
-      - name: Get the report and evidence
+      - name: Get the report
         id: download
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: verify-${{ inputs.run_id }}
-          path: ${{ runner.temp }}/verify
+          name: evidence-${{ inputs.run_id }}
+          path: ${{ runner.temp }}/stage
 
-      - name: Upload the evidence
+      - name: Get the visual
+        id: visual
+        if: needs.visual.outputs.built == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: visual-${{ inputs.run_id }}
+          path: ${{ runner.temp }}/visual
+
+      - name: Upload the visual
         id: upload
-        if: steps.download.outcome == 'success'
+        if: steps.visual.outcome == 'success'
+        continue-on-error: true
         env:
           EVIDENCE_TOKEN: ${{ secrets.EVIDENCE_BLOB_READ_WRITE_TOKEN }}
           STORE: ${{ vars.EVIDENCE_BLOB_STORE_ID }}
         run: |
-          evidence="$RUNNER_TEMP/verify/evidence"
-          mapfile -t files < <([[ -d "$evidence" ]] && find "$evidence" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
-          # A PR with nothing to show on screen gets no evidence, and nothing links to any.
-          (( ${#files[@]} > 0 )) || { echo "Verify recorded no evidence: nothing to upload."; exit 0; }
-          (( ${#files[@]} <= 20 )) || { echo "::error::verify recorded ${#files[@]} files; at most 20 are uploaded"; exit 1; }
-          # Each failure says which: the store ID is public (it's in the evidence URLs), the rest of the token never shows.
+          visual="$RUNNER_TEMP/visual/files"
+          mapfile -t files < <(find "$visual" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
+          # Each failure says which: the store ID is public (it's in the image URLs), the rest of the token never shows.
+          [[ "$STORE" =~ ^[A-Za-z0-9]+$ ]] || { echo "::error::EVIDENCE_BLOB_STORE_ID is not set in the factory environment"; exit 1; }
           [[ -n "$EVIDENCE_TOKEN" ]] || { echo "::error::EVIDENCE_BLOB_READ_WRITE_TOKEN is empty: add it to the project's factory environment"; exit 1; }
           [[ "$EVIDENCE_TOKEN" =~ ^vercel_blob_rw_([A-Za-z0-9]+)_[^[:space:]\"\'=]+$ ]] || { echo "::error::EVIDENCE_BLOB_READ_WRITE_TOKEN isn't a bare Blob read-write token (vercel_blob_rw_<store>_<secret>, with nothing around it)"; exit 1; }
           store=${BASH_REMATCH[1]}
           [[ "$store" == "$STORE" ]] || { echo "::error::EVIDENCE_BLOB_READ_WRITE_TOKEN is for store $store, not $STORE (EVIDENCE_BLOB_STORE_ID)"; exit 1; }
+          (( ${#files[@]} > 0 )) || { echo "::error::the visual job handed on no files"; exit 1; }
+          # The visual job ran no agent, but read files one made: take only what it should have made.
           for name in "${files[@]}"; do
-            file="$evidence/$name"
-            [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,62}\.(png|webm|mp4)$ ]] || { echo "::error::$name is not a named image or video"; exit 1; }
+            file="$visual/$name"
+            case "$name" in visual.png | poster.png) type=image/png ;; walkthrough.mp4) type=video/mp4 ;; *) echo "::error::$name isn't a visual"; exit 1 ;; esac
             [[ -f "$file" && ! -L "$file" ]] || { echo "::error::$name is not a regular file"; exit 1; }
             (( $(stat -c %s "$file") <= 50000000 )) || { echo "::error::$name is over 50 MB"; exit 1; }
-            case "${name##*.}" in png) type=image/png ;; webm) type=video/webm ;; mp4) type=video/mp4 ;; esac
+          done
+          for name in "${files[@]}"; do
+            file="$visual/$name"
+            case "$name" in *.png) type=image/png ;; *.mp4) type=video/mp4 ;; esac
             pathname=$(jq -rn --arg path "$GITHUB_REPOSITORY/$RUN_ID/$name" '$path | @uri')
             curl -sS --fail-with-body --retry 3 -o /dev/null -X PUT --data-binary @"$file" \
               -H "authorization: Bearer $EVIDENCE_TOKEN" -H 'x-api-version: 13' -H "x-vercel-blob-store-id: $store" \
@@ -398,34 +461,34 @@ jobs:
               -H "x-content-type: $type" "https://vercel.com/api/blob/?pathname=$pathname"
             echo "Uploaded https://${store,,}.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/$name"
           done
-          if [[ -f "$evidence/walkthrough.webm" ]]; then echo "walkthrough=true" >> "$GITHUB_OUTPUT"; fi
+          echo "prefix=https://${store,,}.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/" >> "$GITHUB_OUTPUT"
+          if [[ -f "$visual/walkthrough.mp4" ]]; then echo "video=true" >> "$GITHUB_OUTPUT"; fi
 
       - name: Attach the walkthrough
         # GitHub plays only videos stored with it, so the PR's link to the Blob copy becomes a player. Whatever goes
         # wrong, the PR keeps the link, which works.
-        if: steps.upload.outputs.walkthrough == 'true'
+        if: steps.upload.outcome == 'success' && steps.upload.outputs.video == 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.EVIDENCE_ATTACH_TOKEN }}
-          STORE: ${{ vars.EVIDENCE_BLOB_STORE_ID }}
+          PREFIX: ${{ steps.upload.outputs.prefix }}
         run: |
-          evidence="$RUNNER_TEMP/verify/evidence"
+          visual="$RUNNER_TEMP/visual/files"
           [[ -n "$GH_TOKEN" ]] || { echo "::notice::EVIDENCE_ATTACH_TOKEN isn't set: the walkthrough stays a link"; exit 0; }
-          [[ "$STORE" =~ ^[A-Za-z0-9]+$ ]] || { echo "::warning::EVIDENCE_BLOB_STORE_ID is not set: the walkthrough stays a link"; exit 0; }
-          pr=$(jq -r '.report.pr // empty' "$RUNNER_TEMP/verify/run-report.json")
+          pr=$(jq -r '.report.pr // empty' "$RUNNER_TEMP/stage/run-report.json")
           [[ "$pr" =~ ^[0-9]+$ ]] || { echo "::warning::The report names no PR: the walkthrough stays a link"; exit 0; }
           gh pr edit --help | grep -q -- --attach || { echo "::warning::This runner's gh can't attach files: the walkthrough stays a link"; exit 0; }
           # GitHub's limit for videos on free plans.
-          (( $(stat -c %s "$evidence/walkthrough.webm") <= 10000000 )) || { echo "::warning::The walkthrough is over 10 MB: it stays a link"; exit 0; }
-          link="[Watch the walkthrough](https://${STORE,,}.public.blob.vercel-storage.com/$GITHUB_REPOSITORY/$RUN_ID/walkthrough.webm)"
+          (( $(stat -c %s "$visual/walkthrough.mp4") <= 10000000 )) || { echo "::warning::The walkthrough is over 10 MB: it stays a link"; exit 0; }
+          link="[Watch the walkthrough](${PREFIX}walkthrough.mp4)"
           original="$RUNNER_TEMP/original-body.md"
           gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json body --jq .body > "$original"
           (( $(grep -cxF "$link" "$original") == 1 )) || { echo "::warning::The PR doesn't link the walkthrough on a line of its own: it stays a link"; exit 0; }
           # gh uploads the file and rewrites this reference to GitHub's URL, which plays when alone in its paragraph.
-          awk -v link="$link" '$0 == link { print "![Walkthrough](./walkthrough.webm)"; next } { print }' "$original" > "$evidence/body.md"
-          cd "$evidence"
-          if gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --body-file body.md --attach ./walkthrough.webm \
-            && ! gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json body --jq .body | grep -qF './walkthrough.webm'; then
+          awk -v link="$link" '$0 == link { print "![Walkthrough](./walkthrough.mp4)"; next } { print }' "$original" > "$visual/body.md"
+          cd "$visual"
+          if gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --body-file body.md --attach ./walkthrough.mp4 \
+            && ! gh pr view "$pr" -R "$GITHUB_REPOSITORY" --json body --jq .body | grep -qF './walkthrough.mp4'; then
             echo "Attached the walkthrough to PR #$pr"
           else
             gh pr edit "$pr" -R "$GITHUB_REPOSITORY" --body-file "$original"
@@ -435,19 +498,34 @@ jobs:
       - name: Report the run
         if: always()
         env:
+          RECORDED: ${{ needs.visual.outputs.recorded }}
           UPLOADED: ${{ steps.upload.outcome }}
+          PREFIX: ${{ steps.upload.outputs.prefix }}
         run: |
-          report="$RUNNER_TEMP/verify/run-report.json"
+          report="$RUNNER_TEMP/stage/run-report.json"
           # The stage job ended before writing its report: the console records a run that never started.
           if ! jq -e . "$report" > /dev/null 2>&1; then
             mkdir -p "$(dirname "$report")"
             jq -n '{conclusion: "failure", report: null, events: []}' > "$report"
           fi
-          # The PR already links the files, so a failed upload fails the run rather than leaving review broken links.
-          if [[ "$UPLOADED" != success ]]; then
-            note=" The evidence didn’t upload, so the PR’s links to it are broken."
+          # Only this job says where the visual is: whatever the agent wrote there goes. The image and video names are
+          # the ones just uploaded; the title is text the console checks before showing it.
+          jq 'if (.report | type) == "object" then del(.report.visual) else . end' "$report" > "$report.tmp" && mv "$report.tmp" "$report"
+          if [[ "$UPLOADED" == success ]]; then
+            files="$RUNNER_TEMP/visual/files"
+            image=$([[ -f "$files/visual.png" ]] && echo visual.png || echo poster.png)
+            video=$([[ -f "$files/walkthrough.mp4" ]] && echo walkthrough.mp4 || true)
+            jq --arg prefix "$PREFIX" --arg image "$image" --arg video "$video" --slurpfile made "$RUNNER_TEMP/visual/visual.json" \
+              'if (.report | type) == "object" then .report.visual = (
+                {title: ($made[0].title | tostring), image: ($prefix + $image)}
+                + (if $video != "" then {video: ($prefix + $video)} else {} end)
+                + (if ($video != "" and ($made[0].seconds | type) == "number") then {seconds: $made[0].seconds} else {} end)
+              ) else . end' "$report" > "$report.tmp" && mv "$report.tmp" "$report"
+          elif [[ "$RECORDED" == true ]]; then
+            # The PR already points at the visual, so say why it's broken; the work itself is unaffected.
+            note=" The visual couldn’t be built or uploaded, so the PR’s image is broken (see the visual and evidence jobs)."
             jq --arg note "$note" 'if (.report | type) == "object"
-              then .report.outcome = "failed" | .report.summary = ((.report.summary // "") + $note) else . end' \
+              then .report.summary = ((.report.summary // "") + $note) else . end' \
               "$report" > "$report.tmp" && mv "$report.tmp" "$report"
           fi
 

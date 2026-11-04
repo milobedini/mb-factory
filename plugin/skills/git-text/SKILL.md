@@ -44,6 +44,9 @@ Imperative, starting with a verb, in sentence case. No issue ID, full stop or br
 
 Fill the repo's template in place, keeping every heading and checkbox and deleting its HTML comments. Tick each box the change satisfies, and each that doesn't apply with the reason in brackets (`- [x] Migrations are included for model changes (no model changes)`). Leave a box unticked only when the change falls short, saying why on its line. With no template, use `## Summary`, `## Decisions` (if any) and `## Evidence`.
 
-- **Summary:** `Fixes TAS-123` on its own line, then two to five one-line bullets on what changed and why.
+- **Summary** (the template's first section): `Fixes TAS-123` on its own line, then the visual, then two to five one-line bullets on what changed and why. The visual is one line of its own:
+  - screens: `![<visual.json's title>](<EVIDENCE_URL_PREFIX>visual.png)`
+  - a video: `[Watch the walkthrough](<EVIDENCE_URL_PREFIX>walkthrough.mp4)`, which becomes a player in the PR
+  - no on-screen change, or no visual: two plain lines instead, on what changed and what a person would notice (or that nothing shows on screen)
 - **Decisions**, when there are any: a `**Decisions**` line, then up to five bullets, each `<what was decided>, because <why>`, ending `(asked in spec)`, `(asked during the build)` or `(agent)`. Take them from the spec's Decisions marked `Asked:` and the calls a reviewer would otherwise question.
 - **Evidence:** for a bug, the failing test's name and its assertion line from the run on unchanged code. Always end with the checks line, with the real numbers from the last run (`Checks: lint clean · types clean · 14 tests passed`), and a line for anything unchecked saying what and why.

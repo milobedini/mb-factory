@@ -445,6 +445,8 @@ export type { AgentRole, JobAgent, Stage, StageContext, StageEvent, Transition }
 export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, JOB_AGENTS, STAGES, TERMINAL_STAGES, transition } from './stages';
 export type { UsageSummary, WindowSummary } from './usage';
 export { formatDuration, needsProbe, readingsFromStatusLine, statusLineUsageSchema, summariseUsage } from './usage';
+export type { Visual } from './visual';
+export { readVisual, visualBlocks } from './visual';
 export type { GitHubEvent, IssueUpdate, IssueUpdateActions, LinearState, StopCause } from './work-item-events';
 export {
   decideIssueUpdate,

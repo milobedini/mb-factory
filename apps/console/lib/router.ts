@@ -21,7 +21,8 @@ import type {
   SlackAction,
   SlackMessage,
   Stage,
-  StopCause
+  StopCause,
+  Visual
 } from '@mb-factory/core';
 import {
   ASK_TICKET_GONE,
@@ -142,6 +143,7 @@ import {
   readGate,
   readQuestions,
   readVariantPick,
+  readVisual,
   resumeRequestFor,
   retryText,
   reviewersFor,
@@ -289,6 +291,23 @@ const errorMessage = (error: unknown): string =>
     : String(error);
 
 // Side effects that report on work (Linear, Slack) must not stop the work itself.
+// The PR's visual, from the newest implement run that has one, so a revision that changed nothing on screen keeps it.
+// Never holds up the message it goes in.
+const latestVisual = async (workItem: Pick<WorkItem, 'id' | 'issueIdentifier'>): Promise<Visual | undefined> => {
+  try {
+    const reports = await getDb()
+      .select({ report: runs.report })
+      .from(runs)
+      .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'implement'), isNotNull(runs.report)))
+      .orderBy(desc(runs.createdAt))
+      .limit(10);
+    return reports.map(({ report }) => readVisual(report)).find((visual) => visual !== undefined);
+  } catch (error) {
+    log('error', 'visual lookup failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return undefined;
+  }
+};
+
 const attempt = async (label: string, fields: Record<string, unknown>, effect: () => Promise<unknown>) => {
   try {
     await effect();
@@ -3211,6 +3230,7 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
     mergeEffect: project.mergeEffect,
     findingsLeft: readyToMerge && listingFindings ? findings.length : undefined
   };
+  const visual = readyToMerge && prUrl ? await latestVisual(workItem) : undefined;
   const reply = retrying
     ? retryText(run.agent, run.actionsRunUrl)
     : rerunnable
@@ -3221,6 +3241,7 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
               workItemId: workItem.id,
               prNumber: readyToMerge,
               prUrl,
+              visual,
               ...mergeNotes
             })
           )
