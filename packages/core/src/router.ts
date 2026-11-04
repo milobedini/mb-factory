@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { FactoryConfig } from './config';
 import type { SpecDesign } from './design';
-import { readDesignComponents } from './design';
+import { readDesignComponents, readSpecDesign } from './design';
 import type { Gate } from './gates';
 import { readGate } from './gates';
 import type { Decision, DispatchRequest, HoldReason, Priority, UsageWindow } from './governor';
@@ -12,6 +12,7 @@ import { readQuestions } from './questions';
 import type { RunOutcome, RunStatus, RunTrigger } from './runs';
 import type { AgentRole, Stage } from './stages';
 import { AGENT_FOR_STAGE, JOB_AGENTS, STAGES, TERMINAL_STAGES, transition } from './stages';
+import type { Track } from './track';
 
 // Linear's AgentSessionEvent webhook: only the fields the router reads.
 const sessionEventSchema = z.looseObject({
@@ -576,10 +577,17 @@ export const slicedIssues = (report: unknown): string[] => {
     : [];
 };
 
-// Triage's `next` picks the stage after it; the follow-on run is still `delegated`, as the agents expect.
-const agentAfterTriage = (report: unknown): AgentRole | undefined => {
+// Triage's `next` picks the stage after it; the follow-on run is still `delegated`, as the agents expect. Express has
+// no spec: triage makes the design call instead, and the work goes to design first when it's needed, else to implement.
+const agentAfterTriage = (report: unknown, track: Track, designOn: boolean): AgentRole | undefined => {
   const next = triageReportSchema.safeParse(report).data?.next;
-  return next === 'spec' || next === 'implement' ? next : undefined;
+  if (next !== 'spec' && next !== 'implement') {
+    return undefined;
+  }
+  if (track === 'careful') {
+    return next;
+  }
+  return designOn && readSpecDesign(report)?.needed ? 'design' : 'implement';
 };
 
 export const REVIEW_VERDICTS = ['accepted', 'revision_needed', 'human_decision_needed'] as const;
@@ -751,7 +759,13 @@ export const nextStepAfterRun = (
     report: unknown;
     prompt?: string | null;
   },
-  { hasPr, lockfileOnlyMerge = false, ...loop }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean }
+  {
+    hasPr,
+    lockfileOnlyMerge = false,
+    track = 'careful',
+    designOn = false,
+    ...loop
+  }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean; track?: Track; designOn?: boolean }
 ): NextStep => {
   const waiting = run.status === 'finished' && run.outcome === 'needs_input';
   const questions = waiting ? readQuestions(run.report) : [];
@@ -793,7 +807,7 @@ export const nextStepAfterRun = (
   if (run.agent === 'review') {
     return afterReview(run.report, loop);
   }
-  const agent = run.agent === 'triage' ? agentAfterTriage(run.report) : undefined;
+  const agent = run.agent === 'triage' ? agentAfterTriage(run.report, track, designOn) : undefined;
   // A slicing issue is done once its slices exist: nothing else would ever move it.
   if (run.agent === 'triage' && !agent && slicedIssues(run.report).length > 0) {
     return { stage: 'done' };

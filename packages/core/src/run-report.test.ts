@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { RunReport } from './run-report';
-import { summariseRun as summarise } from './run-report';
+import { summariseRun as summarise, workBranchName } from './run-report';
 
 // Four hours before the fixture's five-hour reset.
 const now = new Date('2026-10-25T07:00:00Z');
@@ -190,5 +190,16 @@ describe('summariseRun', () => {
 
     expect(summary.usage?.numTurns).toBe(7);
     expect(summary.readings).toEqual([]);
+  });
+});
+
+describe('workBranchName', () => {
+  it('takes Linear’s branch name when it’s a plain ref, else the issue and a slug of its title', () => {
+    expect(workBranchName('milo/tas-12-show-cooking-time', 'TAS-12', 'x')).toBe('milo/tas-12-show-cooking-time');
+    expect(workBranchName('bad..name', 'TAS-12', 'Show the cooking time!')).toBe('tas-12-show-the-cooking-time');
+    expect(workBranchName(null, 'TAS-12', 'Let a household’s members edit its recipes and more words')).toBe(
+      'tas-12-let-a-household-s-members-edit'
+    );
+    expect(workBranchName(null, 'TAS-12', null)).toBe('tas-12');
   });
 });

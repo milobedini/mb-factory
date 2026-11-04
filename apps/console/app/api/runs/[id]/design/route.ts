@@ -13,14 +13,15 @@ import { isDesignPass } from '@/lib/design-pass';
 import { commitFiles } from '@/lib/github-api';
 import { log } from '@/lib/log';
 import { findProject } from '@/lib/projects';
-import { handleRunFinished } from '@/lib/router';
+import { handleRunFinished, startWorkBranch } from '@/lib/router';
 import type { FoundRun } from '@/lib/runs';
 import { findAnyRun, recordRunReport } from '@/lib/runs';
 
 const failedWith = (summary: RunSummary, why: string): RunSummary => ({ ...summary, outcome: 'failed', summary: why });
 
-// The hand-off sends the approved design's files with its report: the console commits them to the spec's branch, so
-// the session needs no push access, and a hand-off whose files don't land is a failed run.
+// The hand-off sends the approved design's files with its report: the console commits them to the work's branch (the
+// spec's, or on express one it starts), so the session needs no push access, and a hand-off whose files don't land is
+// a failed run.
 const commitHandOff = async ({ run, workItem }: FoundRun, raw: unknown, summary: RunSummary): Promise<RunSummary> => {
   if (run.trigger !== 'design_approved' || summary.outcome !== 'done' || !workItem) {
     return summary;
@@ -29,15 +30,14 @@ const commitHandOff = async ({ run, workItem }: FoundRun, raw: unknown, summary:
   if (!files) {
     return failedWith(summary, 'The hand-off sent no design files the console could commit.');
   }
-  if (!workItem.branch) {
-    return failedWith(summary, 'The work has no spec branch to commit the design to.');
-  }
   const project = findProject(workItem.project);
   const folder = designFolder(workItem.issueIdentifier);
   try {
+    // Express work has no spec branch yet: the boards start the work's own.
+    const branch = workItem.branch ?? (await startWorkBranch(workItem));
     const sha = await commitFiles(
       workItem.repository,
-      workItem.branch,
+      branch,
       files.map(({ name, content }) => ({ path: `${folder}/${name}`, base64: content })),
       designCommitMessage(
         workItem.issueIdentifier,
@@ -52,7 +52,7 @@ const commitHandOff = async ({ run, workItem }: FoundRun, raw: unknown, summary:
       issue: workItem.issueIdentifier,
       error: error instanceof Error ? error.message : String(error)
     });
-    return failedWith(summary, 'The console couldn’t commit the design files to the spec’s branch.');
+    return failedWith(summary, 'The console couldn’t commit the design files to the work’s branch.');
   }
 };
 

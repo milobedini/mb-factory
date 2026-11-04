@@ -338,7 +338,14 @@ export {
   withFindings
 } from './router';
 export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } from './run-report';
-export { readingsFromEvents, runReportSchema, stageReportSchema, summariseRun } from './run-report';
+export {
+  isPlainBranch,
+  readingsFromEvents,
+  runReportSchema,
+  stageReportSchema,
+  summariseRun,
+  workBranchName
+} from './run-report';
 export type { RunOutcome, RunStatus, RunTotals, RunTrigger, WorkOrigin } from './runs';
 export {
   DESIGN_RUN_LIMIT_MINUTES,

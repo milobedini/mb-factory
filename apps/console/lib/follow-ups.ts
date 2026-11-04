@@ -69,7 +69,8 @@ export const fileRequestedIssues = async (
     issueUrl: workItem.issueUrl,
     prUrl: prUrlOf(workItem),
     runUrl: run.actionsRunUrl,
-    request: run.prompt
+    request: run.prompt,
+    fromReview: run.agent === 'review'
   };
   return fileInTriage(
     project,

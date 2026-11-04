@@ -350,6 +350,8 @@ Four steps, each usable by itself. Each step's work is the factory's own (`mb-fa
 
    Done when an express issue reaches Awaiting Merge with no spec, its questions asked by implement before any code, and none about infrastructure. Keeping the person's merge here lets them watch express PRs before letting go.
 
+   Built on 4 Nov. Relabelling an issue waiting at Spec Review doesn't skip the gate yet: it's in the plan's backlog.
+
 3. **Auto-merge.**
    - The size, path, safety-net and tighten-only rules.
    - The two rulesets: **the user** changes Tastebook's protection from `gh api` commands Claude writes.

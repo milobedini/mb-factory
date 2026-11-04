@@ -111,13 +111,34 @@ describe('issues a person asked for', () => {
   const report = { stage: 'spec', outcome: 'needs_input', summary: 'Recorded it.', issues: [issue, { title: '' }] };
 
   it('reads them from a run a person prompted, skipping malformed ones', () => {
-    expect(readRequestedIssues({ trigger: 'prompted', report })).toEqual([issue]);
-    expect(readRequestedIssues({ trigger: 'spec_approved', report })).toEqual([issue]);
+    expect(readRequestedIssues({ agent: 'spec', trigger: 'prompted', report })).toEqual([issue]);
+    expect(readRequestedIssues({ agent: 'spec', trigger: 'spec_approved', report })).toEqual([issue]);
   });
 
   it('ignores them on a run no person prompted, so a repeat from the session is not filed twice', () => {
-    expect(readRequestedIssues({ trigger: 'delivered', report })).toEqual([]);
-    expect(readRequestedIssues({ trigger: 'prompted', report: { summary: 'Nothing asked.' } })).toEqual([]);
+    expect(readRequestedIssues({ agent: 'spec', trigger: 'delivered', report })).toEqual([]);
+    expect(readRequestedIssues({ agent: 'spec', trigger: 'prompted', report: { summary: 'Nothing asked.' } })).toEqual(
+      []
+    );
+  });
+
+  it('reads a review’s Should fix findings on any trigger, up to five', () => {
+    const many = { ...report, issues: Array.from({ length: 7 }, () => issue) };
+    expect(readRequestedIssues({ agent: 'review', trigger: 'delivered', report: many })).toHaveLength(5);
+  });
+
+  it('says a review’s follow-up was filed rather than fixed on express', () => {
+    const filed = requestedIssue(issue, {
+      issueIdentifier: 'TAS-47',
+      issueUrl: null,
+      prUrl: null,
+      runUrl: null,
+      request: 'Fix the review findings',
+      fromReview: true
+    });
+    expect(filed.description).toContain(
+      "A Should fix finding from TAS-47's review, filed rather than fixed on the express track."
+    );
   });
 
   it('files it sized and linked to the reply that asked for it, with the agent’s text made inert', () => {

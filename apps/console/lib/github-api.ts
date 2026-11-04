@@ -384,6 +384,30 @@ export const pullHead = async (repository: string, prNumber: number): Promise<{ 
 export const defaultBranch = async (repository: string): Promise<string> =>
   (await githubGet<{ default_branch: string }>(`/repos/${repository}`, 'repository')).default_branch;
 
+const refPath = (branch: string): string => branch.split('/').map(encodeURIComponent).join('/');
+
+// A branch at the default branch's head, unless it already exists: express work's design is handed off before any
+// code, so the hand-off's commit starts the branch implement then builds on.
+export const ensureBranch = async (repository: string, branch: string): Promise<void> => {
+  const exists = await githubGet(`/repos/${repository}/git/ref/heads/${refPath(branch)}`, 'branch').then(
+    () => true,
+    () => false
+  );
+  if (exists) {
+    return;
+  }
+  const base = await defaultBranch(repository);
+  const head = (
+    await githubGet<{ object: { sha: string } }>(`/repos/${repository}/git/ref/heads/${refPath(base)}`, 'branch')
+  ).object.sha;
+  await githubWrite(
+    'POST',
+    `/repos/${repository}/git/refs`,
+    { ref: `refs/heads/${branch}`, sha: head },
+    'branch create'
+  );
+};
+
 // Whether a branch already holds a commit: comparing the commit to the branch finds the branch ahead or the same.
 export const branchContains = async (repository: string, branch: string, sha: string): Promise<boolean> => {
   const { status } = await githubGet<{ status: string }>(

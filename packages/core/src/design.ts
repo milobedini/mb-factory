@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { Track } from './track';
+
 const MAX_WHY = 500;
 const MAX_COMPONENTS = 20;
 const MAX_NAME = 80;
@@ -128,7 +130,10 @@ export type DesignBrief = {
   prompt: string | null;
   // The canvas an earlier round drew, to revise rather than start again.
   canvas: string | null;
+  // The design call: the spec's on careful, triage's on express.
   design: SpecDesign | null;
+  // On express there's no spec: the issue and triage's brief are what the design draws.
+  track: Track;
   // The project's Design System artifact, to bring up to date and draw with.
   designSystem: { url: string; build: string; out: string } | null;
 };

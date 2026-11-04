@@ -6,9 +6,12 @@ import type { ChosenFollowUp } from './questions';
 import type { RunTrigger } from './runs';
 import { ESTIMATES, SIZES } from './sizes';
 import { escapeSlack } from './slack';
+import type { AgentRole } from './stages';
 
 const MAX_TITLE = 80;
 const MAX_REQUESTED = 3;
+// Review on express files its Should fix findings rather than fixing them, so it may leave more.
+const MAX_FROM_REVIEW = 5;
 const MAX_REQUEST_QUOTE = 300;
 
 const flatten = (text: string): string => text.replace(/\s+/g, ' ').trim();
@@ -54,15 +57,20 @@ const requestedReportSchema = z.looseObject({ issues: z.array(z.unknown()).nulli
 // from the session doesn't file it again.
 const REQUESTING_TRIGGERS: readonly RunTrigger[] = ['prompted', 'spec_approved', 'design_approved', 'answered'];
 
-// The issues a person's reply asked a stage run to file ("file the and/or choice as its own issue"), from its report.
-export const readRequestedIssues = (run: { trigger: RunTrigger; report: unknown }): RequestedIssue[] =>
-  REQUESTING_TRIGGERS.includes(run.trigger)
+// The issues a person's reply asked a stage run to file ("file the and/or choice as its own issue"), from its report;
+// and review's Should fix findings on express, which it files rather than fixing.
+export const readRequestedIssues = (run: {
+  agent: AgentRole;
+  trigger: RunTrigger;
+  report: unknown;
+}): RequestedIssue[] =>
+  run.agent === 'review' || REQUESTING_TRIGGERS.includes(run.trigger)
     ? (requestedReportSchema.safeParse(run.report).data?.issues ?? [])
         .flatMap((issue) => {
           const read = requestedSchema.safeParse(issue);
           return read.success ? [read.data] : [];
         })
-        .slice(0, MAX_REQUESTED)
+        .slice(0, run.agent === 'review' ? MAX_FROM_REVIEW : MAX_REQUESTED)
     : [];
 
 export type RequestedContext = {
@@ -72,6 +80,8 @@ export type RequestedContext = {
   runUrl: string | null;
   // The person's reply that asked for it: the run's prompt.
   request: string | null;
+  // Filed by review on express, as a Should fix finding, rather than asked for.
+  fromReview?: boolean;
 };
 
 // As a review's follow-up: the agent wrote the text, so it's made inert, sized by the agent and left unprioritised.
@@ -88,9 +98,11 @@ export const requestedIssue = (issue: RequestedIssue, context: RequestedContext)
       '---',
       '',
       [
-        `Asked for in ${linked(context.issueIdentifier, context.issueUrl)}`,
+        context.fromReview
+          ? `A Should fix finding from ${linked(context.issueIdentifier, context.issueUrl)}'s review, filed rather than fixed on the express track`
+          : `Asked for in ${linked(context.issueIdentifier, context.issueUrl)}`,
         context.prUrl ? ` (${linked('its PR', context.prUrl)})` : '',
-        quoted ? `: “${neutraliseMarkdown(quoted)}”` : '',
+        quoted && !context.fromReview ? `: “${neutraliseMarkdown(quoted)}”` : '',
         context.runUrl ? ` ([run log](${context.runUrl}))` : '',
         '.'
       ].join('')

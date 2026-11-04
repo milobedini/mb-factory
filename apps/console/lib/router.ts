@@ -22,6 +22,7 @@ import type {
   SlackMessage,
   Stage,
   StopCause,
+  Track,
   Visual
 } from '@mb-factory/core';
 import {
@@ -188,6 +189,7 @@ import {
   withFindings,
   withRerunButton,
   workaroundsText,
+  workBranchName,
   wrongChannelText
 } from '@mb-factory/core';
 import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
@@ -218,6 +220,7 @@ import {
   commitRuns,
   compareFiles,
   defaultBranch,
+  ensureBranch,
   headChecks,
   mergeBaseIntoBranch,
   mergePull,
@@ -248,6 +251,7 @@ import {
   findUserIdByEmail,
   hasClosingActivity,
   issueAssigneeAndLabels,
+  issueBranchName,
   issueToSize,
   issueToStart,
   moveIssueToStatus,
@@ -292,6 +296,39 @@ const errorMessage = (error: unknown): string =>
     : String(error);
 
 // Side effects that report on work (Linear, Slack) must not stop the work itself.
+// Express work's design is handed off before any code, so with no spec branch the console starts the work's branch
+// for the boards, and implement builds on it.
+export const startWorkBranch = async (workItem: WorkItem): Promise<string> => {
+  const linearName = await issueBranchName(workItem.linearOrganizationId, workItem.linearIssueId).catch(
+    (error: unknown) => {
+      log('warn', 'linear branch name lookup failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+      return null;
+    }
+  );
+  const branch = workBranchName(linearName, workItem.issueIdentifier, workItem.title);
+  await ensureBranch(workItem.repository, branch);
+  await getDb().update(workItems).set({ branch }).where(eq(workItems.id, workItem.id));
+  log('info', 'work branch started', { issue: workItem.issueIdentifier, branch });
+  return branch;
+};
+
+// The work's track from its labels now (triage may have added `careful`), recorded when it changes. A lookup that
+// fails keeps the last known one.
+const currentTrack = async (project: FactoryConfig, workItem: WorkItem): Promise<Track> => {
+  const issue = await issueAssigneeAndLabels(workItem.linearOrganizationId, workItem.linearIssueId).catch(
+    (error: unknown) => {
+      log('warn', 'linear labels lookup failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+      return undefined;
+    }
+  );
+  const track = issue ? trackFor(project.track, issue.labels) : (workItem.track ?? project.track);
+  if (track !== workItem.track) {
+    await getDb().update(workItems).set({ track }).where(eq(workItems.id, workItem.id));
+    touchCard(workItem.id);
+  }
+  return track;
+};
+
 // The PR's visual, from the newest implement run that has one, so a revision that changed nothing on screen keeps it.
 // Never holds up the message it goes in.
 const latestVisual = async (
@@ -685,13 +722,14 @@ const startDesignRun = async (project: FactoryConfig, found: RunWithWorkItem, no
     return 'not_claimed';
   }
   const db = getDb();
-  const [, specs, designs] = await Promise.all([
+  const [, specs, designs, triages] = await Promise.all([
     db
       .update(queue)
       .set({ releasedAt: now })
       .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt))),
     finishedReports(workItem, 'spec'),
-    finishedReports(workItem, 'design')
+    finishedReports(workItem, 'design'),
+    finishedReports(workItem, 'triage')
   ]);
   const text = designFireText({
     runId: run.id,
@@ -704,7 +742,9 @@ const startDesignRun = async (project: FactoryConfig, found: RunWithWorkItem, no
     trigger: run.trigger,
     prompt: run.prompt,
     canvas: latestCanvas(designs),
-    design: latestSpecDesign(specs),
+    // On express there's no spec: triage made the design call.
+    design: latestSpecDesign(specs) ?? latestSpecDesign(triages),
+    track: workItem.track ?? project.track,
     designSystem: project.design.system ?? null
   });
   const fired = await fireRoutine(project.design.routine, text).catch(async (error: unknown) => {
@@ -3175,7 +3215,10 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
     hasPr: workItem.prNumber !== null,
     lockfileOnlyMerge: await lockfileOnlyMerge(run, workItem),
     reviewRounds: workItem.reviewRounds,
-    maxReviewRounds: project.review.maxRounds
+    maxReviewRounds: project.review.maxRounds,
+    // Only triage's next step depends on the track; it's read fresh then, so a label changed meanwhile counts.
+    track: run.agent === 'triage' ? await currentTrack(project, workItem) : (workItem.track ?? project.track),
+    designOn: designStageOn(project)
   });
   // Reported questions and gates are the run's last word: the router posts them instead of closing the session.
   const agentClosed =

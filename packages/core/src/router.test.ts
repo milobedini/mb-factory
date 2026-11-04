@@ -535,6 +535,23 @@ describe('nextStepAfterRun', () => {
     expect(nextStepAfterRun(sliced({ next: 'spec', created: ['TAS-38'] }), loop)).toMatchObject({ stage: 'spec' });
   });
 
+  it('skips the spec on express: implement, or design first when triage says it’s needed', () => {
+    const express = { ...loop, track: 'express' as const, designOn: true };
+    const delegated = (agent: string) => ({ agent, trigger: 'delegated', priority: 'feature', prompt: null });
+    expect(nextStepAfterRun(triaged('spec'), express)).toEqual({ stage: 'building', request: delegated('implement') });
+    expect(nextStepAfterRun(triaged('implement'), express)).toMatchObject({ request: { agent: 'implement' } });
+    const needsDesign = {
+      ...triaged('spec'),
+      report: { next: 'spec', design: { decision: 'needed', why: 'A new screen', components: [] } }
+    };
+    expect(nextStepAfterRun(needsDesign, express)).toEqual({ stage: 'design', request: delegated('design') });
+    expect(nextStepAfterRun(needsDesign, { ...express, designOn: false })).toMatchObject({
+      request: { agent: 'implement' }
+    });
+    expect(nextStepAfterRun(triaged('human'), express)).toEqual({});
+    expect(nextStepAfterRun(needsDesign, loop)).toMatchObject({ stage: 'spec', request: { agent: 'spec' } });
+  });
+
   it('hands a reported gate to the router, unless the run also asked questions', () => {
     const gate = { body: 'Split into 16.', options: ['Create them', 'Change something', 'Keep as one'] };
     const waiting = { ...finished, outcome: 'needs_input' as const, agent: 'triage' as const };

@@ -201,6 +201,7 @@ describe('designFireText', () => {
       prompt: null,
       canvas: null,
       design: { needed: true, why: 'A new screen.', components: [{ name: 'Avatar', change: 'new' }] },
+      track: 'careful' as const,
       designSystem: {
         url: 'https://claude.ai/artifact/Log29Ws2J3fTumoXaxVr1C',
         build: 'pnpm dino:bundle',

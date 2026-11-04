@@ -25,12 +25,13 @@ You run when an issue is delegated, when a person prompts the session while it's
 - No open issue already covers it. When one does, or this follows up work in flight, report `declined` with the link.
 - It's sized: XS or S is local and obvious; M is several files with bounded uncertainty; L or XL is cross-cutting, risky or a whole feature. Past XL, recommend slicing it into a project.
 - The next stage is chosen. `spec` when a person must decide something (more than one reasonable behaviour, or a requirement the issue leaves out; uncertainty that research resolves doesn't count) or the size is L or more; otherwise `implement`. A part of a split issue (its description says its spec is approved) goes to `implement` whatever its size, with the parent's spec and the part named in the brief. The router acts on `next` at once, so choose `human` whenever a person should look first.
+- **On `track: express`** there's no spec stage. Choose `implement` wherever careful would choose `spec` or `implement`, and make the design call the spec would, in the report's `design` (`factory-run`) and the brief. Design is `needed` for a new screen or flow, a new Dino component, a new variant, size or state of one, or a visible layout change. It's `skip` when the work reuses components with no visual change, when `docs/design.md`'s rules decide a small UI change, or when the reference boards already draw the change, whatever its size. List the components the work needs as `new` or `changed`, checked against the set `docs/design.md` points to. Unsure: `needed`. When a person should approve a plan before any code (auth, payments, permissions, deleting or rewriting data, a public API), add the issue's `careful` label and choose `spec`: you may tighten the track, never loosen it.
 - The issue's estimate is set (Linear's T-shirt scale: XS = 1, S = 2, M = 3, L = 5, XL = 8), it carries the `factory` label, and the brief is posted as a comment (`linear-reporting`). References matter most: without them the next stage collects everything again.
 
   ```markdown
   **Triage brief**
 
-  **Size:** M · **Next:** implement · **Ambiguity:** none
+  **Size:** M · **Next:** implement · **Ambiguity:** none · **Design:** skip (reuses the banner)
 
   ## What and where
   ## Reproduction
@@ -49,7 +50,7 @@ Read the repo and run anything locally, throwaway tests included; commit and pus
 
 One `response` with the size and the next step, then the stage report (`factory-run`):
 
-- `done` with `next: spec`, `implement` or `human`.
+- `done` with `next: spec`, `implement` or `human`, and on express `design`.
 - `needs_input` with `questions`, each with your suggestion (`linear-reporting`).
 - `declined` for a duplicate or work that shouldn't happen.
 

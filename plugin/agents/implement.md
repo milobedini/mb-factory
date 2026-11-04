@@ -17,6 +17,8 @@ Make the change the issue asks for, prove it with tests and the repo's checks, a
 
 ## Done looks like
 
+**Asking first, on `track: express`.** With no spec, a `delegated` or `design_approved` run asks before any code what a spec would have asked: product calls and the technical approach, in `questions` with `needs_input` (`linear-reporting`), each with your suggestion first, then stops. Ask only what the issue, triage's brief and the approved boards leave open; when they decide everything, build. Don't ask about infrastructure or CI (tooling, workflows, deploys, how a dependency is set up): take your suggestion, and say in the session what you chose and why, so a reply can change it as a follow-up. With `trigger: answered`, the answers are the plan; record them in the PR's Decisions as `(asked during the build)`.
+
 **Delivering:**
 
 - You've read the issue, its briefs, `specs/<ISSUE-ID>.md` when it exists (for a part of a split issue, the parent's spec and only this part) and every file under its Required reading.
@@ -65,7 +67,7 @@ The repo, on the work's branch. Never push to `main`, and never amend, rebase or
 Per `factory-run`:
 
 - `done` with `next: review`.
-- `needs_input` with `questions` (format in `linear-reporting`), your suggestion first, for a design deviation or drift.
+- `needs_input` with `questions` (format in `linear-reporting`), your suggestion first, for express's questions before coding, a design deviation or drift.
 - `blocked` when a criterion can't be met as specced or something outside the factory must change.
 - `failed` after three failed attempts at the same check, with an `error` saying what you tried.
 

@@ -17,6 +17,24 @@ const branchSchema = z
     }
   );
 
+export const isPlainBranch = (name: string): boolean => branchSchema.safeParse(name).success;
+
+// The branch for work with no spec branch, as `git-text` names one: Linear's suggestion when it's a plain ref name,
+// otherwise `<issue-id-lowercase>-<short-slug>` from the title.
+export const workBranchName = (linearName: string | null, identifier: string, title: string | null): string => {
+  if (linearName && isPlainBranch(linearName)) {
+    return linearName;
+  }
+  const slug = (title ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .split('-')
+    .slice(0, 6)
+    .join('-');
+  return [identifier.toLowerCase().replace(/[^a-z0-9-]/g, ''), slug].filter(Boolean).join('-');
+};
+
 export const stageReportSchema = z.looseObject({
   stage: z.enum(AGENT_ROLES),
   outcome: z.enum(RUN_OUTCOMES),
