@@ -72,17 +72,26 @@ describe('mergeRoute', () => {
 
   it('sends a PR touching a risky path to the person, a renamed one by either name', () => {
     expect(reasons([file('backend/recipes/migrations/0013_x.py')])).toEqual([
-      'touches backend/recipes/migrations/0013_x.py'
+      'changes a risky path: backend/recipes/migrations/0013_x.py'
     ]);
     expect(
       reasons([file('backend/recipes/old.py', { status: 'renamed', previousFilename: 'backend/config/settings.py' })])
-    ).toEqual(['touches backend/recipes/old.py']);
+    ).toEqual(['changes a risky path: backend/recipes/old.py']);
+  });
+
+  it('lets a test of risky code through', () => {
+    const signIn = { ...rules, humanMerge: ['frontend/src/sign-in-*.{ts,tsx}'] };
+    expect(mergeRoute(signIn, { files: [file('frontend/src/sign-in-page.test.tsx')] })).toEqual({ route: 'auto' });
+    expect(mergeRoute(signIn, { files: [file('frontend/src/sign-in-page.tsx')] })).toEqual({
+      route: 'person',
+      reasons: ['changes a risky path: frontend/src/sign-in-page.tsx']
+    });
   });
 
   it('names at most three files', () => {
     const workflows = ['a', 'b', 'c', 'd', 'e'].map((name) => file(`.github/workflows/${name}.yml`));
     expect(reasons(workflows)).toEqual([
-      'touches .github/workflows/a.yml, .github/workflows/b.yml, .github/workflows/c.yml and 2 more'
+      'changes a risky path: .github/workflows/a.yml, .github/workflows/b.yml, .github/workflows/c.yml and 2 more'
     ]);
   });
 
@@ -157,7 +166,7 @@ describe('mergeRoute', () => {
       ])
     ).toEqual([
       '505 source lines changed, over 400',
-      'touches backend/recipes/migrations/0013_x.py',
+      'changes a risky path: backend/recipes/migrations/0013_x.py',
       'changes lint, type or test settings: biome.json'
     ]);
   });
@@ -190,7 +199,7 @@ describe('reviewHolds', () => {
       reviewHolds({ humanMerge: 'It changes who sees a recipe.', beforeMerging: 'Check the seed recipes.' }, 2)
     ).toEqual([
       'review asked for your merge: It changes who sees a recipe.',
-      'review asks you to check first: Check the seed recipes.',
+      'review asks you to check something first (above)',
       'review left 2 findings for you to choose'
     ]);
     expect(reviewHolds({ verdict: 'accepted' }, 1)).toEqual(['review left a finding for you to choose']);

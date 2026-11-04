@@ -85,7 +85,7 @@ export type AcceptedPr = {
 // What the express merge rules made of a PR (docs/express.md, "Who merges").
 export const mergeRouteLine = (route: MergeRoute, auto: boolean): string =>
   route.route === 'person'
-    ? `Express: this one waits for your merge: ${escapeSlack(route.reasons.join('; '))}.`
+    ? `Express: this one waits for your merge: ${escapeSlack(route.reasons.map((reason) => reason.replace(/[.\s]+$/, '')).join('; '))}.`
     : auto
       ? 'Express: this one merges itself once its checks pass.'
       : 'Express: this one would merge itself once its checks pass. Auto-merge isn’t on yet, so it’s yours to merge.';

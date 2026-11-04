@@ -56,10 +56,20 @@ refused() {
   printf '%s' "$2" > "$rec/visual.json"
   if build > /dev/null; then fail "should refuse: $1"; else pass "refuses $1"; fi
 }
+# An odd caption is tidied, never refused: one character shouldn't cost the whole visual.
+tidied() {
+  rm -rf "$work/out"
+  jq -n --arg caption "$2" '{title: "T", screens: [{caption: $caption, after: "2-after.png"}]}' > "$rec/visual.json"
+  if build > /dev/null; then pass "tidies $1"; else fail "should tidy $1: $(cat "$work/err")"; fi
+}
+tidied 'a colon' 'Privacy: your choices'
+tidied 'a caption read as a file' '@/etc/passwd'
+tidied 'a long caption' 'A caption far too long to fit'
+tidied 'curly quotes and a percent sign' '“Saved” 100% ✓'
+tidied 'nothing usable' '✓✓✓'
+
 refused 'no title' '{"screens": [{"caption": "One", "after": "2-after.png"}]}'
 refused 'neither screens nor a video' '{"title": "Nothing"}'
-refused 'a caption read as a file' '{"title": "T", "screens": [{"caption": "@/etc/passwd", "after": "2-after.png"}]}'
-refused 'a long caption' '{"title": "T", "screens": [{"caption": "A caption far too long to fit", "after": "2-after.png"}]}'
 refused 'a path outside the folder' '{"title": "T", "screens": [{"caption": "One", "after": "../2-after.png"}]}'
 refused 'a missing file' '{"title": "T", "screens": [{"caption": "One", "after": "9-after.png"}]}'
 refused 'more than four screens' '{"title": "T", "screens": [{"caption": "A", "before": "1-before.png", "after": "1-after.png"}, {"caption": "B", "before": "1-before.png", "after": "2-after.png"}, {"caption": "C", "after": "3-after.png"}]}'

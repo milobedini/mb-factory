@@ -91,10 +91,15 @@ describe('slackAcceptedMessage', () => {
     const person = slackAcceptedMessage(finished, {
       ...pr,
       beforeMerging: undefined,
-      mergeRoute: { route: { route: 'person', reasons: ['touches a <path>', 'adds noqa in x.py'] }, auto: true }
+      mergeRoute: {
+        route: { route: 'person', reasons: ['review asked: it’s <risky>.', 'adds noqa in x.py'] },
+        auto: true
+      }
     });
     expect(person.blocks.at(-1)).toMatchObject({
-      elements: [{ text: 'Express: this one waits for your merge: touches a &lt;path&gt;; adds noqa in x.py.' }]
+      elements: [
+        { text: 'Express: this one waits for your merge: review asked: it’s &lt;risky&gt;; adds noqa in x.py.' }
+      ]
     });
     const merging = slackAcceptedMessage(finished, {
       ...pr,

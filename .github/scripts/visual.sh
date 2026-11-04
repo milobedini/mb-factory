@@ -88,8 +88,17 @@ row() {
   im -background "$bg" -gravity center "$@" +smush "$gap" +repage "$dest"
 }
 
-# Plain ASCII, so the check doesn't depend on the runner's locale; short enough that ", before" still fits.
-caption_pattern="^[A-Za-z0-9][A-Za-z0-9 ,.'()&/+-]{0,21}$"
+# Plain ASCII, so the check doesn't depend on the runner's locale; short enough that ", before" still fits. A caption
+# outside it is tidied rather than refused, so one odd character never costs the whole visual: anything else becomes a
+# space, it starts at a letter or digit (never `@`, which ImageMagick reads as a file) and it's cut to length.
+caption_pattern="^[A-Za-z0-9][A-Za-z0-9 ,.:'()&/+-]{0,21}$"
+
+tidy_caption() {
+  local tidied
+  tidied=$(printf '%s' "$1" | LC_ALL=C tr -c "A-Za-z0-9 ,.:'()&/+-" ' ' | LC_ALL=C sed -e 's/  */ /g' -e 's/^[^A-Za-z0-9]*//' \
+    | cut -c1-22 | sed 's/ *$//')
+  if [[ "$tidied" =~ $caption_pattern ]]; then printf '%s' "$tidied"; else printf 'Screen %s' "$2"; fi
+}
 
 collage() {
   local count
@@ -104,9 +113,7 @@ collage() {
   local index
   for ((index = 0; index < count; index++)); do
     local caption after before
-    caption=$(jq -r ".screens[$index].caption // empty" "$manifest")
-    [[ "$caption" =~ $caption_pattern ]] \
-      || fail "screen $((index + 1))'s caption must be up to 22 letters, digits, spaces and plain punctuation"
+    caption=$(tidy_caption "$(jq -r ".screens[$index].caption // empty" "$manifest")" "$((index + 1))")
     after=$(recorded "$(jq -r ".screens[$index].after // empty" "$manifest")" png)
     before=$(jq -r ".screens[$index].before // empty" "$manifest")
     if [[ -n "$before" ]]; then

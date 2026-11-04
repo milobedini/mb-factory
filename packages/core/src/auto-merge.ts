@@ -169,7 +169,8 @@ export const mergeRoute = (
   const unread = files.filter(
     (file) => !file.patch && changed(file) > 0 && (isTest(file.filename) || !isUncounted(file.filename))
   );
-  const risky = files.filter((file) => paths(file).some(isRisky));
+  // A test of risky code isn't risky itself.
+  const risky = files.filter((file) => !isTest(file.filename) && paths(file).some(isRisky));
   const bumps = files.flatMap(majorBumps);
   const testsGone = files.filter(
     (file) =>
@@ -187,7 +188,7 @@ export const mergeRoute = (
     ...review,
     ...(sourceLines > rules.size.lines ? [`${sourceLines} source lines changed, over ${rules.size.lines}`] : []),
     ...(source.length > rules.size.files ? [`${source.length} source files changed, over ${rules.size.files}`] : []),
-    ...(risky.length > 0 ? [`touches ${names(risky)}`] : []),
+    ...(risky.length > 0 ? [`changes a risky path: ${names(risky)}`] : []),
     ...(bumps.length > 0 ? [`a major version: ${listed(bumps)}`] : []),
     ...(testsGone.length > 0 ? [`deletes a test: ${names(testsGone)}`] : []),
     ...(skipped.length > 0 ? [`skips a test in ${names(skipped)}`] : []),
@@ -206,7 +207,8 @@ export const reviewHolds = (report: unknown, findingsLeft: number): string[] => 
   const [reason, check] = [readHumanMerge(report), readBeforeMerging(report)];
   return [
     ...(reason ? [`review asked for your merge: ${reason}`] : []),
-    ...(check ? [`review asks you to check first: ${check}`] : []),
+    // Said in full just above the line, under Before merging.
+    ...(check ? ['review asks you to check something first (above)'] : []),
     ...(findingsLeft > 0
       ? [`review left ${findingsLeft === 1 ? 'a finding' : `${findingsLeft} findings`} for you to choose`]
       : [])
