@@ -66,6 +66,24 @@ models:
 review:
   maxRounds: 2
 
+# Run by the stage's hooks: `edit` on each file the agent edits, its errors handed straight back; `stop` before the stage
+# agent may finish, for each area its branch changed (at most three times a run).
+checks:
+  fast:
+    edit:
+      - paths: [frontend/, tools/]
+        run: pnpm exec biome check --no-errors-on-unmatched {file}
+      - paths: [backend/]
+        extensions: [py]
+        dir: backend
+        run: uv run ruff check {file} && uv run ruff format --check {file}
+    stop:
+      - paths: [frontend/]
+        run: pnpm --filter frontend type-check && pnpm --filter frontend exec vitest run --project unit --changed origin/main
+      - paths: [backend/]
+        dir: backend
+        run: uv run pytest -x -q
+
 # The console's own daily check: warnings and errors, stuck runs, late jobs. Not a Claude run.
 health:
   at: "07:00"

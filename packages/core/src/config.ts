@@ -47,6 +47,24 @@ export const usagePolicySchema = z.object({
   downshift: z.partialRecord(z.enum(['triage', 'slicing', 'spec', 'implement', 'review']), z.string().min(1))
 });
 
+// A path inside the repo: no leading slash or dot, and no `..`.
+const repoPath = z.string().regex(/^(?!.*\.\.)[A-Za-z0-9_-][A-Za-z0-9._/-]*$/);
+
+// One fast check: it applies to files under any of `paths` (from the repo root), with one of `extensions` when given.
+// `run` is a shell command run in `dir` (from the repo root); an edit check's `{file}` is the edited file, relative to
+// `dir`, passed quoted.
+export const fastCheckSchema = z.object({
+  paths: z.array(repoPath).min(1),
+  extensions: z
+    .array(z.string().regex(/^[a-z0-9]+$/))
+    .min(1)
+    .optional(),
+  dir: repoPath.optional(),
+  run: z.string().min(1)
+});
+
+export type FastCheck = z.infer<typeof fastCheckSchema>;
+
 export const factoryConfigSchema = z.object({
   schemaVersion: z.literal(1),
   name: z.string().min(1),
@@ -166,6 +184,13 @@ export const factoryConfigSchema = z.object({
     }),
   // The console's daily check on itself: warnings and errors, stuck runs, late jobs. No Claude run, so it isn't held.
   health: z.object({ at: clockTime }).optional(),
+  // Fast checks the stage run's hooks run (plugin/hooks): `edit` on each file the agent edits, `stop` before the stage
+  // agent may finish, for the areas its branch changed.
+  checks: z
+    .object({
+      fast: z.object({ edit: z.array(fastCheckSchema).default([]), stop: z.array(fastCheckSchema).default([]) })
+    })
+    .optional(),
   // Where the project's app reports its errors; the health check lists new unresolved Sentry issues from here.
   sentry: z
     .object({

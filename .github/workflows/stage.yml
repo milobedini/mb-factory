@@ -91,12 +91,23 @@ jobs:
 
       - name: Start the run
         id: start
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
         run: |
           audience=$(jq -rn --arg url "$CONSOLE_URL" '$url | @uri')
           oidc=$(curl -sS --fail-with-body --retry 3 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
           echo "::add-mask::$oidc"
           response=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $oidc" "$CONSOLE_URL/api/runs/$RUN_ID/start")
-          echo "agent=$(jq -r '.agent // empty' <<< "$response")" >> "$GITHUB_OUTPUT"
+          agent=$(jq -r '.agent // empty' <<< "$response")
+          echo "agent=$agent" >> "$GITHUB_OUTPUT"
+          # For the plugin's hooks (plugin/hooks): the project's fast checks as one line of JSON, the stage agent, and
+          # the branch nothing may be pushed to.
+          [[ "$agent" =~ ^[a-z]+$ && "$DEFAULT_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::unexpected agent or default branch"; exit 1; }
+          {
+            echo "FACTORY_AGENT=$agent"
+            echo "FACTORY_BASE=$DEFAULT_BRANCH"
+            echo "FACTORY_CHECKS=$(jq -c '.checks // empty' <<< "$response")"
+          } >> "$GITHUB_ENV"
           # A conflict fix: what the merge step needs to try merging the base branch in without the agent.
           # Each value is checked before it's written, so none can add a line of its own to the step's outputs.
           merge=$(jq -c '.merge // empty' <<< "$response")

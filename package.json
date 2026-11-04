@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "pnpm --filter @mb-factory/console dev",
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && pnpm test:hooks",
+    "test:hooks": "bash plugin/hooks/test.sh",
     "type-check": "pnpm -r type-check",
     "lint:biome": "biome check .",
     "lint": "pnpm lint:biome && pnpm type-check",

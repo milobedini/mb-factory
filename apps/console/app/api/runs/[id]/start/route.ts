@@ -88,6 +88,8 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
     agent: found.run.agent,
     linearAccessToken,
     agentSessionId: workItem.agentSessionId,
-    merge: merge?.base ? merge : null
+    merge: merge?.base ? merge : null,
+    // The project's fast checks, which the plugin's hooks run on the agent's edits and before it finishes.
+    checks: project?.checks?.fast ?? null
   });
 };

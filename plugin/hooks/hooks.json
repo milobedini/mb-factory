@@ -1,0 +1,22 @@
+{
+  "description": "Fast feedback and guards for mb-factory stage runs: the project's checks on each edit and before the stage agent finishes, and a guard on git and gh commands.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard-bash.sh", "timeout": 10 }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/check-edit.sh", "timeout": 180 }]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/check-stop.sh", "timeout": 900 }]
+      }
+    ]
+  }
+}

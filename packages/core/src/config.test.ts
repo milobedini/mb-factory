@@ -175,3 +175,23 @@ describe('reviewersFor', () => {
     expect(reviewersFor(config, 'milobedini/mb-factory')).toEqual([]);
   });
 });
+
+describe('checks', () => {
+  it('reads the fast checks the stage hooks run', () => {
+    const { checks } = parseProject(tastebookConfig);
+    expect(checks?.fast.edit.map(({ paths }) => paths)).toEqual([['frontend/', 'tools/'], ['backend/']]);
+    expect(checks?.fast.edit[1]).toMatchObject({ extensions: ['py'], dir: 'backend' });
+    expect(checks?.fast.stop).toHaveLength(2);
+  });
+
+  it('refuses a path or directory that could leave the repo or break the shell', () => {
+    const bad = (path: string) => tastebookConfig.replace('paths: [frontend/, tools/]', `paths: ["${path}"]`);
+    expect(() => parseProject(bad('/etc/'))).toThrow();
+    expect(() => parseProject(bad('frontend/$(id)'))).toThrow();
+    expect(() =>
+      parseProject(
+        tastebookConfig.replace('dir: backend\n        run: uv run ruff', 'dir: ../x\n        run: uv run ruff')
+      )
+    ).toThrow();
+  });
+});
