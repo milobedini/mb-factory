@@ -74,7 +74,11 @@ describe('slackAcceptedMessage', () => {
   });
 
   it('says what the express merge rules made of the PR under the buttons', () => {
-    const auto = slackAcceptedMessage(finished, { ...pr, beforeMerging: undefined, mergeRoute: { route: 'auto' } });
+    const auto = slackAcceptedMessage(finished, {
+      ...pr,
+      beforeMerging: undefined,
+      mergeRoute: { route: { route: 'auto' }, auto: false }
+    });
     expect(auto.blocks.at(-1)).toEqual({
       type: 'context',
       elements: [
@@ -87,10 +91,18 @@ describe('slackAcceptedMessage', () => {
     const person = slackAcceptedMessage(finished, {
       ...pr,
       beforeMerging: undefined,
-      mergeRoute: { route: 'person', reasons: ['touches a <path>', 'adds noqa in x.py'] }
+      mergeRoute: { route: { route: 'person', reasons: ['touches a <path>', 'adds noqa in x.py'] }, auto: true }
     });
     expect(person.blocks.at(-1)).toMatchObject({
       elements: [{ text: 'Express: this one waits for your merge: touches a &lt;path&gt;; adds noqa in x.py.' }]
+    });
+    const merging = slackAcceptedMessage(finished, {
+      ...pr,
+      beforeMerging: undefined,
+      mergeRoute: { route: { route: 'auto' }, auto: true }
+    });
+    expect(merging.blocks.at(-1)).toMatchObject({
+      elements: [{ text: 'Express: this one merges itself once its checks pass.' }]
     });
   });
 
@@ -150,6 +162,9 @@ describe('slackMergeSettled', () => {
 
   it('says less when it doesn’t know who merged or the commit', () => {
     expect(mergedLine({ by: null, time: '16:52', repository: 'o/r', sha: null })).toBe('✓ Merged at 16:52');
+    expect(mergedLine({ by: 'itself', time: '16:52', repository: 'o/r', sha: null })).toBe(
+      '✓ Merged by itself at 16:52'
+    );
   });
 
   // TAS-40, 27 Oct: rounds 1, 3 and 4 each left Approve and merge in the thread.

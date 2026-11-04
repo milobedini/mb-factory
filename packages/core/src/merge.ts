@@ -78,15 +78,17 @@ export type AcceptedPr = {
   prNumber: number;
   prUrl: string;
   visual?: Visual;
-  // The express merge rules' reading, said under the buttons.
-  mergeRoute?: MergeRoute;
+  // The express merge rules' reading, said under the buttons, and whether the factory merges what they leave to it.
+  mergeRoute?: { route: MergeRoute; auto: boolean };
 } & MergeNotes;
 
-// What the express merge rules made of a PR, while the person still merges every one (docs/express.md, step 3).
-export const mergeRouteLine = (route: MergeRoute): string =>
-  route.route === 'auto'
-    ? 'Express: this one would merge itself once its checks pass. Auto-merge isn’t on yet, so it’s yours to merge.'
-    : `Express: this one waits for your merge: ${escapeSlack(route.reasons.join('; '))}.`;
+// What the express merge rules made of a PR (docs/express.md, "Who merges").
+export const mergeRouteLine = (route: MergeRoute, auto: boolean): string =>
+  route.route === 'person'
+    ? `Express: this one waits for your merge: ${escapeSlack(route.reasons.join('; '))}.`
+    : auto
+      ? 'Express: this one merges itself once its checks pass.'
+      : 'Express: this one would merge itself once its checks pass. Auto-merge isn’t on yet, so it’s yours to merge.';
 
 // Review's finished message when the PR is ready to merge: what it said, the PR's visual, what to check first, and the
 // buttons. With findings left to choose, Approve and merge sits beside Fix ticked under them instead, so there's one
@@ -107,7 +109,12 @@ export const slackAcceptedMessage = (finishedText: string, pr: AcceptedPr): Slac
         ]
       },
       ...(pr.mergeRoute
-        ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: mergeRouteLine(pr.mergeRoute) }] }]
+        ? [
+            {
+              type: 'context',
+              elements: [{ type: 'mrkdwn', text: mergeRouteLine(pr.mergeRoute.route, pr.mergeRoute.auto) }]
+            }
+          ]
         : [])
     ]
   };
@@ -187,6 +194,7 @@ export const slackMergeSettled = (blocks: SlackBlock[], line: string): SlackBloc
   section(line)
 ];
 
+// `by` is the person who merged it, or `itself` when the factory's App did.
 export const mergedLine = ({
   by,
   time,
@@ -198,7 +206,7 @@ export const mergedLine = ({
   repository: string;
   sha: string | null;
 }): string => {
-  const who = by ? ` by ${escapeSlack(by)}` : '';
+  const who = by === 'itself' ? ' by itself' : by ? ` by ${escapeSlack(by)}` : '';
   const commit = sha ? ` · <https://github.com/${repository}/commit/${sha}|${sha.slice(0, SHORT_SHA)}>` : '';
   return `✓ Merged${who} at ${time}${commit}`;
 };

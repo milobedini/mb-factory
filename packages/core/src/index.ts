@@ -23,7 +23,7 @@ export {
   slackToMarkdown
 } from './ask';
 export type { MergeRoute, MergeRules } from './auto-merge';
-export { globMatcher, majorBumps, mergeRoute, mergeRulesSchema, readHumanMerge } from './auto-merge';
+export { globMatcher, majorBumps, mergeRoute, mergeRulesSchema, readHumanMerge, reviewHolds } from './auto-merge';
 export type { AskBrief, Brief, DispatchPayload, JobBrief, SizeBrief } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
 export type { CardInput, CardRun, CardStatus, NextIssue, SlackCard } from './card';

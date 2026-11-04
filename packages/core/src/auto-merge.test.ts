@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MergeRules } from './auto-merge';
-import { globMatcher, majorBumps, mergeRoute, mergeRulesSchema, readHumanMerge } from './auto-merge';
+import { globMatcher, majorBumps, mergeRoute, mergeRulesSchema, readHumanMerge, reviewHolds } from './auto-merge';
 import type { ChangedFile } from './router';
 
 const rules: MergeRules = mergeRulesSchema.parse({
@@ -22,8 +22,8 @@ const file = (filename: string, overrides: Partial<ChangedFile> = {}): ChangedFi
   ...overrides
 });
 
-const reasons = (files: ChangedFile[] | undefined, tightened?: string): string[] => {
-  const route = mergeRoute(rules, { files, tightened });
+const reasons = (files: ChangedFile[] | undefined, held?: string[]): string[] => {
+  const route = mergeRoute(rules, { files, held });
   return route.route === 'person' ? route.reasons : [];
 };
 
@@ -139,8 +139,8 @@ describe('mergeRoute', () => {
   });
 
   it('sends a PR to the person when review asked, or GitHub can’t show it', () => {
-    expect(reasons([file('frontend/src/a.tsx')], 'It changes who can see a private recipe.')).toEqual([
-      'review asked for your merge: It changes who can see a private recipe.'
+    expect(reasons([file('frontend/src/a.tsx')], ['review asked for your merge: It changes who sees it.'])).toEqual([
+      'review asked for your merge: It changes who sees it.'
     ]);
     expect(reasons(undefined)).toEqual(['too many files for GitHub to list']);
     expect(reasons([file('frontend/src/big.tsx', { patch: null, additions: 40 })])).toEqual([
@@ -181,6 +181,20 @@ describe('majorBumps', () => {
     );
     expect(majorBumps(file('package.json', { patch: '@@\n+    "react": "^19.0.0",' }))).toEqual([]);
     expect(majorBumps(file('src/a.ts', { patch: '@@\n-"react": "^18.0.0"\n+"react": "^19.0.0"' }))).toEqual([]);
+  });
+});
+
+describe('reviewHolds', () => {
+  it('holds the PR for review’s reason, a check it asks for and findings it left', () => {
+    expect(
+      reviewHolds({ humanMerge: 'It changes who sees a recipe.', beforeMerging: 'Check the seed recipes.' }, 2)
+    ).toEqual([
+      'review asked for your merge: It changes who sees a recipe.',
+      'review asks you to check first: Check the seed recipes.',
+      'review left 2 findings for you to choose'
+    ]);
+    expect(reviewHolds({ verdict: 'accepted' }, 1)).toEqual(['review left a finding for you to choose']);
+    expect(reviewHolds({ verdict: 'accepted' }, 0)).toEqual([]);
   });
 });
 

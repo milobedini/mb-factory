@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { readBeforeMerging } from './merge';
 import type { ChangedFile } from './router';
 
 // Who merges an express PR (docs/express.md, "Who merges"): the factory itself once every check passes, unless a rule
@@ -10,6 +11,9 @@ import type { ChangedFile } from './router';
 const globSchema = z.string().regex(/^(?!\/)[^\s]+$/, { message: 'not a glob from the repo root' });
 
 export const mergeRulesSchema = z.object({
+  // Whether the factory merges a PR the rules leave to it. Off, Ready to merge only says which way each PR would go.
+  // Needs the repo's rulesets to let the factory's App merge without an approval, and the App's key in the console.
+  auto: z.boolean().default(false),
   // More than either is too big to merge without a person.
   size: z
     .object({ lines: z.int().min(1).default(400), files: z.int().min(1).default(20) })
@@ -147,12 +151,12 @@ export const majorBumps = (file: ChangedFile): string[] => {
 const changed = (file: ChangedFile): number => (file.additions ?? 0) + (file.deletions ?? 0);
 
 // The route an express PR takes to `main`. `files` is GitHub's list of what the PR changes, undefined when GitHub
-// can't list them all; `tightened` is review's reason for sending it to the person, when it gave one.
+// can't list them all; `held` is what review left for the person (`reviewHolds`).
 export const mergeRoute = (
   rules: MergeRules,
-  { files, tightened }: { files: ChangedFile[] | undefined; tightened?: string }
+  { files, held = [] }: { files: ChangedFile[] | undefined; held?: string[] }
 ): MergeRoute => {
-  const review = tightened ? [`review asked for your merge: ${tightened}`] : [];
+  const review = held;
   if (!files) {
     return { route: 'person', reasons: [...review, 'too many files for GitHub to list'] };
   }
@@ -194,6 +198,19 @@ export const mergeRoute = (
     ...(unread.length > 0 ? [`GitHub shows no diff for ${names(unread)}, so it can’t be checked`] : [])
   ];
   return reasons.length > 0 ? { route: 'person', reasons } : { route: 'auto' };
+};
+
+// What review left for the person, from its accepted report: its reason to send the PR to them (`humanMerge`), a check
+// it asks them to make first (`beforeMerging`), and findings it left for them to choose.
+export const reviewHolds = (report: unknown, findingsLeft: number): string[] => {
+  const [reason, check] = [readHumanMerge(report), readBeforeMerging(report)];
+  return [
+    ...(reason ? [`review asked for your merge: ${reason}`] : []),
+    ...(check ? [`review asks you to check first: ${check}`] : []),
+    ...(findingsLeft > 0
+      ? [`review left ${findingsLeft === 1 ? 'a finding' : `${findingsLeft} findings`} for you to choose`]
+      : [])
+  ];
 };
 
 // Review's reason for sending a PR to the person's merge, from its report's `humanMerge`: one line.

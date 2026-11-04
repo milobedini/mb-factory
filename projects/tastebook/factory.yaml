@@ -46,6 +46,9 @@ track: express
 # takes the whole folder.
 express:
   merge:
+    # The factory merges what the rules leave to it, as its App. Off until the rulesets in rulesets/ replace the branch
+    # protection and the console has FACTORY_APP_CLIENT_ID and FACTORY_APP_PRIVATE_KEY.
+    auto: false
     # More than either, counting source only, waits for the person.
     size:
       lines: 400

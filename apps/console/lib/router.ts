@@ -144,13 +144,13 @@ import {
   readDesignVariants,
   readFixableFindings,
   readGate,
-  readHumanMerge,
   readQuestions,
   readVariantPick,
   readVisual,
   resumeRequestFor,
   retryText,
   reviewersFor,
+  reviewHolds,
   reviewThreadsToResolve,
   reviewVerdict,
   runRequestFor,
@@ -238,6 +238,7 @@ import {
   resolveReviewThread,
   sendStageDispatch
 } from './github-api';
+import { appToken } from './github-app';
 import { connectStartUrl, userGitHubToken } from './github-connect';
 import { fileGuards, fileWorkarounds } from './guards';
 import { publishHome } from './home';
@@ -325,36 +326,123 @@ const currentTrack = async (project: FactoryConfig, workItem: WorkItem): Promise
   return track;
 };
 
-// What the express merge rules make of a PR review accepted (docs/express.md, "Who merges"), read from GitHub's diff of
-// the PR against its base and review's own call. Undefined on the careful track, without rules, or when GitHub can't be
-// read, so Ready to merge goes out without it.
+// What the express merge rules make of a PR's head now (docs/express.md, "Who merges"), from GitHub's diff of the PR
+// against the default branch and what review left for the person. Undefined on the careful track, without rules, or
+// for a PR aimed elsewhere.
 const expressMergeRoute = async (
   project: FactoryConfig,
   workItem: WorkItem,
-  report: unknown
+  { report, findingsLeft, head }: { report: unknown; findingsLeft: number; head: string }
 ): Promise<MergeRoute | undefined> => {
   const rules = project.express?.merge;
   const { prNumber, repository, issueIdentifier: issue } = workItem;
   if (!rules || !prNumber || (await currentTrack(project, workItem)) !== 'express') {
     return undefined;
   }
-  try {
-    const { head, base } = await pullHead(repository, prNumber);
-    const route = mergeRoute(rules, {
-      files: await compareFiles(repository, base, head),
-      tightened: readHumanMerge(report)
-    });
-    log('info', 'merge route', {
-      issue,
-      pr: prNumber,
-      route: route.route,
-      ...(route.route === 'person' ? { reasons: route.reasons.join('; ') } : {})
-    });
-    return route;
-  } catch (error) {
-    log('warn', 'merge route unread', { issue, error: errorMessage(error) });
+  const [{ base }, mainBranch] = await Promise.all([pullHead(repository, prNumber), defaultBranch(repository)]);
+  if (base !== mainBranch) {
     return undefined;
   }
+  const route = mergeRoute(rules, {
+    files: await compareFiles(repository, base, head),
+    held: reviewHolds(report, findingsLeft)
+  });
+  log('info', 'merge route', {
+    issue,
+    pr: prNumber,
+    head,
+    route: route.route,
+    ...(route.route === 'person' ? { reasons: route.reasons.join('; ') } : {})
+  });
+  return route;
+};
+
+// The route said on Ready to merge, for the head review just accepted. Unread when GitHub can't be reached, so the
+// message goes out without it.
+const acceptedMergeRoute = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  { report, findingsLeft }: { report: unknown; findingsLeft: number }
+): Promise<{ route: MergeRoute; auto: boolean } | undefined> => {
+  const { prNumber, repository } = workItem;
+  if (!prNumber || !project.express) {
+    return undefined;
+  }
+  try {
+    const { head } = await pullHead(repository, prNumber);
+    const route = await expressMergeRoute(project, workItem, { report, findingsLeft, head });
+    return route && { route, auto: project.express.merge.auto };
+  } catch (error) {
+    log('warn', 'merge route unread', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return undefined;
+  }
+};
+
+const AUTO_MERGE_EVENT = 'auto_merge';
+
+// Express's own merge: once every check passes on the head review accepted, a PR the rules leave to the factory is
+// merged as its App, with a merge commit. Tried once per head; a refusal is said in the thread, and Approve and merge
+// stays for the person. The PR's merge webhook does the rest (the card, the message, Linear).
+const mergeByItself = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
+  const { prNumber, repository, issueIdentifier: issue } = workItem;
+  // The stored track settles most check events without asking GitHub; the route reads the labels afresh.
+  if (
+    !project.express?.merge.auto ||
+    workItem.stage !== 'awaiting_merge' ||
+    !prNumber ||
+    (workItem.track ?? project.track) !== 'express'
+  ) {
+    return;
+  }
+  const [pull, accepted, [review]] = await Promise.all([
+    pullForMerge(repository, prNumber),
+    acceptedHead(workItem),
+    getDb()
+      .select({ report: runs.report })
+      .from(runs)
+      .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'review'), eq(runs.status, 'finished')))
+      .orderBy(desc(runs.createdAt))
+      .limit(1)
+  ]);
+  if (!accepted || !review || pull.head !== accepted || reviewVerdict(review.report) !== 'accepted') {
+    return;
+  }
+  const checks = await headChecks(repository, pull.head);
+  if (checks.state !== 'passing' || mergeRefusal(prNumber, { pull, acceptedHead: accepted, checks: checks.state })) {
+    return;
+  }
+  const route = await expressMergeRoute(project, workItem, {
+    report: review.report,
+    findingsLeft: readFixableFindings(review.report).length,
+    head: pull.head
+  });
+  if (route?.route !== 'auto') {
+    return;
+  }
+  const first = await recordEvent({
+    source: 'github',
+    deliveryId: `auto-merge:${repository}#${prNumber}:${pull.head}`,
+    type: AUTO_MERGE_EVENT,
+    payload: { repository, prNumber, sha: pull.head }
+  });
+  if (!first) {
+    return;
+  }
+  const merged = await mergePull(await appToken(repository), repository, prNumber, pull.head);
+  if (!merged.ok) {
+    log('warn', 'auto-merge refused', { issue, pr: prNumber, message: merged.message });
+    const text = `I couldn’t merge PR #${prNumber} by myself: GitHub said “${merged.message}”. It’s yours to merge.`;
+    await Promise.all([
+      postActivity(workItem, { type: 'error', body: text }),
+      replyInThread(project, workItem, askingFor(project, workItem)(text))
+    ]);
+    return;
+  }
+  log('info', 'pr merged by itself', { issue, pr: prNumber, sha: pull.head });
+  await postActivity(workItem, {
+    type: 'thought',
+    body: `Merged PR #${prNumber} by itself: an express PR the merge rules leave to the factory, with every check passing.`
+  });
 };
 
 // The PR's visual, from the newest implement run that has one, so a revision that changed nothing on screen keeps it.
@@ -3313,7 +3401,9 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
     readyToMerge && prUrl
       ? await Promise.all([
           latestVisual(workItem),
-          run.agent === 'review' ? expressMergeRoute(project, workItem, run.report) : undefined
+          run.agent === 'review'
+            ? acceptedMergeRoute(project, workItem, { report: run.report, findingsLeft: mergeNotes.findingsLeft ?? 0 })
+            : undefined
         ])
       : [undefined, undefined];
   const reply = retrying
@@ -3361,6 +3451,12 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
   }
   if (readyToMerge && replyTs && !mergeNotes.findingsLeft) {
     await getDb().update(workItems).set({ mergeSlackTs: replyTs }).where(eq(workItems.id, workItem.id));
+  }
+  if (readyToMerge && route?.route.route === 'auto' && route.auto) {
+    // The checks may have passed before review finished, so no check webhook would set it off.
+    await attempt('auto-merge', { issue: workItem.issueIdentifier }, () =>
+      mergeByItself(project, { ...workItem, stage: 'awaiting_merge' })
+    );
   }
   if (next.questions) {
     await startQuestions(project, workItem, run, next.questions);
@@ -3576,6 +3672,9 @@ const handleChecksChanged = async (event: Extract<GitHubEvent, { kind: 'checks_c
       if (project) {
         await attempt('checks passed', { issue: workItem.issueIdentifier, sha: event.sha }, () =>
           announceChecksPassed(project, workItem, event.sha)
+        );
+        await attempt('auto-merge', { issue: workItem.issueIdentifier, sha: event.sha }, () =>
+          mergeByItself(project, workItem)
         );
       }
     })
@@ -3884,7 +3983,12 @@ const settleMergeMessage = async (
   const person = event.mergedBy ? personForGitHub(project, event.mergedBy.id) : undefined;
   const line = event.merged
     ? mergedLine({
-        by: person ? personName(person) : (event.mergedBy?.login ?? null),
+        // The factory's App merges as `<slug>[bot]`; no other bot merges a factory PR.
+        by: person
+          ? personName(person)
+          : event.mergedBy?.login.endsWith('[bot]')
+            ? 'itself'
+            : (event.mergedBy?.login ?? null),
         time: clock(new Date(), project.timeZone),
         repository: workItem.repository,
         sha: event.mergeCommitSha
