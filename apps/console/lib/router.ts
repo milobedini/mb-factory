@@ -293,15 +293,19 @@ const errorMessage = (error: unknown): string =>
 // Side effects that report on work (Linear, Slack) must not stop the work itself.
 // The PR's visual, from the newest implement run that has one, so a revision that changed nothing on screen keeps it.
 // Never holds up the message it goes in.
-const latestVisual = async (workItem: Pick<WorkItem, 'id' | 'issueIdentifier'>): Promise<Visual | undefined> => {
+const latestVisual = async (
+  workItem: Pick<WorkItem, 'id' | 'issueIdentifier' | 'repository'>
+): Promise<Visual | undefined> => {
   try {
     const reports = await getDb()
-      .select({ report: runs.report })
+      .select({ id: runs.id, report: runs.report })
       .from(runs)
       .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'implement'), isNotNull(runs.report)))
       .orderBy(desc(runs.createdAt))
       .limit(10);
-    return reports.map(({ report }) => readVisual(report)).find((visual) => visual !== undefined);
+    return reports
+      .map(({ id, report }) => readVisual(report, { repository: workItem.repository, runId: id }))
+      .find((visual) => visual !== undefined);
   } catch (error) {
     log('error', 'visual lookup failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
     return undefined;

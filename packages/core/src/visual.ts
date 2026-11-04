@@ -11,19 +11,31 @@ export type Visual = { title: string; image: string; video?: string; seconds?: n
 
 const TITLE_LIMIT = 150;
 
-// Only the evidence store's public URLs: the report is the agent's file until the evidence job rewrites it.
-const blobUrl = z.url({ protocol: /^https$/, hostname: /^[a-z0-9]+\.public\.blob\.vercel-storage\.com$/ });
-
 const visualSchema = z.object({
   title: z.string().trim().min(1),
-  image: blobUrl,
-  video: blobUrl.optional(),
+  image: z.string(),
+  video: z.string().optional(),
   seconds: z.int().positive().optional()
 });
 
-export const readVisual = (report: unknown): Visual | undefined => {
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Only what the evidence job uploads for this run: a public Blob store's `<repository>/<run>/` folder and the names it
+// gives the files. The stage job's agent can post a report of its own, so nothing else in it is taken as a visual.
+const uploadedFor = (repository: string, runId: string) => {
+  const folder = `^https://([a-z0-9]+)\\.public\\.blob\\.vercel-storage\\.com/${escapeRegExp(repository)}/${escapeRegExp(runId)}/`;
+  return { image: new RegExp(`${folder}(?:visual|poster)\\.png$`), video: new RegExp(`${folder}walkthrough\\.mp4$`) };
+};
+
+export const readVisual = (report: unknown, run: { repository: string; runId: string }): Visual | undefined => {
   const parsed = z.object({ visual: visualSchema }).safeParse(report);
   if (!parsed.success) {
+    return undefined;
+  }
+  const expected = uploadedFor(run.repository, run.runId);
+  const store = expected.image.exec(parsed.data.visual.image)?.[1];
+  const { video } = parsed.data.visual;
+  if (!store || (video !== undefined && expected.video.exec(video)?.[1] !== store)) {
     return undefined;
   }
   const { title, ...rest } = parsed.data.visual;

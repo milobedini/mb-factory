@@ -4,35 +4,60 @@ import { slackAcceptedMessage, slackMergeSettled } from './merge';
 import { readVisual, visualBlocks } from './visual';
 
 const prefix = 'https://abc123.public.blob.vercel-storage.com/o/tastebook/run-1/';
+const run = { repository: 'o/tastebook', runId: 'run-1' };
 
 describe('readVisual', () => {
   it('reads a collage, and a video with its poster and length', () => {
-    expect(readVisual({ visual: { title: 'What changed:\n the form', image: `${prefix}visual.png` } })).toEqual({
+    expect(readVisual({ visual: { title: 'What changed:\n the form', image: `${prefix}visual.png` } }, run)).toEqual({
       title: 'What changed: the form',
       image: `${prefix}visual.png`
     });
     expect(
-      readVisual({
-        visual: { title: 'Walkthrough', image: `${prefix}poster.png`, video: `${prefix}walkthrough.mp4`, seconds: 24 }
-      })
+      readVisual(
+        {
+          visual: { title: 'Walkthrough', image: `${prefix}poster.png`, video: `${prefix}walkthrough.mp4`, seconds: 24 }
+        },
+        run
+      )
     ).toEqual({ title: 'Walkthrough', image: `${prefix}poster.png`, video: `${prefix}walkthrough.mp4`, seconds: 24 });
   });
 
   it('reads nothing that isn’t on the evidence store, or has no title', () => {
-    expect(readVisual({ visual: { title: 'T', image: 'https://example.com/visual.png' } })).toBeUndefined();
+    expect(readVisual({ visual: { title: 'T', image: 'https://example.com/visual.png' } }, run)).toBeUndefined();
     expect(
-      readVisual({ visual: { title: 'T', image: `${prefix}visual.png`, video: 'http://x.com/v.mp4' } })
+      readVisual({ visual: { title: 'T', image: `${prefix}visual.png`, video: 'http://x.com/v.mp4' } }, run)
     ).toBeUndefined();
     expect(
-      readVisual({ visual: { title: 'T', image: 'http://abc123.public.blob.vercel-storage.com/v.png' } })
+      readVisual({ visual: { title: 'T', image: 'http://abc123.public.blob.vercel-storage.com/v.png' } }, run)
     ).toBeUndefined();
-    expect(readVisual({ visual: { title: ' ', image: `${prefix}visual.png` } })).toBeUndefined();
-    expect(readVisual({ summary: 'no visual' })).toBeUndefined();
-    expect(readVisual(null)).toBeUndefined();
+    expect(readVisual({ visual: { title: ' ', image: `${prefix}visual.png` } }, run)).toBeUndefined();
+    expect(readVisual({ summary: 'no visual' }, run)).toBeUndefined();
+    expect(readVisual(null, run)).toBeUndefined();
+  });
+
+  it('reads only the files the evidence job uploads for this run', () => {
+    const other = 'https://abc123.public.blob.vercel-storage.com/o/tastebook/run-2/visual.png';
+    expect(readVisual({ visual: { title: 'T', image: other } }, run)).toBeUndefined();
+    expect(readVisual({ visual: { title: 'T', image: `${prefix}anything.png` } }, run)).toBeUndefined();
+    expect(readVisual({ visual: { title: 'T', image: `${prefix}visual.png?x=1` } }, run)).toBeUndefined();
+    expect(
+      readVisual(
+        {
+          visual: {
+            title: 'T',
+            image: `${prefix}poster.png`,
+            video: 'https://other9.public.blob.vercel-storage.com/o/tastebook/run-1/walkthrough.mp4'
+          }
+        },
+        run
+      )
+    ).toBeUndefined();
   });
 
   it('clips a long title', () => {
-    expect(readVisual({ visual: { title: 'x'.repeat(200), image: `${prefix}visual.png` } })?.title).toHaveLength(150);
+    expect(readVisual({ visual: { title: 'x'.repeat(200), image: `${prefix}visual.png` } }, run)?.title).toHaveLength(
+      150
+    );
   });
 });
 
