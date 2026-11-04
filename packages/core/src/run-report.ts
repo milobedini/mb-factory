@@ -17,14 +17,10 @@ const branchSchema = z
     }
   );
 
-export const isPlainBranch = (name: string): boolean => branchSchema.safeParse(name).success;
-
-// The branch for work with no spec branch, as `git-text` names one: Linear's suggestion when it's a plain ref name,
-// otherwise `<issue-id-lowercase>-<short-slug>` from the title.
-export const workBranchName = (linearName: string | null, identifier: string, title: string | null): string => {
-  if (linearName && isPlainBranch(linearName)) {
-    return linearName;
-  }
+// The branch the console starts for work with no spec branch: always `<issue-id-lowercase>-<short-slug>`, never a
+// name from elsewhere (Linear's suggestion follows each person's settings), so it can't name the default branch or
+// another work's.
+export const workBranchName = (identifier: string, title: string | null): string => {
   const slug = (title ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

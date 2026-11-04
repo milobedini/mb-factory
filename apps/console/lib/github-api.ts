@@ -386,17 +386,14 @@ export const defaultBranch = async (repository: string): Promise<string> =>
 
 const refPath = (branch: string): string => branch.split('/').map(encodeURIComponent).join('/');
 
-// A branch at the default branch's head, unless it already exists: express work's design is handed off before any
-// code, so the hand-off's commit starts the branch implement then builds on.
-export const ensureBranch = async (repository: string, branch: string): Promise<void> => {
-  const exists = await githubGet(`/repos/${repository}/git/ref/heads/${refPath(branch)}`, 'branch').then(
-    () => true,
-    () => false
-  );
-  if (exists) {
-    return;
-  }
+// A new branch at the default branch's head: express work's design is handed off before any code, so the hand-off's
+// commit starts the branch implement then builds on. GitHub refuses a ref that already exists, so nothing already
+// there (the default branch, another work's) is ever committed to this way.
+export const createBranch = async (repository: string, branch: string): Promise<void> => {
   const base = await defaultBranch(repository);
+  if (branch === base) {
+    throw new Error(`refusing to start the default branch ${base}`);
+  }
   const head = (
     await githubGet<{ object: { sha: string } }>(`/repos/${repository}/git/ref/heads/${refPath(base)}`, 'branch')
   ).object.sha;

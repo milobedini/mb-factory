@@ -219,8 +219,8 @@ import {
   commitParents,
   commitRuns,
   compareFiles,
+  createBranch,
   defaultBranch,
-  ensureBranch,
   headChecks,
   mergeBaseIntoBranch,
   mergePull,
@@ -251,7 +251,6 @@ import {
   findUserIdByEmail,
   hasClosingActivity,
   issueAssigneeAndLabels,
-  issueBranchName,
   issueToSize,
   issueToStart,
   moveIssueToStatus,
@@ -299,14 +298,8 @@ const errorMessage = (error: unknown): string =>
 // Express work's design is handed off before any code, so with no spec branch the console starts the work's branch
 // for the boards, and implement builds on it.
 export const startWorkBranch = async (workItem: WorkItem): Promise<string> => {
-  const linearName = await issueBranchName(workItem.linearOrganizationId, workItem.linearIssueId).catch(
-    (error: unknown) => {
-      log('warn', 'linear branch name lookup failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
-      return null;
-    }
-  );
-  const branch = workBranchName(linearName, workItem.issueIdentifier, workItem.title);
-  await ensureBranch(workItem.repository, branch);
+  const branch = workBranchName(workItem.issueIdentifier, workItem.title);
+  await createBranch(workItem.repository, branch);
   await getDb().update(workItems).set({ branch }).where(eq(workItems.id, workItem.id));
   log('info', 'work branch started', { issue: workItem.issueIdentifier, branch });
   return branch;

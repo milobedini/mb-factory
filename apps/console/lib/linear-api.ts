@@ -563,16 +563,6 @@ export const setBlockedLabel = async (organizationId: string, issueId: string, b
 };
 
 // The email of the person an issue is assigned to, or null when nobody is.
-// The branch name Linear suggests for an issue, as `git-text` names a branch with no spec; null when it has none.
-export const issueBranchName = async (organizationId: string, issueId: string): Promise<string | null> => {
-  const { issue } = await linearGraphql<{ issue: { branchName: string | null } | null }>(
-    organizationId,
-    'query IssueBranchName($id: String!) { issue(id: $id) { branchName } }',
-    { id: issueId }
-  );
-  return issue?.branchName ?? null;
-};
-
 // Who an issue is assigned to and its labels' names, which carry its track; null when Linear can't find it.
 export const issueAssigneeAndLabels = async (
   organizationId: string,

@@ -339,7 +339,6 @@ export {
 } from './router';
 export type { RunReport, RunSummary, RunUsage, RunUsageReading, StageReport } from './run-report';
 export {
-  isPlainBranch,
   readingsFromEvents,
   runReportSchema,
   stageReportSchema,
