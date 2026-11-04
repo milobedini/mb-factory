@@ -277,9 +277,9 @@ The factory runs on the same Ultra plan as the user's own Claude use, whose one 
 
 ## Gotchas
 
-- **The factory's Linear app can't create labels** ("not allowed to take action"): a job's or stage's new label must exist in the team before its first filing, or every issue carrying it is refused (the clean-up job, 4 Nov).
 Learnt the hard way; each would bite again.
 
+- **The factory's Linear app can't create labels** ("not allowed to take action"): a job's or stage's new label must exist in the team before its first filing, or every issue carrying it is refused (the clean-up job, 4 Nov).
 **Claude Code and the action**
 
 - `claude-code-action` hides the agent's output and runs keep no transcript, so a run that ends without a report and pushes nothing can't be diagnosed (see [Run transcripts](#run-transcripts-after-phase-6)).
