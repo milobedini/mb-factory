@@ -307,77 +307,6 @@ export const modelFor = (
   return model;
 };
 
-// Whether a PR's changed files touch a path that shows on screen: a directory (with or without its trailing slash)
-// or a single file.
-export const showsOnScreen = (paths: string[], changedFiles: string[]): boolean => {
-  const prefixes = paths.map((path) => path.replace(/^\.?\/+/, '').replace(/\/+$/, ''));
-  return changedFiles.some((file) => prefixes.some((prefix) => file === prefix || file.startsWith(`${prefix}/`)));
-};
-
-const notOnScreenSchema = z.looseObject({ notOnScreen: z.string().trim().min(1).max(300).nullish().catch(null) });
-const verifyAgainSchema = z.looseObject({ verifyAgain: z.string().trim().min(1).max(300).nullish().catch(null) });
-
-// `again` is the implement run's reason for asking, passed on to the verify run.
-export type VerifyDecision = { verify: boolean; skipped?: string; again?: string };
-
-// What settled verify for a work item before a revision: a verify run that met every criterion, or, when verify never
-// ran, an earlier implement run that skipped it as nothing a person sees changed. Times are as the thread shows them.
-export type EarlierVerify = { verifiedAt: string } | { skippedAt: string; reason: string };
-
-const criteriaSchema = z.looseObject({ criteria: z.array(z.looseObject({ result: z.string() })) });
-
-// Whether a verify run showed the whole change working: at least one criterion met and none not met. Anything less,
-// and a revision has to be shown on screen again.
-export const metEveryCriterion = (report: unknown): boolean => {
-  const results = (criteriaSchema.safeParse(report).data?.criteria ?? []).map(({ result }) =>
-    result
-      .replace(/[\s_]+/g, ' ')
-      .trim()
-      .toLowerCase()
-  );
-  return results.includes('met') && !results.includes('not met');
-};
-
-// An implement run's reason that nothing a person sees changed, on one line, when it gave one.
-export const notOnScreenReason = (report: unknown): string | undefined =>
-  notOnScreenSchema.safeParse(report).data?.notOnScreen?.replace(/\s+/g, ' ');
-
-// Revisions that don't redo what settled verify (a verify run that met every criterion, or an earlier skip), unless
-// they ask for it with `verifyAgain`: fixing review findings, making the changes a human's answers to review asked
-// for, fixing a failed check, and merging the default branch in to clear a conflict (its own changes were verified on
-// their PRs).
-const REVERIFY_ON_REQUEST: RunTrigger[] = ['review_findings', 'answered', 'ci_failed', 'conflict'];
-
-export const reverifiesOnRequest = (trigger: RunTrigger): boolean => REVERIFY_ON_REQUEST.includes(trigger);
-
-// Whether a delivered PR is verified in the app: when the implement run asks for it again, with why; otherwise when it
-// touches a path that shows on screen, unless the implement run said why nothing a person sees changed, or, for a
-// revision that reverifies only on request, what settled verify before still holds (`earlier`).
-export const decideVerify = (
-  paths: string[],
-  changedFiles: string[],
-  report: unknown,
-  earlier?: EarlierVerify
-): VerifyDecision => {
-  const again = verifyAgainSchema.safeParse(report).data?.verifyAgain?.replace(/\s+/g, ' ');
-  if (again) {
-    return { verify: true, again };
-  }
-  if (!showsOnScreen(paths, changedFiles)) {
-    return { verify: false };
-  }
-  const reason = notOnScreenReason(report);
-  if (reason) {
-    return { verify: false, skipped: reason };
-  }
-  if (!earlier) {
-    return { verify: true };
-  }
-  return 'verifiedAt' in earlier
-    ? { verify: false, skipped: `already verified at ${earlier.verifiedAt}, and nothing it checked was unmet` }
-    : { verify: false, skipped: `already skipped at ${earlier.skippedAt}: ${earlier.reason}` };
-};
-
 type StatusKey = keyof FactoryConfig['linear']['statuses'];
 
 const STATUS_KEYS: Record<Stage, StatusKey> = {
@@ -588,7 +517,7 @@ export const madeOnlyBy = async (
 };
 
 // Two runs that finish close together (a conflict fix and an answer's revision) can each hand on to the same stage. A
-// verify or review already queued works on the PR's head when it starts, so a second would only repeat it; and with an
+// review already queued works on the PR's head when it starts, so a second would only repeat it; and with an
 // implement run queued, that run hands on once it's done, so one review sees both changes.
 export const queuedAlready = (request: RunRequest, queued: { agent: AgentRole }[]): boolean =>
   request.trigger === 'delivered' && queued.some(({ agent }) => agent === request.agent || agent === 'implement');
@@ -648,13 +577,9 @@ export const slicedIssues = (report: unknown): string[] => {
 };
 
 // Triage's `next` picks the stage after it; the follow-on run is still `delegated`, as the agents expect.
-// No verify stage yet: a UI bug triage wants reproduced goes to implement, whose bug path starts with a failing test.
 const agentAfterTriage = (report: unknown): AgentRole | undefined => {
   const next = triageReportSchema.safeParse(report).data?.next;
-  if (next === 'spec') {
-    return 'spec';
-  }
-  return next === 'implement' || next === 'verify' ? 'implement' : undefined;
+  return next === 'spec' || next === 'implement' ? next : undefined;
 };
 
 export const REVIEW_VERDICTS = ['accepted', 'revision_needed', 'human_decision_needed'] as const;
@@ -826,13 +751,7 @@ export const nextStepAfterRun = (
     report: unknown;
     prompt?: string | null;
   },
-  {
-    hasPr,
-    lockfileOnlyMerge = false,
-    verify = false,
-    verifyPrompt = null,
-    ...loop
-  }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean; verify?: boolean; verifyPrompt?: string | null }
+  { hasPr, lockfileOnlyMerge = false, ...loop }: ReviewLoop & { hasPr: boolean; lockfileOnlyMerge?: boolean }
 ): NextStep => {
   const waiting = run.status === 'finished' && run.outcome === 'needs_input';
   const questions = waiting ? readQuestions(run.report) : [];
@@ -867,20 +786,6 @@ export const nextStepAfterRun = (
     if (hasPr && run.trigger === 'conflict' && lockfileOnlyMerge) {
       return { stage: 'awaiting_merge' };
     }
-    // A PR that changes what shows on screen is verified in the app first; verify always hands on to review.
-    return hasPr
-      ? {
-          stage: 'in_review',
-          request: {
-            agent: verify ? 'verify' : 'review',
-            trigger: 'delivered',
-            priority: 'in_flight',
-            prompt: verify ? verifyPrompt : null
-          }
-        }
-      : {};
-  }
-  if (run.agent === 'verify') {
     return hasPr
       ? { stage: 'in_review', request: { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null } }
       : {};

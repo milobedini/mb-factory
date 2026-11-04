@@ -191,9 +191,8 @@ Rejected:
   - **can move an issue to `careful`** ([tighten only](#who-merges)).
 - **There's no spec stage and no Spec Review.** The Linear issue is the specification. Implement writes its plan and decisions into the PR description's Decisions block (`git-text`). Slicing projects and PRDs are unchanged.
 - **Design and Design Review are unchanged**, variants and canvas included. With no spec branch, design's hand-off commits `specs/<ID>/design/` to the work's own branch.
-- **Only product questions wait.**
-  - A product question changes what a user sees or can do. Implement asks those before it codes, and waits.
-  - Every other question (technical, infrastructure, review's) takes the suggested option. The thread says what was chosen and why, and a reply changes it as a follow-up.
+- **Implement asks the spec's questions, and waits.** Before it codes, implement asks what the spec would have asked: product calls and the technical approach, each with a suggested option. Settled on 4 Nov: the user wants a say on approach, not only product, and the questions make them think the feature through. Only the spec document and Spec Review go.
+  - Infrastructure and CI questions take the suggested option. The thread says what was chosen and why, and a reply changes it as a follow-up.
 - **Review never asks in express.** It fixes its Blocking findings through the usual revise round and files Should fix findings as follow-up issues.
 
 ### Changes in both tracks
@@ -315,7 +314,7 @@ Every stage and gate encodes an assumption about what the model can't do. When a
 | --- | --- | --- | --- | --- |
 | Triage | An issue needs research, a size and a route before work | 3.5% of cost, never failed | Kept, with the design call | Kept |
 | Spec, Spec Review | The model needs a written plan a person approves before coding | 34 of 37 approved unchanged; 18% of cost; 42 minutes on the median | None | Kept |
-| Questions before building | Product calls need a person | 12% of spec answers overrode the suggestion, all real product calls | Product questions only | Kept |
+| Questions before building | Product and approach calls need a person | 12% of spec answers overrode the suggestion, all real product calls; the user values the rest for thinking the feature through (4 Nov) | Kept, asked by implement; infrastructure ones defaulted | Kept |
 | Design, Design Review | Taste is human | The user's call; 4% of cycle time | Kept, unchanged | Kept, unchanged |
 | Verify | Implement's own tests miss on-screen behaviour | 0 not met in 571 criteria | Removed | Removed |
 | Review | A fresh context finds correctness and security bugs the implementer missed | 10 real defects among 54 Blocking (TAS-107, 108, 114) | Narrowed, never asks | Narrowed, may ask |
@@ -339,11 +338,11 @@ Four steps, each usable by itself. Each step's work is the factory's own (`mb-fa
 2. **The express track, with the person still merging.**
    - Add `track`, the labels and the router's track reading.
    - Remove the spec stage on express.
-   - Default questions, except product ones.
+   - Implement asks the spec's questions before it codes; infrastructure and CI ones take the suggestion.
    - Move the design call to triage.
    - Make express Tastebook's default.
 
-   Done when an express issue reaches Awaiting Merge with no spec and no question except a product one. Keeping the person's merge here lets them watch express PRs before letting go.
+   Done when an express issue reaches Awaiting Merge with no spec, its questions asked by implement before any code, and none about infrastructure. Keeping the person's merge here lets them watch express PRs before letting go.
 
 3. **Auto-merge.**
    - The size, path, safety-net and tighten-only rules.
@@ -382,6 +381,6 @@ Four steps, each usable by itself. Each step's work is the factory's own (`mb-fa
 - **Rulesets:** check that a ruleset's bypass actor bypasses only that ruleset's rules (hence two rulesets), and that the bot's merge is still a merge commit co-authored as before.
 - **Deploy signal:** the App's webhook events or a read-only Vercel token (the factory backlog's "Spend and deploys").
 - **The visual in Slack:** a Block Kit image block plays no video, so a flow's video may need a poster image linking to it, or a GIF. Decide at step 1.
-- **"Product question":** watch the first weeks of express for technical questions that should have waited, and the reverse. Tune the definition in `implement.md`.
+- **Which questions wait:** watch the first weeks of express for infrastructure questions that should have waited, and approach questions that were defaulted. Tune the line in `implement.md`.
 - **Mutation testing:** run time on the runner.
 - **Backlog items Express made moot** were removed from the plan when Phase 4 closed: triage's `next: verify` and verify on previews; review asking again about an accepted trade-off (TAS-81); review blaming a preview's setup (TAS-95); review reporting `human_decision_needed` with no question (TAS-95); a CI fix started for a failure kept at review (TAS-94).

@@ -30,7 +30,6 @@ It lists added suppressions, skipped tests, type escapes, swallowed errors, unsa
 - **Security**, only when the diff touches auth, tokens, secrets, permissions or user input: a concrete, exploitable flaw the change introduces.
 - **Workflows**, whenever the diff touches `.github/workflows/` or `.github/actions/`: the factory can push these, and they run with the repo's secrets, so review every line. Each job's `permissions` as narrow as its steps need; secrets only in the steps that use them, never echoed or passed to untrusted code; third-party actions pinned to a commit SHA; no `pull_request_target` or `workflow_run` that checks out or runs a PR's code; triggers that can't be fired from a fork to reach secrets. A gap here is Blocking.
 - **Published standards**, when `AGENTS.md` has a Standards section: check the change against every standard it touches (accessibility for anything rendered, security for auth, input and data access, privacy for personal data, performance for what loads or renders). Review adversarially: a standard counts as failed until the diff shows it's met. Where the Standards table says a tool checks it (axe, Lighthouse), read that tool's result in the checks rather than repeating it, and review what the tool can't see (focus order, names that make sense, authorisation on each object, what personal data reaches logs). A finding names the standard and the clause it breaks.
-- **Evidence**, for a user-facing change: the PR's evidence shows each acceptance criterion on the right path and state. Missing or mismatched evidence is Blocking. When the verify stage ran, its results are in the Evidence section: a criterion it marked `not met` is Blocking for the implement stage (quote what it saw), and one marked `unverified` is a Should fix unless its reason holds; data the seed can't make never holds, and the fix is to extend the seed. When the Evidence says `Not verified on screen`, the implement stage skipped verify: check its reason against the diff, and if a person would see any change, that's missing evidence, Blocking. Look at the screenshots, not only the labels (download each with `curl` into `$RUNNER_TEMP` and read it): a `met` whose screenshot shows something else is Blocking.
 
 Skip generated files (schema types, migrations Django generated, lockfiles) beyond checking they match their source. Code moved unchanged is reviewed as a move.
 
@@ -47,7 +46,7 @@ Try to disprove each one against the code at the head before keeping it:
 
 ## Tiers
 
-- **Blocking**: breaks behaviour, data, security or a hard constraint in `AGENTS.md`; fails a clause of a published standard on a path the change ships; or required evidence is missing.
+- **Blocking**: breaks behaviour, data, security or a hard constraint in `AGENTS.md`; or fails a clause of a published standard on a path the change ships.
 - **Should fix**: fundamentals, conventions, maintainability, missing tests.
 - **Nit**: at most five.
 - **Could cut**: separate and optional for the author. Each says what goes, why nothing is lost, and roughly how many lines it saves.

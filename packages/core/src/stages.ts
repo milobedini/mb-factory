@@ -20,6 +20,7 @@ export const AGENT_ROLES = [
   // Drafts and revises a design on a claude.ai canvas with a person, in a routine rather than a stage workflow.
   'design',
   'implement',
+  // Retired on 4 Nov 2026 (Express): nothing dispatches it, but past runs still carry it.
   'verify',
   'review',
   'security',

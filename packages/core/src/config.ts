@@ -44,148 +44,138 @@ export const usagePolicySchema = z.object({
     pauseAt: fraction
   }),
   staleAfterMinutes: z.int().min(1),
-  downshift: z.partialRecord(z.enum(['triage', 'slicing', 'spec', 'implement', 'verify', 'review']), z.string().min(1))
+  downshift: z.partialRecord(z.enum(['triage', 'slicing', 'spec', 'implement', 'review']), z.string().min(1))
 });
 
-export const factoryConfigSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    name: z.string().min(1),
-    alias: z.string().min(1),
-    // Times in messages to humans, such as when held work will be released.
-    timeZone: z.string().refine(isTimeZone, { message: 'not an IANA time zone' }).default('UTC'),
-    // What merging a PR sets off, said in Approve and merge's confirm ("…and merge it, which deploys it to production").
-    // Left out, the confirm says nothing about it.
-    mergeEffect: z.string().min(1).max(80).optional(),
-    repositories: z
-      .array(
-        z.object({
-          owner: z.string().min(1),
-          name: z.string().min(1),
-          // GitHub logins asked to review a pull request when it reaches Awaiting Merge.
-          reviewers: z.array(githubLogin).default([])
+export const factoryConfigSchema = z.object({
+  schemaVersion: z.literal(1),
+  name: z.string().min(1),
+  alias: z.string().min(1),
+  // Times in messages to humans, such as when held work will be released.
+  timeZone: z.string().refine(isTimeZone, { message: 'not an IANA time zone' }).default('UTC'),
+  // What merging a PR sets off, said in Approve and merge's confirm ("…and merge it, which deploys it to production").
+  // Left out, the confirm says nothing about it.
+  mergeEffect: z.string().min(1).max(80).optional(),
+  repositories: z
+    .array(
+      z.object({
+        owner: z.string().min(1),
+        name: z.string().min(1),
+        // GitHub logins asked to review a pull request when it reaches Awaiting Merge.
+        reviewers: z.array(githubLogin).default([])
+      })
+    )
+    .min(1),
+  // The claude.ai routine that runs the design stage, by its trigger ID; its token is the console's
+  // `DESIGN_ROUTINE_TOKEN`. With the Design and Design Review statuses, it turns the design stage on.
+  design: z
+    .object({
+      routine: z.string().regex(/^trig_[A-Za-z0-9]+$/),
+      // The project's Design System artifact on claude.ai, which seeds every canvas. A design run rebuilds its files
+      // from the default branch with `build`, run at the repository root, which writes them under `out/project/`,
+      // and republishes them when the artifact is behind.
+      system: z
+        .object({
+          url: z.string().regex(/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9_-]{1,64}$/),
+          build: z.string().min(1),
+          out: repositoryPath
         })
-      )
-      .min(1),
-    // The claude.ai routine that runs the design stage, by its trigger ID; its token is the console's
-    // `DESIGN_ROUTINE_TOKEN`. With the Design and Design Review statuses, it turns the design stage on.
-    design: z
-      .object({
-        routine: z.string().regex(/^trig_[A-Za-z0-9]+$/),
-        // The project's Design System artifact on claude.ai, which seeds every canvas. A design run rebuilds its files
-        // from the default branch with `build`, run at the repository root, which writes them under `out/project/`,
-        // and republishes them when the artifact is behind.
-        system: z
-          .object({
-            url: z.string().regex(/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9_-]{1,64}$/),
-            build: z.string().min(1),
-            out: repositoryPath
-          })
-          .optional()
-      })
-      .optional(),
-    linear: z.object({
-      teamKey: z.string().min(1),
-      statuses: z.object({
-        researching: z.string().min(1),
-        spec: z.string().min(1),
-        specReview: z.string().min(1),
-        // With the design routine, both set turn the design stage on: a spec that calls for design goes to it first.
-        design: z.string().min(1).optional(),
-        designReview: z.string().min(1).optional(),
-        building: z.string().min(1),
-        inReview: z.string().min(1),
-        awaitingMerge: z.string().min(1),
-        done: z.string().min(1),
-        canceled: z.string().min(1)
-      })
-    }),
-    // The people the factory works for: a Linear member (by email), their git identity, with the noreply address
-    // GitHub links to their account, credited as co-author on the commits of issues assigned to them, and their Slack
-    // member ID, mentioned when one of those issues waits on them. Someone not listed is credited and mentioned nowhere.
-    // `github` is their GitHub user ID (an ID, not a login, which can change hands): with it, they can connect GitHub
-    // and approve and merge PRs from Slack as themselves.
-    people: z
-      .array(
-        z.object({
-          linear: z.email(),
-          git: z.string().regex(/^[^<>\n]+ <[^<>\s]+@[^<>\s]+>$/, { message: 'not "Name <email>"' }),
-          slack: z
-            .string()
-            .regex(/^[UW][A-Z0-9]+$/)
-            .optional(),
-          github: z.int().positive().optional()
-        })
-      )
-      .default([]),
-    slack: z
-      .object({
-        channel: z.string().min(1),
-        channelId: z.string().regex(/^[CG][A-Z0-9]+$/),
-        // Slack members who may answer questions and gates, and steer the work, from a thread.
-        allowedUserIds: z.array(z.string().regex(/^[UW][A-Z0-9]+$/)).default([]),
-        // The workspace's custom emoji for cards and the App Home are named `<emojiPrefix>-done` and so on.
-        emojiPrefix: z
-          .string()
-          .regex(/^[a-z0-9][a-z0-9_-]*$/)
-          .default('mbf')
-      })
-      .optional(),
-    models: z.object({
-      triage: z.string().min(1),
+        .optional()
+    })
+    .optional(),
+  linear: z.object({
+    teamKey: z.string().min(1),
+    statuses: z.object({
+      researching: z.string().min(1),
       spec: z.string().min(1),
-      implement: z.string().min(1),
-      review: z.string().min(1),
-      // Triage when it slices a project into issues; the triage model when unset.
-      slicing: z.string().min(1).optional(),
-      // Needed when `verify` is set.
-      verify: z.string().min(1).optional(),
-      // Answers questions asked with the slash command.
-      ask: z.string().min(1).default('sonnet'),
-      // Sizes an issue accepted out of Triage without one.
-      size: z.string().min(1).default('sonnet'),
-      // Recorded on design runs only: the design routine's own setting decides the model it runs.
-      design: z.string().min(1).default('opus')
+      specReview: z.string().min(1),
+      // With the design routine, both set turn the design stage on: a spec that calls for design goes to it first.
+      design: z.string().min(1).optional(),
+      designReview: z.string().min(1).optional(),
+      building: z.string().min(1),
+      inReview: z.string().min(1),
+      awaitingMerge: z.string().min(1),
+      done: z.string().min(1),
+      canceled: z.string().min(1)
+    })
+  }),
+  // The people the factory works for: a Linear member (by email), their git identity, with the noreply address
+  // GitHub links to their account, credited as co-author on the commits of issues assigned to them, and their Slack
+  // member ID, mentioned when one of those issues waits on them. Someone not listed is credited and mentioned nowhere.
+  // `github` is their GitHub user ID (an ID, not a login, which can change hands): with it, they can connect GitHub
+  // and approve and merge PRs from Slack as themselves.
+  people: z
+    .array(
+      z.object({
+        linear: z.email(),
+        git: z.string().regex(/^[^<>\n]+ <[^<>\s]+@[^<>\s]+>$/, { message: 'not "Name <email>"' }),
+        slack: z
+          .string()
+          .regex(/^[UW][A-Z0-9]+$/)
+          .optional(),
+        github: z.int().positive().optional()
+      })
+    )
+    .default([]),
+  slack: z
+    .object({
+      channel: z.string().min(1),
+      channelId: z.string().regex(/^[CG][A-Z0-9]+$/),
+      // Slack members who may answer questions and gates, and steer the work, from a thread.
+      allowedUserIds: z.array(z.string().regex(/^[UW][A-Z0-9]+$/)).default([]),
+      // The workspace's custom emoji for cards and the App Home are named `<emojiPrefix>-done` and so on.
+      emojiPrefix: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9_-]*$/)
+        .default('mbf')
+    })
+    .optional(),
+  models: z.object({
+    triage: z.string().min(1),
+    spec: z.string().min(1),
+    implement: z.string().min(1),
+    review: z.string().min(1),
+    // Triage when it slices a project into issues; the triage model when unset.
+    slicing: z.string().min(1).optional(),
+    // Answers questions asked with the slash command.
+    ask: z.string().min(1).default('sonnet'),
+    // Sizes an issue accepted out of Triage without one.
+    size: z.string().min(1).default('sonnet'),
+    // Recorded on design runs only: the design routine's own setting decides the model it runs.
+    design: z.string().min(1).default('opus')
+  }),
+  review: z.object({ maxRounds: z.int().min(0).max(5) }),
+  // Factory-wide (the root `factory.yaml`), since every project shares one subscription: refused here so a project
+  // can't think it set its own.
+  concurrency: z.undefined({ error: 'concurrency is factory-wide: set it in the root factory.yaml' }).optional(),
+  usage: z.undefined({ error: 'usage is factory-wide: set it in the root factory.yaml' }).optional(),
+  // Scheduled jobs, run once a day through the governor at the lowest priority.
+  jobs: z
+    .array(jobSchema)
+    .default([])
+    .refine((jobs) => new Set(jobs.map(({ name }) => name)).size === jobs.length, {
+      message: 'job names must be distinct'
+    })
+    // The health check's slots are recorded under this name.
+    .refine((jobs) => jobs.every(({ name }) => name !== 'health'), {
+      message: 'health is reserved for the health check'
+    })
+    // Guards the implement stage reports are filed as findings under this name.
+    .refine((jobs) => jobs.every(({ name }) => name !== 'guard'), {
+      message: 'guard is reserved for guards'
     }),
-    // Paths whose changes show on screen. A delivered PR that touches any of them is verified in the app before review;
-    // without this, PRs go straight to review.
-    verify: z.object({ paths: z.array(z.string().min(1)).min(1) }).optional(),
-    review: z.object({ maxRounds: z.int().min(0).max(5) }),
-    // Factory-wide (the root `factory.yaml`), since every project shares one subscription: refused here so a project
-    // can't think it set its own.
-    concurrency: z.undefined({ error: 'concurrency is factory-wide: set it in the root factory.yaml' }).optional(),
-    usage: z.undefined({ error: 'usage is factory-wide: set it in the root factory.yaml' }).optional(),
-    // Scheduled jobs, run once a day through the governor at the lowest priority.
-    jobs: z
-      .array(jobSchema)
-      .default([])
-      .refine((jobs) => new Set(jobs.map(({ name }) => name)).size === jobs.length, {
-        message: 'job names must be distinct'
-      })
-      // The health check's slots are recorded under this name.
-      .refine((jobs) => jobs.every(({ name }) => name !== 'health'), {
-        message: 'health is reserved for the health check'
-      })
-      // Guards the implement stage reports are filed as findings under this name.
-      .refine((jobs) => jobs.every(({ name }) => name !== 'guard'), {
-        message: 'guard is reserved for guards'
-      }),
-    // The console's daily check on itself: warnings and errors, stuck runs, late jobs. No Claude run, so it isn't held.
-    health: z.object({ at: clockTime }).optional(),
-    // Where the project's app reports its errors; the health check lists new unresolved Sentry issues from here.
-    sentry: z
-      .object({
-        // The organisation's region, such as https://de.sentry.io for one hosted in the EU.
-        url: z.url().default('https://sentry.io'),
-        organisation: z.string().min(1),
-        projects: z.array(z.string().min(1)).min(1)
-      })
-      .optional()
-  })
-  .refine((config) => !config.verify || config.models.verify, {
-    message: 'models.verify is needed when verify is set',
-    path: ['models', 'verify']
-  });
+  // The console's daily check on itself: warnings and errors, stuck runs, late jobs. No Claude run, so it isn't held.
+  health: z.object({ at: clockTime }).optional(),
+  // Where the project's app reports its errors; the health check lists new unresolved Sentry issues from here.
+  sentry: z
+    .object({
+      // The organisation's region, such as https://de.sentry.io for one hosted in the EU.
+      url: z.url().default('https://sentry.io'),
+      organisation: z.string().min(1),
+      projects: z.array(z.string().min(1)).min(1)
+    })
+    .optional()
+});
 
 // What guards the one subscription every project shares: the run cap and the usage policy.
 export const sharedConfigSchema = z.object({

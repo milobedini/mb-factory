@@ -27,7 +27,7 @@ Propose a lesson when something on this run would have changed how an earlier st
 ```markdown
 # <Short title>
 
-- **Added:** YYYY-MM-DD · **Applies to:** triage | spec | implement | review | verify | all
+- **Added:** YYYY-MM-DD · **Applies to:** triage | spec | implement | review | all
 - **Paths:** <globs the rule is about, when it's about code>
 - **Rule:** <what to do, or the fact>
 - **Why:** <what happened that taught it, with the issue or PR>

@@ -21,7 +21,7 @@ The router acts on your report straight away: `done` with `next: spec` or `next:
 
 1. **Understand.** Read the issue and everything attached, then the code it concerns. Done when you can say in one sentence what is asked and where in the code it lands. If you can't, elicit what's missing and stop.
 2. **Bug or feature.**
-   - Bug: when the code, logs or error output show the cause, record the explanation and the evidence; that replaces a reproduction. Otherwise reproduce it on the real path, preferring a small failing test you run but don't commit; record its name, the command and the failing assertion. For a UI bug, the `verify` stage reproduces it: recommend `next: verify` with the steps.
+   - Bug: when the code, logs or error output show the cause, record the explanation and the evidence; that replaces a reproduction. Otherwise reproduce it on the real path, preferring a small failing test you run but don't commit; record its name, the command and the failing assertion. For a UI bug you can't reproduce in a test, record the steps: implement's bug path starts with a failing test.
    - Feature: identify the requirements and the acceptance criteria the issue implies.
 3. **Find duplicates.** Search the team's open issues for the same work. A clear match, or follow-up to work already in flight, means you report `declined` with the link rather than running both.
 4. **Size and decide the next stage.**
@@ -84,6 +84,6 @@ A project is the epic. Slicing turns its PRD into issues that are each one PR, s
 
 ## Exit
 
-- `done` with `next: spec` or `next: implement` (or `next: verify` for a UI reproduction).
+- `done` with `next: spec` or `next: implement`.
 - `needs_input` with questions, or after the slicing gate; `declined` for a duplicate or work that shouldn't happen.
 - Propose a lesson only through the brief; triage commits nothing.

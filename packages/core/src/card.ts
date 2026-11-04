@@ -168,7 +168,6 @@ const STEPS: { name: string; agent: AgentRole | null }[] = [
   { name: 'Spec', agent: 'spec' },
   { name: 'Design', agent: 'design' },
   { name: 'Implement', agent: 'implement' },
-  { name: 'Verify', agent: 'verify' },
   { name: 'Review', agent: 'review' },
   { name: 'Merge', agent: null }
 ];
@@ -183,7 +182,7 @@ const STAGE_STEP: Record<Stage, number> = {
   design: 2,
   design_review: 2,
   building: 3,
-  in_review: 5,
+  in_review: 4,
   awaiting_merge: MERGE_STEP,
   done: STEPS.length,
   canceled: 0

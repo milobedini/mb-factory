@@ -55,19 +55,6 @@ describe('parseFactoryConfig', () => {
   });
 });
 
-describe('verify', () => {
-  it('reads the paths that show on screen, and needs a verify model with them', () => {
-    expect(parseProject(tastebookConfig).verify).toEqual({
-      paths: ['frontend/', 'backend/recipes/catalogue.json']
-    });
-    expect(() => parseProject(tastebookConfig.replace('  verify: sonnet\n', ''))).toThrow(/models\.verify/);
-    const without = tastebookConfig
-      .replace(/\nverify:\n {2}paths:\n( {4}- .+\n)+/, '\n')
-      .replace('  verify: sonnet\n', '');
-    expect(parseProject(without).verify).toBeUndefined();
-  });
-});
-
 describe('people', () => {
   const milo = 'Milo Bedini <89992629+milobedini@users.noreply.github.com>';
 

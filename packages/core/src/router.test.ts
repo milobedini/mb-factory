@@ -14,7 +14,6 @@ import {
   currentMergeable,
   decideCiFailure,
   decideConflict,
-  decideVerify,
   designStageOn,
   failedChecks,
   findingsPrompt,
@@ -22,12 +21,10 @@ import {
   governDispatch,
   linearStatusFor,
   madeOnlyBy,
-  metEveryCriterion,
   modelFor,
   neverStarted,
   newestMergedBase,
   nextStepAfterRun,
-  notOnScreenReason,
   onlyLockfilesChanged,
   orderQueue,
   parseSessionEvent,
@@ -35,7 +32,6 @@ import {
   queuedThought,
   readSpecReply,
   retryText,
-  reverifiesOnRequest,
   reviewThreadsToResolve,
   runRequestFor,
   sameChanges,
@@ -43,7 +39,6 @@ import {
   shouldMoveIssue,
   shouldResume,
   shouldRetry,
-  showsOnScreen,
   slackFinishedText,
   slackReplyText,
   slackThreadText,
@@ -387,12 +382,6 @@ describe('modelFor', () => {
     expect(modelFor(config, 'spec', false, 'Slice Real recipes')).toBe('opus');
   });
 
-  it('uses the verify model, and says so when factory.yaml has none', () => {
-    expect(modelFor(config, 'verify', false)).toBe('sonnet');
-    const { verify: _, ...models } = config.models;
-    expect(() => modelFor({ ...config, models }, 'verify', false)).toThrow(/no model for the verify stage/);
-  });
-
   it('falls back to the triage model for slicing when none is set', () => {
     const { slicing: _, ...models } = config.models;
     expect(modelFor({ ...config, models }, 'triage', false, 'Slice Real recipes')).toBe('sonnet');
@@ -416,138 +405,6 @@ describe('withFindings', () => {
 
   it('leaves the request alone with no findings', () => {
     expect(withFindings(answered, 1, [])).toBe(answered);
-  });
-});
-
-describe('reverifiesOnRequest', () => {
-  // TAS-40, 27 Oct: merging main in to clear a GLOSSARY.md conflict re-ran verify, though main's changes were verified
-  // on their own PRs and the resolution changed nothing on screen.
-  // TAS-43, 27 Oct: fixing two end-to-end locators, as the user's answer asked, re-ran verify for ten minutes.
-  it('reuses a verify that met every criterion after any revision of a delivered PR', () => {
-    expect(reverifiesOnRequest('review_findings')).toBe(true);
-    expect(reverifiesOnRequest('answered')).toBe(true);
-    expect(reverifiesOnRequest('ci_failed')).toBe(true);
-    expect(reverifiesOnRequest('conflict')).toBe(true);
-  });
-
-  it('verifies a first delivery and a person’s own instruction as usual', () => {
-    expect(reverifiesOnRequest('delegated')).toBe(false);
-    expect(reverifiesOnRequest('spec_approved')).toBe(false);
-    expect(reverifiesOnRequest('prompted')).toBe(false);
-  });
-});
-
-describe('decideVerify', () => {
-  const screen = ['frontend/'];
-  const reason = 'Only changes where browser errors are sent';
-
-  it('verifies a PR that touches the screen when the implement run gave no reason not to', () => {
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], { next: 'review' })).toEqual({ verify: true });
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], null)).toEqual({ verify: true });
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], { notOnScreen: '   ' })).toEqual({ verify: true });
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], { notOnScreen: 42 })).toEqual({ verify: true });
-  });
-
-  it('skips verify, with the reason, when the implement run said nothing a person sees changed', () => {
-    expect(decideVerify(screen, ['frontend/vite.config.ts'], { notOnScreen: `  ${reason}\n` })).toEqual({
-      verify: false,
-      skipped: reason
-    });
-  });
-
-  it('says nothing about a PR that never touches the screen', () => {
-    expect(decideVerify(screen, ['backend/api.py'], { notOnScreen: reason })).toEqual({ verify: false });
-  });
-
-  it('skips verify once an earlier run met every criterion, saying when', () => {
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], null, { verifiedAt: '15:24' })).toEqual({
-      verify: false,
-      skipped: 'already verified at 15:24, and nothing it checked was unmet'
-    });
-  });
-
-  // TAS-153, 3 Nov: the first delivery skipped verify (a test-only seed endpoint), but the review-fix revision didn't
-  // repeat its reason, so verify ran and found nothing on screen to check.
-  it('carries an earlier skip to a revision that gave no reason of its own, saying when', () => {
-    expect(decideVerify(screen, ['frontend/e2e/seed.ts'], { next: 'review' }, { skippedAt: '14:23', reason })).toEqual({
-      verify: false,
-      skipped: `already skipped at 14:23: ${reason}`
-    });
-  });
-
-  it('verifies despite an earlier skip when the revision asks again', () => {
-    expect(
-      decideVerify(
-        screen,
-        ['frontend/src/app.tsx'],
-        { verifyAgain: 'The form now shows' },
-        { skippedAt: '14:23', reason }
-      )
-    ).toEqual({ verify: true, again: 'The form now shows' });
-  });
-
-  it('verifies when the implement run asks again, whatever else holds, passing on why', () => {
-    const asked = { verifyAgain: ' The admin criterion needs a screenshot\n' };
-    expect(decideVerify(screen, ['backend/admin.py'], asked, { verifiedAt: '15:24' })).toEqual({
-      verify: true,
-      again: 'The admin criterion needs a screenshot'
-    });
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], { verifyAgain: '  ' }, { verifiedAt: '15:24' }).verify).toBe(
-      false
-    );
-  });
-
-  it('gives the implement run’s reason over the earlier verify', () => {
-    expect(decideVerify(screen, ['frontend/src/app.tsx'], { notOnScreen: reason }, { verifiedAt: '15:24' })).toEqual({
-      verify: false,
-      skipped: reason
-    });
-  });
-});
-
-describe('notOnScreenReason', () => {
-  it('gives the reason on one line, and nothing for a blank or missing one', () => {
-    expect(notOnScreenReason({ notOnScreen: ' Only the\n seed endpoint ' })).toBe('Only the seed endpoint');
-    expect(notOnScreenReason({ notOnScreen: '  ' })).toBeUndefined();
-    expect(notOnScreenReason({ next: 'review' })).toBeUndefined();
-    expect(notOnScreenReason(null)).toBeUndefined();
-  });
-});
-
-describe('metEveryCriterion', () => {
-  const report = (...results: string[]) => ({ criteria: results.map((result) => ({ criterion: 'c', result })) });
-
-  it('holds when at least one criterion was met and none was not met', () => {
-    expect(metEveryCriterion(report('met', 'met'))).toBe(true);
-    expect(metEveryCriterion(report('met', 'unverified'))).toBe(true);
-  });
-
-  it('fails when a criterion was not met, however it is written', () => {
-    expect(metEveryCriterion(report('met', 'not met'))).toBe(false);
-    expect(metEveryCriterion(report('met', 'not_met'))).toBe(false);
-    expect(metEveryCriterion(report('Met', 'Not Met'))).toBe(false);
-  });
-
-  it('fails when nothing was met or the report has no criteria', () => {
-    expect(metEveryCriterion(report('unverified'))).toBe(false);
-    expect(metEveryCriterion(report())).toBe(false);
-    expect(metEveryCriterion({ outcome: 'done' })).toBe(false);
-    expect(metEveryCriterion(null)).toBe(false);
-  });
-});
-
-describe('showsOnScreen', () => {
-  it('matches files under a listed directory, with or without its slash, and listed files', () => {
-    expect(showsOnScreen(['frontend/'], ['backend/api.py', 'frontend/src/app.tsx'])).toBe(true);
-    expect(showsOnScreen(['frontend'], ['frontend/index.html'])).toBe(true);
-    expect(showsOnScreen(['./frontend/'], ['frontend/index.html'])).toBe(true);
-    expect(showsOnScreen(['vercel.json'], ['vercel.json'])).toBe(true);
-  });
-
-  it('ignores files outside them, including ones that only share a prefix', () => {
-    expect(showsOnScreen(['frontend/'], ['backend/api.py', 'docs/design.md'])).toBe(false);
-    expect(showsOnScreen(['frontend/'], ['frontend-tools/build.ts'])).toBe(false);
-    expect(showsOnScreen(['frontend/'], [])).toBe(false);
   });
 });
 
@@ -718,21 +575,6 @@ describe('nextStepAfterRun', () => {
     });
   });
 
-  it('sends a delivered PR that shows on screen to verify first, and a verified PR on to review', () => {
-    const delivered = { ...loop, hasPr: true };
-    expect(nextStepAfterRun({ ...finished, agent: 'implement', report: null }, { ...delivered, verify: true })).toEqual(
-      {
-        stage: 'in_review',
-        request: { agent: 'verify', trigger: 'delivered', priority: 'in_flight', prompt: null }
-      }
-    );
-    expect(nextStepAfterRun({ ...finished, agent: 'verify', report: null }, delivered)).toEqual({
-      stage: 'in_review',
-      request: { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null }
-    });
-    expect(nextStepAfterRun({ ...finished, agent: 'verify', outcome: 'blocked', report: null }, delivered)).toEqual({});
-  });
-
   it('sends a PR back to the gate when its conflict fix changed only lockfiles, and to review otherwise', () => {
     const fix = { ...finished, agent: 'implement' as const, trigger: 'conflict' as const, report: null };
     const delivered = { ...loop, hasPr: true };
@@ -745,7 +587,6 @@ describe('nextStepAfterRun', () => {
 
   it.each([
     ['implement', 'building', 'implement'],
-    ['verify', 'building', 'implement'],
     ['spec', 'spec', 'spec']
   ] as const)('follows triage’s next: %s with the %s stage and a %s run', (next, stage, agent) => {
     expect(nextStepAfterRun(triaged(next), loop)).toEqual({
@@ -1368,25 +1209,22 @@ describe('failedChecks', () => {
 });
 
 describe('queuedAlready', () => {
-  const verify = { agent: 'verify', trigger: 'delivered', priority: 'in_flight', prompt: null } as const;
+  const review = { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null } as const;
 
-  // TAS-40, 27 Oct: a conflict fix and an answer's revision each handed on to verify, so two verify and review rounds
-  // ran on the same commit.
-  it('drops a verify or review when one is already queued for the work item', () => {
-    expect(queuedAlready(verify, [{ agent: 'verify' }])).toBe(true);
-    expect(queuedAlready({ ...verify, agent: 'review' }, [{ agent: 'review' }])).toBe(true);
+  // TAS-40, 27 Oct: a conflict fix and an answer's revision each handed on, so two review rounds ran on the same commit.
+  it('drops a review when one is already queued for the work item', () => {
+    expect(queuedAlready(review, [{ agent: 'review' }])).toBe(true);
   });
 
   it('keeps it when only other stages are queued', () => {
-    expect(queuedAlready(verify, [])).toBe(false);
-    expect(queuedAlready(verify, [{ agent: 'review' }])).toBe(false);
+    expect(queuedAlready(review, [])).toBe(false);
+    expect(queuedAlready(review, [{ agent: 'triage' }])).toBe(false);
   });
 
   // TAS-43, 27 Oct: a review round's answers and its Fix box could each start a revision; the first to finish would
   // have sent half the changes to review.
   it('leaves the hand-on to an implement run still queued, so one review sees both changes', () => {
-    expect(queuedAlready({ ...verify, agent: 'review' }, [{ agent: 'implement' }])).toBe(true);
-    expect(queuedAlready(verify, [{ agent: 'implement' }])).toBe(true);
+    expect(queuedAlready(review, [{ agent: 'implement' }])).toBe(true);
   });
 
   it('keeps any other kind of run, which carries its own request', () => {

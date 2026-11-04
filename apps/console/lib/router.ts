@@ -4,7 +4,6 @@ import type {
   ChangedFile,
   DependencyPr,
   DependencyWork,
-  EarlierVerify,
   FactoryConfig,
   FiledIssue,
   Gate,
@@ -15,7 +14,6 @@ import type {
   ReadyIssue,
   ReadyOutcome,
   ReviewFinding,
-  RunOutcome,
   RunRequest,
   RunStatus,
   RunTrigger,
@@ -23,8 +21,7 @@ import type {
   SlackAction,
   SlackMessage,
   Stage,
-  StopCause,
-  VerifyDecision
+  StopCause
 } from '@mb-factory/core';
 import {
   ASK_TICKET_GONE,
@@ -62,7 +59,6 @@ import {
   decideCiFailure,
   decideConflict,
   decideIssueUpdate,
-  decideVerify,
   delegateFailedText,
   dependencyIssue,
   dependencyTakenText,
@@ -81,7 +77,6 @@ import {
   filedIssueClosedText,
   filedStartedMessage,
   findingsPrompt,
-  formatReleaseAt,
   GATE_CHANGES_QUESTION,
   GATE_GONE,
   governDispatch,
@@ -104,7 +99,6 @@ import {
   mergeNotSetUpText,
   mergeRefusal,
   mergeRefusedText,
-  metEveryCriterion,
   modelFor,
   movedOnLine,
   neutraliseMarkdown,
@@ -113,7 +107,6 @@ import {
   notAllowedText,
   notAllowedToStartText,
   nothingReadyText,
-  notOnScreenReason,
   notReadyText,
   notWaitingToMergeText,
   onlyAsksForChanges,
@@ -151,7 +144,6 @@ import {
   readVariantPick,
   resumeRequestFor,
   retryText,
-  reverifiesOnRequest,
   reviewersFor,
   reviewThreadsToResolve,
   reviewVerdict,
@@ -227,7 +219,6 @@ import {
   mergeBaseIntoBranch,
   mergePull,
   openPullsWithHead,
-  pullFiles,
   pullForMerge,
   pullHead,
   pullMergeState,
@@ -3128,65 +3119,6 @@ const headKeepingReviewedChanges = async (
   }
 };
 
-// What settled verify for a work item before a revision, as the thread shows the time: its latest verify run, when that
-// met every criterion (one that met everything before a later run found something not met proves nothing); when verify
-// never ran, the latest implement run that skipped it as nothing a person sees changed.
-const earlierVerify = async (project: FactoryConfig, workItemId: string): Promise<EarlierVerify | undefined> => {
-  const finishedDone = (agent: AgentRole) =>
-    and(eq(runs.workItemId, workItemId), eq(runs.agent, agent), eq(runs.status, 'finished'), eq(runs.outcome, 'done'));
-  const [verified] = await getDb()
-    .select({ report: runs.report, finishedAt: runs.finishedAt })
-    .from(runs)
-    .where(finishedDone('verify'))
-    .orderBy(desc(runs.finishedAt))
-    .limit(1);
-  if (verified) {
-    return verified.finishedAt && metEveryCriterion(verified.report)
-      ? { verifiedAt: formatReleaseAt(verified.finishedAt, new Date(), project.timeZone) }
-      : undefined;
-  }
-  const [skipped] = await getDb()
-    .select({ report: runs.report, finishedAt: runs.finishedAt })
-    .from(runs)
-    .where(and(finishedDone('implement'), sql`${runs.report}->>'notOnScreen' is not null`))
-    .orderBy(desc(runs.finishedAt))
-    .limit(1);
-  const reason = skipped && notOnScreenReason(skipped.report);
-  return skipped?.finishedAt && reason
-    ? { skippedAt: formatReleaseAt(skipped.finishedAt, new Date(), project.timeZone), reason }
-    : undefined;
-};
-
-// Whether a delivered PR is verified, from GitHub's list of its files, the implement run's report and, for a revision
-// that reverifies only on request, what settled verify before. When GitHub can't say, it's verified: a run spent for
-// nothing costs less than a change nobody looked at.
-const needsVerify = async (
-  project: FactoryConfig,
-  run: { agent: AgentRole; trigger: RunTrigger; status: RunStatus; outcome: RunOutcome | null; report: unknown },
-  workItem: WorkItem
-): Promise<VerifyDecision> => {
-  const { prNumber, repository } = workItem;
-  if (
-    !project.verify ||
-    run.agent !== 'implement' ||
-    run.status !== 'finished' ||
-    run.outcome !== 'done' ||
-    !prNumber
-  ) {
-    return { verify: false };
-  }
-  try {
-    const [files, earlier] = await Promise.all([
-      pullFiles(repository, prNumber),
-      reverifiesOnRequest(run.trigger) ? earlierVerify(project, workItem.id) : undefined
-    ]);
-    return decideVerify(project.verify.paths, files, run.report, earlier);
-  } catch (error) {
-    log('warn', 'verify check failed', { issue: workItem.issueIdentifier, pr: prNumber, error: errorMessage(error) });
-    return { verify: true };
-  }
-};
-
 export const handleRunFinished = withCards(async (runId: string): Promise<void> => {
   const found = await findRun(runId);
   const project = found && findProject(found.workItem.project);
@@ -3212,12 +3144,9 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
     : [];
   // A run whose agent never started is tried once more by itself; nobody need be watching.
   const retrying = shouldRetry(run, parent);
-  const verifying = await needsVerify(project, run, workItem);
   const next = nextStepAfterRun(run, {
     hasPr: workItem.prNumber !== null,
     lockfileOnlyMerge: await lockfileOnlyMerge(run, workItem),
-    verify: verifying.verify,
-    verifyPrompt: verifying.again ? `Verify again, as the implement run asked: ${verifying.again}` : null,
     reviewRounds: workItem.reviewRounds,
     maxReviewRounds: project.review.maxRounds
   });
@@ -3244,10 +3173,7 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       { ...run, prUrl, actionsRunUrl: run.actionsRunUrl },
       { questions: next.questions?.length, specReview: next.stage === 'spec_review', gate: next.gate !== undefined }
     ),
-    ...(skippedReview ? [LOCKFILE_GATE_TEXT] : []),
-    // Said where people look, so a wrong call can be challenged: review sees the same reason in the PR's Evidence.
-    ...(verifying.skipped ? [`Skipped verify: ${escapeSlack(verifying.skipped)}`] : []),
-    ...(verifying.again ? [`Verifying again: ${escapeSlack(verifying.again)}`] : [])
+    ...(skippedReview ? [LOCKFILE_GATE_TEXT] : [])
   ].join('\n');
   const rerunnable =
     run.status === 'finished' &&

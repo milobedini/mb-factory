@@ -93,7 +93,7 @@ describe('workItemCard', () => {
     );
     expect(attachment(card).color).toBe(CARD_COLOURS.running);
     expect(track(card)).toBe(
-      ':tb-done: Triage   :tb-skipped: ~Spec~   :tb-running: *Implement*   :tb-todo: Verify   :tb-todo: Review   :tb-todo: Merge'
+      ':tb-done: Triage   :tb-skipped: ~Spec~   :tb-running: *Implement*   :tb-todo: Review   :tb-todo: Merge'
     );
     expect(status(card)).toBe(':tb-running: *Implementing* · <!date^1793095260^started {ago}|started at 10:01>');
     expect(card.text).toBe('TAS-38 Recipe details: running');
@@ -107,7 +107,7 @@ describe('workItemCard', () => {
       )
     );
     expect(track(designing)).toBe(
-      ':tb-done: Triage   :tb-done: Spec   :tb-running: *Design*   :tb-todo: Implement   :tb-todo: Verify   :tb-todo: Review   :tb-todo: Merge'
+      ':tb-done: Triage   :tb-done: Spec   :tb-running: *Design*   :tb-todo: Implement   :tb-todo: Review   :tb-todo: Merge'
     );
     expect(status(designing)).toMatch(/^:tb-running: \*Designing\*/);
   });
@@ -265,7 +265,7 @@ describe('workItemCard', () => {
     expect(attachment(card).color).toBe(CARD_COLOURS.stopped);
     expect(status(card)).toBe(':tb-canceled: *Stopped* from the console by milobedini.');
     expect(track(card)).toContain(':tb-canceled: *Implement*');
-    expect(track(card)).toContain(':tb-todo: Verify');
+    expect(track(card)).toContain(':tb-todo: Review');
     expect(buttons(card).map(({ text }) => text)).toEqual(['Re-run', 'PR #54', 'Run log']);
   });
 
@@ -292,7 +292,7 @@ describe('workItemCard', () => {
     );
     expect(attachment(card).color).toBe(CARD_COLOURS.ready);
     expect(track(card)).toBe(
-      ':tb-done: Triage   :tb-skipped: ~Spec~   :tb-done: Implement   :tb-skipped: ~Verify~   :tb-done: Review   :tb-needs-you: *Merge*'
+      ':tb-done: Triage   :tb-skipped: ~Spec~   :tb-done: Implement   :tb-done: Review   :tb-needs-you: *Merge*'
     );
     expect(status(card)).toBe(':tb-done: *Ready to merge:* review accepted PR #38 at 10:02.');
     expect(buttons(card)).toEqual([
@@ -415,7 +415,7 @@ describe('workItemCard', () => {
   it('marks the stages after a cancel as canceled', () => {
     const card = workItemCard(input({ runs: [run(), run({ agent: 'implement' })] }, { stage: 'canceled' }));
     expect(track(card)).toBe(
-      ':tb-done: Triage   :tb-skipped: ~Spec~   :tb-canceled: *Implement*   :tb-canceled: Verify   :tb-canceled: Review   :tb-canceled: Merge'
+      ':tb-done: Triage   :tb-skipped: ~Spec~   :tb-canceled: *Implement*   :tb-canceled: Review   :tb-canceled: Merge'
     );
     expect(status(card)).toBe(':tb-canceled: *Canceled* at 10:30');
   });
