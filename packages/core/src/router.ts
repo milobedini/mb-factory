@@ -687,9 +687,17 @@ const LOCKFILES = [
 
 const isLockfile = (path: string): boolean => LOCKFILES.includes(path.split('/').at(-1) ?? path);
 
-// A file in GitHub's compare of two commits: its diff (missing for a binary or very large file) and its content at the
-// later one.
-export type ChangedFile = { filename: string; status: string; sha: string | null; patch?: string | null };
+// A file in GitHub's compare of two commits: its diff (missing for a binary or very large file), its content at the
+// later one, and, where read, its lines added and removed and the name it had before a rename.
+export type ChangedFile = {
+  filename: string;
+  status: string;
+  sha: string | null;
+  patch?: string | null;
+  additions?: number;
+  deletions?: number;
+  previousFilename?: string;
+};
 
 // A diff without its hunks' line numbers, which shift when the base gains lines elsewhere in the file. Each hunk's
 // place stays: its order, its context lines, and the function or section name after the header.

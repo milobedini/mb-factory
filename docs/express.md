@@ -223,7 +223,7 @@ Rejected:
 1. **Size.** More than **400 source lines** or **20 source files** changed.
    - Generated output, data, docs, specs, tests and baselines don't count. The patterns live in `factory.yaml` beside the thresholds, so each project names its own generated files.
    - On the data above, about 1 in 8 Tastebook PRs is over the cap.
-2. **Risky paths**, as globs in the project's `factory.yaml` (`express.humanMerge`):
+2. **Risky paths**, as globs in the project's `factory.yaml` (`express.merge.humanMerge`):
    - migrations, every one: production database changes are approved each time
    - auth and session code (allauth settings, sign-in, two-factor, permission classes)
    - `backend/config/` settings
@@ -359,6 +359,11 @@ Four steps, each usable by itself. Each step's work is the factory's own (`mb-fa
    - The dashboard metrics.
 
    Done when a low-risk express PR merges itself, and a PR touching a migration waits for the person.
+
+   **The rules came first (4 Nov):** core `auto-merge.ts`, read from `express.merge` in the project's `factory.yaml`, with review's `humanMerge` for tighten-only. Nothing merges by itself yet: Ready to merge says which way each express PR would go, and why, so the rules can be watched on real PRs before the rulesets go in.
+   - **Backtest** on Tastebook's 33 factory PRs from #86 to #126: 14 would have merged by themselves. The Accounts PRs touched auth and settings, as intended. Size held back 11 PRs (1 in 3, against the baseline's 1 in 8): the recipe form work is large (#124: 1,434 source lines).
+   - **Tuned from it:** suppressions count only in code and tests, since a spec names them; `backend/config/urls.py` is left out of the risky paths, since most new endpoints add a line to it.
+   - **Conservative on purpose:** a new GritQL rule (tightening) still counts as a lint settings change, since a diff can't tell tightening from loosening.
 
 4. **Keeping it clean.**
    - The `cleanup` job with its promotion ladder and mutation testing.

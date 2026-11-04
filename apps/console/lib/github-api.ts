@@ -460,12 +460,19 @@ export const compareFiles = async (
   base: string,
   head: string
 ): Promise<ChangedFile[] | undefined> => {
-  const { files } = await githubGet<{ files?: ChangedFile[] }>(
-    `/repos/${repository}/compare/${base}...${head}`,
-    'compare'
-  );
+  const { files } = await githubGet<{
+    files?: (Omit<ChangedFile, 'previousFilename'> & { previous_filename?: string })[];
+  }>(`/repos/${repository}/compare/${base}...${head}`, 'compare');
   return files && files.length < 300
-    ? files.map(({ filename, status, sha, patch }) => ({ filename, status, sha, patch }))
+    ? files.map(({ filename, status, sha, patch, additions, deletions, previous_filename }) => ({
+        filename,
+        status,
+        sha,
+        patch,
+        additions,
+        deletions,
+        ...(previous_filename ? { previousFilename: previous_filename } : {})
+      }))
     : undefined;
 };
 

@@ -9,6 +9,7 @@ import type {
   Gate,
   GitHubEvent,
   GovernedDecision,
+  MergeRoute,
   NextIssue,
   Question,
   ReadyIssue,
@@ -101,6 +102,7 @@ import {
   mergeNotSetUpText,
   mergeRefusal,
   mergeRefusedText,
+  mergeRoute,
   modelFor,
   movedOnLine,
   neutraliseMarkdown,
@@ -142,6 +144,7 @@ import {
   readDesignVariants,
   readFixableFindings,
   readGate,
+  readHumanMerge,
   readQuestions,
   readVariantPick,
   readVisual,
@@ -320,6 +323,38 @@ const currentTrack = async (project: FactoryConfig, workItem: WorkItem): Promise
     touchCard(workItem.id);
   }
   return track;
+};
+
+// What the express merge rules make of a PR review accepted (docs/express.md, "Who merges"), read from GitHub's diff of
+// the PR against its base and review's own call. Undefined on the careful track, without rules, or when GitHub can't be
+// read, so Ready to merge goes out without it.
+const expressMergeRoute = async (
+  project: FactoryConfig,
+  workItem: WorkItem,
+  report: unknown
+): Promise<MergeRoute | undefined> => {
+  const rules = project.express?.merge;
+  const { prNumber, repository, issueIdentifier: issue } = workItem;
+  if (!rules || !prNumber || (await currentTrack(project, workItem)) !== 'express') {
+    return undefined;
+  }
+  try {
+    const { head, base } = await pullHead(repository, prNumber);
+    const route = mergeRoute(rules, {
+      files: await compareFiles(repository, base, head),
+      tightened: readHumanMerge(report)
+    });
+    log('info', 'merge route', {
+      issue,
+      pr: prNumber,
+      route: route.route,
+      ...(route.route === 'person' ? { reasons: route.reasons.join('; ') } : {})
+    });
+    return route;
+  } catch (error) {
+    log('warn', 'merge route unread', { issue, error: errorMessage(error) });
+    return undefined;
+  }
 };
 
 // The PR's visual, from the newest implement run that has one, so a revision that changed nothing on screen keeps it.
@@ -3274,7 +3309,13 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
     mergeEffect: project.mergeEffect,
     findingsLeft: readyToMerge && listingFindings ? findings.length : undefined
   };
-  const visual = readyToMerge && prUrl ? await latestVisual(workItem) : undefined;
+  const [visual, route] =
+    readyToMerge && prUrl
+      ? await Promise.all([
+          latestVisual(workItem),
+          run.agent === 'review' ? expressMergeRoute(project, workItem, run.report) : undefined
+        ])
+      : [undefined, undefined];
   const reply = retrying
     ? retryText(run.agent, run.actionsRunUrl)
     : rerunnable
@@ -3286,6 +3327,7 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
               prNumber: readyToMerge,
               prUrl,
               visual,
+              mergeRoute: route,
               ...mergeNotes
             })
           )

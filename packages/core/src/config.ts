@@ -1,6 +1,7 @@
 import { parse } from 'yaml';
 import { z } from 'zod';
 
+import { mergeRulesSchema } from './auto-merge';
 import { JOB_AGENTS } from './stages';
 import { TRACKS } from './track';
 
@@ -77,6 +78,9 @@ export const factoryConfigSchema = z.object({
   mergeEffect: z.string().min(1).max(80).optional(),
   // The track work takes unless its issue is labelled `express` or `careful` (docs/express.md).
   track: z.enum(TRACKS).default('careful'),
+  // Who merges an express PR: the factory once its checks pass, unless one of these rules sends it to the person.
+  // Without them, every PR waits for the person.
+  express: z.object({ merge: mergeRulesSchema }).optional(),
   repositories: z
     .array(
       z.object({

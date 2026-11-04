@@ -72,4 +72,6 @@ The heading reads `Accepted`, `Revision needed` or `Needs your decision`. Leave 
     "size": "S" } }
 ```
 
+**`humanMerge`**, on `track: express` only: when the PR carries a security or data risk (who can see or change what, personal data, deleting or rewriting data), one sentence on it. The PR then waits for the person's merge instead of merging itself; the thread shows the sentence. The console's own rules already catch migrations, auth code, settings, CI, size, and weakened tests or checks, so don't repeat those. It can only send a PR to the person, never let one through.
+
 **`beforeMerging`**, when the PR could merge as it is: one sentence on something a person should check that no check covers ("The seed recipes are placeholders; check the recipe page reads well with them"). Slack shows it beside **Approve and merge**. Each round's replaces the last, so repeat an earlier note that still holds. Never use it for findings.

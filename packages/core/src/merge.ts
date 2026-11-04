@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { MergeRoute } from './auto-merge';
 import type { ChecksSummary } from './checks';
 import type { ChecksState } from './inbox';
 import type { SlackBlock, SlackMessage } from './slack';
@@ -72,7 +73,20 @@ const openPrButton = (prNumber: number, prUrl: string): SlackBlock => ({
   url: prUrl
 });
 
-export type AcceptedPr = { workItemId: string; prNumber: number; prUrl: string; visual?: Visual } & MergeNotes;
+export type AcceptedPr = {
+  workItemId: string;
+  prNumber: number;
+  prUrl: string;
+  visual?: Visual;
+  // The express merge rules' reading, said under the buttons.
+  mergeRoute?: MergeRoute;
+} & MergeNotes;
+
+// What the express merge rules made of a PR, while the person still merges every one (docs/express.md, step 3).
+export const mergeRouteLine = (route: MergeRoute): string =>
+  route.route === 'auto'
+    ? 'Express: this one would merge itself once its checks pass. Auto-merge isn’t on yet, so it’s yours to merge.'
+    : `Express: this one waits for your merge: ${escapeSlack(route.reasons.join('; '))}.`;
 
 // Review's finished message when the PR is ready to merge: what it said, the PR's visual, what to check first, and the
 // buttons. With findings left to choose, Approve and merge sits beside Fix ticked under them instead, so there's one
@@ -91,7 +105,10 @@ export const slackAcceptedMessage = (finishedText: string, pr: AcceptedPr): Slac
           ...(pr.findingsLeft ? [] : [mergeButton(pr.workItemId, pr.prNumber, pr)]),
           openPrButton(pr.prNumber, pr.prUrl)
         ]
-      }
+      },
+      ...(pr.mergeRoute
+        ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: mergeRouteLine(pr.mergeRoute) }] }]
+        : [])
     ]
   };
 };

@@ -41,6 +41,62 @@ mergeEffect: deploys it to production
 # (docs/express.md in mb-factory). The person still merges.
 track: express
 
+# Who merges an express PR: the factory once its checks pass, unless one of these sends it to the person. Until
+# auto-merge is on, Ready to merge only says which way each PR would go. Globs are from the repo root; one ending in `/`
+# takes the whole folder.
+express:
+  merge:
+    # More than either, counting source only, waits for the person.
+    size:
+      lines: 400
+      files: 20
+    # Not counted in the size: generated output, data, docs, specs and baselines (tests never count either).
+    uncounted:
+      - "**/*.md"
+      - docs/
+      - specs/
+      - pnpm-lock.yaml
+      - backend/uv.lock
+      - backend/schema.yml
+      - frontend/src/api/schema.d.ts
+      - backend/recipes/catalogue*.json
+      - frontend/visual/baselines/
+      - frontend/dino-bundle/
+    # Deleting a test, or adding a skip to one, waits for the person.
+    tests:
+      - "**/*.test.{ts,tsx}"
+      - "**/*.spec.ts"
+      - frontend/e2e/
+      - frontend/src/test/
+      - backend/tests/
+    # Lint, type and test settings and thresholds. pyproject.toml is left out: it holds the dependencies too.
+    safetyNet:
+      - biome.json
+      - tools/biome/
+      - "**/tsconfig*.json"
+      - frontend/vite.config.ts
+      - frontend/vitest.config.ts
+      - frontend/playwright*.config.ts
+      - frontend/lighthouserc.json
+      - backend/ruff.toml
+      - backend/tests/conftest.py
+    # Risky paths: every migration (production database changes are approved each time), auth and session code,
+    # settings, CI workflows. `backend/config/urls.py` is left out: most new endpoints add a line to it.
+    humanMerge:
+      - backend/*/migrations/
+      - backend/config/settings.py
+      - backend/config/sentry.py
+      - backend/config/asgi.py
+      - backend/config/wsgi.py
+      - backend/households/adapter.py
+      - backend/households/admin_site.py
+      - frontend/src/households/auth-api.ts
+      - frontend/src/households/session-api.ts
+      - frontend/src/households/sign-in-*.{ts,tsx}
+      - frontend/src/households/safe-next-path.ts
+      - .github/
+      - vercel.json
+
 # Credited as co-author on the factory's commits for issues assigned to them, and mentioned in Slack when one waits
 # on them. `git` is GitHub's noreply address, so the commits count on their profile without publishing an email;
 # `slack` is their member ID (profile → ⋮ → Copy member ID); `github` is their GitHub user ID

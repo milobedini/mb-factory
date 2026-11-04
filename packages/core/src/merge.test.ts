@@ -73,6 +73,27 @@ describe('slackAcceptedMessage', () => {
     expect(open).toMatchObject({ text: { text: 'Open PR #39' }, url: pr.prUrl });
   });
 
+  it('says what the express merge rules made of the PR under the buttons', () => {
+    const auto = slackAcceptedMessage(finished, { ...pr, beforeMerging: undefined, mergeRoute: { route: 'auto' } });
+    expect(auto.blocks.at(-1)).toEqual({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: 'Express: this one would merge itself once its checks pass. Auto-merge isn’t on yet, so it’s yours to merge.'
+        }
+      ]
+    });
+    const person = slackAcceptedMessage(finished, {
+      ...pr,
+      beforeMerging: undefined,
+      mergeRoute: { route: 'person', reasons: ['touches a <path>', 'adds noqa in x.py'] }
+    });
+    expect(person.blocks.at(-1)).toMatchObject({
+      elements: [{ text: 'Express: this one waits for your merge: touches a &lt;path&gt;; adds noqa in x.py.' }]
+    });
+  });
+
   it('leaves the note out when review gave none, and keeps the confirm within Slack’s 300 characters', () => {
     expect(slackAcceptedMessage(finished, { ...pr, beforeMerging: undefined }).blocks).toHaveLength(2);
     const long = slackAcceptedMessage(finished, { ...pr, beforeMerging: 'Check this. '.repeat(40) });
