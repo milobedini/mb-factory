@@ -16,4 +16,8 @@ gh api -X POST repos/milobedini/tastebook/rulesets --input projects/tastebook/ru
 gh api -X DELETE repos/milobedini/tastebook/branches/main/protection
 ```
 
-To change one later, `PUT repos/milobedini/tastebook/rulesets/<id>` with the edited file.
+To change one later, `PUT repos/milobedini/tastebook/rulesets/<id>` with the edited file (Checks is 26517093).
+
+`require_extra_approval_for_unattributed_changes` is set to `false`: GitHub turns it on by default, it isn't
+documented yet, and on Checks, which nobody bypasses, it could hold the factory's merge. The branch protection these
+replace had nothing like it.
