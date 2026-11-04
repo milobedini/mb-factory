@@ -206,7 +206,7 @@ Rejected:
     - A collage holds at most four screens on Tastebook's dark ground, each captioned, a changed screen's before beside its after, set apart by a divider.
     - A video is converted to mp4 so it plays on a phone. Its poster is three of its frames with a play badge and its length.
     - Slack shows the image under review's text, before *Before merging* and the buttons. A video's "Play the walkthrough" link is a context line rather than a button, so it stays when the buttons are cleared at merge.
-    - The console reads the visual from the newest implement run that has one, so a revision that changes nothing on screen keeps it. It reads only the store's public URLs, which the evidence job writes over whatever the agent put there.
+    - The console reads the visual from the newest implement run that has one, so a revision that changes nothing on screen keeps it. It takes only the evidence job's file names in that run's own `<repository>/<run>/` folder, since the stage job's agent can post a report of its own.
 - **Review is narrowed:**
   - It checks correctness and security against the issue (or spec), in a fresh context.
   - It never reports a failing check or a Vercel preview: the router already handles CI.

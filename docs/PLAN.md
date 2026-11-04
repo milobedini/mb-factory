@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 5 (Express, [docs/express.md](express.md)); Phase 4 closed on 3 Nov 2026 with its baseline frozen early (25 Oct–3 Nov) so Express could start at once. Exit: two weeks of express against that baseline, with cycle time and the person's taps per PR down, and fixes or reverts within 7 days and new Sentry issues tied to a PR no worse.
 
-**Next:** watch Tastebook's first express issues (To see live) to close steps 1 and 2, then start step 3, auto-merge ([docs/express.md](express.md#rollout)).
+**Next:** start Express step 3, auto-merge, with its size, path and safety-net rules ([docs/express.md](express.md#rollout)), checking To see live as Tastebook's first express issues come through, since steps 1 and 2 close once those are seen.
 
 **Direction, in order:** Express (Phase 5) in its four steps, each the base for later factory changes, while Tastebook's Dino project and Accounts and households' slices (sliced 29 Oct; those that need design go through the design stage) keep running through the factory as the steps land; onboard `mb-factory` as a project (agreed 3 Nov: self-improvement PRs then go through the factory's own stages, and health findings arrive as triaged issues); then Phase 6. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
@@ -289,11 +289,13 @@ Learnt the hard way; each would bite again.
 - A manually started workflow runs on the branch as it is, while a PR's checks run on its merge with the base: a branch from before a fix on `main` fails the manual run that its PR's checks pass (#78, 29 Oct).
 - No webhook fires when a PR becomes conflicting, a conflicting PR runs no CI, and `mergeable` can stay stale against an old base, or unknown for over two minutes after the base moves (TAS-81, 29 Oct): don't wait on it to act.
 - Environment names are case-insensitive, and Vercel creates a `Production` environment (hence `backups`).
+- `hashFiles()` in a step's `if:` sees only the workspace, never `runner.temp`: check for such a file inside the step.
+- A job that parses files an agent made (ImageMagick, ffmpeg) holds no secret: a crafted file could plant something in a later step's environment and read its token. Hence `stage.yml`'s separate `visual` job (4 Nov, caught in self-review).
 - Dependabot runs as soon as `dependabot.yml` lands; labels it adds must exist; its lockfile can move unrelated packages backwards; `cooldown` doesn't apply to security updates.
 
 **Linear**
 
-- The app can't create team labels (`not allowed to take action`): create `factory`, `Blocked` (`#eb5757`), `docs` and `security` by hand.
+- The app can't create team labels (`not allowed to take action`): create `factory`, `Blocked` (`#eb5757`), `docs`, `security`, `express` and `careful` by hand (the last two made through the Linear connector on 4 Nov).
 - A session opened with `agentSessionCreateOnIssue` still sends `created` about 0.3 s later, so claiming the work item must be atomic.
 - A `prompted` body arrives in `agentActivity.content.body` (not as documented); a stop is `prompted` with `signal: "stop"`.
 - The GitHub integration's "review requested" automation must point at Awaiting Merge, or it undoes the merge gate.
@@ -380,7 +382,7 @@ mb-factory isn't a factory project yet, so its own follow-ups live here. Each is
 - **Merge state:** re-check PRs whose merge state stays unknown (needs a record of which); make `merge state unknown` a warning only when it changes an outcome; a PR handed over for conflicts is told again on every later push to `main`, and the CI hand-over repeats on every later failure; bringing a PR up to date says "No new review is needed" even with a Blocking finding open (careful only).
 - **Merge conflicts:** compare lockfile contents after an agent conflict fix (CI regenerates and fails on a difference); flag issues touching the same manifests in the Ready list; conflicts and their cost on the dashboard; union merge for `GLOSSARY.md`.
 - **Dependencies:** check Dependabot majors before implement (runtime versions, peer ranges, `AGENTS.md`); learn from an unmerged close (ask why, propose an ignore rule or a lesson).
-- **Stage runner security:** the stage job's own secrets share a runner with an agent that has sudo and can write `$GITHUB_ENV` (the reasoning that split out the evidence job); the security check doesn't cover `mb-factory` (onboarding it fixes that); `security-rubric` has no category for untrusted text reaching a renderer or prompt, and its unpinned-actions row contradicts its no-best-practice rule.
+- **Stage runner security:** the stage job's own secrets share a runner with an agent that has sudo and can write `$GITHUB_ENV` (the reasoning that split out the evidence job); the security check doesn't cover `mb-factory` (onboarding it fixes that); `security-rubric` has no category for untrusted text reaching a renderer or prompt, and its unpinned-actions row contradicts its no-best-practice rule; the console takes a PR's visual from the run's own `<repository>/<run>/` folder on any public Blob store, so naming the project's store in `factory.yaml` would bind it fully.
 - **Sentry:** issues that came back or grew, an environment filter, filing issues (Phase 7).
 - **Slack:** `/tastebook pause [reason]` (no reason column); an Approve tapped in a `/tastebook status` reply leaves it stale; the Home usage bar renders small (try coloured squares); debounce Home republishing if `views.publish` rate-limits; follow-up questions in an ask thread do nothing; the factory's avatar (`projects/tastebook/slack-assets/avatar.svg`) is still Enamel's cobalt on yolk, to redo in Picnic on a canvas first.
 - **Console:** the Runs page refreshes every 10 s but needs times counting up and the agent's latest thought; usage over time with runs overlaid and the factory/you split; a weekly evidence clean-up (before the Blob store passes about 500 MB); exact Actions minutes; scorer cards (Phase 6); a project filter (Phase 7).
