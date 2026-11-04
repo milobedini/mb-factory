@@ -105,6 +105,7 @@ export const loadCardInput = async (
       estimate: workItem.estimate,
       reviewRounds: workItem.reviewRounds,
       updatedAt: workItem.updatedAt,
+      track: workItem.track,
       project: workItem.projectName ? { name: workItem.projectName, url: workItem.projectUrl } : null,
       milestone: workItem.milestoneName,
       assignee: assigneeName(project, workItem.assigneeEmail),

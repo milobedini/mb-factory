@@ -8,6 +8,7 @@ import {
   RUN_STATUSES,
   RUN_TRIGGERS,
   STAGES,
+  TRACKS,
   USAGE_SOURCES,
   USAGE_STATUSES,
   USAGE_WINDOWS,
@@ -105,6 +106,9 @@ export const workItems = pgTable(
     milestoneName: text(),
     // The Linear assignee's email when a stage last started, for the card's name and the Slack mention.
     assigneeEmail: text(),
+    // The track the work last ran on (`trackFor`), read from its labels whenever a run starts or the router picks the
+    // next step; empty for work from before Express.
+    track: text({ enum: TRACKS }),
     // Issues this one's finishing made ready, offered on its Slack card (core `NextIssue`).
     nextReady: jsonb(),
     // Review's "accepted" message in the thread, with Approve and merge, settled once the PR is merged or closed.

@@ -36,6 +36,12 @@ describe('renderStagePrompt', () => {
     ).toContain('co-author: Milo Bedini <m@users.noreply.github.com> stage: review\n</brief>');
   });
 
+  it('names the track after the trigger', () => {
+    expect(briefBlock(renderStagePrompt({ ...brief, track: 'express' }))).toContain(
+      'trigger: delegated\ntrack: express\n</brief>'
+    );
+  });
+
   it('writes a job brief with its slot and where the last run got to', () => {
     const prompt = renderStagePrompt({
       agent: 'security',

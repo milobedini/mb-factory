@@ -443,6 +443,8 @@ export {
 } from './slack';
 export type { AgentRole, JobAgent, Stage, StageContext, StageEvent, Transition } from './stages';
 export { AGENT_FOR_STAGE, AGENT_ROLES, HUMAN_GATES, JOB_AGENTS, STAGES, TERMINAL_STAGES, transition } from './stages';
+export type { Track } from './track';
+export { TRACKS, trackFor } from './track';
 export type { UsageSummary, WindowSummary } from './usage';
 export { formatDuration, needsProbe, readingsFromStatusLine, statusLineUsageSchema, summariseUsage } from './usage';
 export type { Visual } from './visual';

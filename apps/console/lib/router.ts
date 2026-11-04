@@ -181,6 +181,7 @@ import {
   startsReviewLoop,
   stoppedText,
   TERMINAL_STAGES,
+  trackFor,
   unblockedBy,
   unblockedHeading,
   waitsOnBlockers,
@@ -246,7 +247,7 @@ import {
   findAppUserId,
   findUserIdByEmail,
   hasClosingActivity,
-  issueAssigneeEmail,
+  issueAssigneeAndLabels,
   issueToSize,
   issueToStart,
   moveIssueToStatus,
@@ -793,21 +794,23 @@ const startRun = async (
     .set({ releasedAt: now })
     .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt)));
 
-  // Credits the person the work is for on its commits, and keeps who that is for the card and the Slack mention; a
-  // lookup that fails only loses the credit, and keeps the last known assignee.
-  const assigneeEmail =
-    project.people.length > 0
-      ? await issueAssigneeEmail(workItem.linearOrganizationId, workItem.linearIssueId).catch((error: unknown) => {
-          log('warn', 'linear assignee lookup failed', {
-            issue: workItem.issueIdentifier,
-            error: errorMessage(error)
-          });
-          return undefined;
-        })
-      : undefined;
+  // Credits the person the work is for on its commits, and keeps who that is for the card and the Slack mention; the
+  // labels give the track. A lookup that fails only loses the credit, and keeps the last known assignee and track.
+  const issue = await issueAssigneeAndLabels(workItem.linearOrganizationId, workItem.linearIssueId).catch(
+    (error: unknown) => {
+      log('warn', 'linear assignee lookup failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+      return undefined;
+    }
+  );
+  const assigneeEmail = project.people.length > 0 && issue ? issue.assigneeEmail : undefined;
   const coAuthor = coAuthorFor(project, assigneeEmail ?? workItem.assigneeEmail);
-  if (assigneeEmail !== undefined && assigneeEmail !== workItem.assigneeEmail) {
-    await db.update(workItems).set({ assigneeEmail }).where(eq(workItems.id, workItem.id));
+  const track = issue ? trackFor(project.track, issue.labels) : (workItem.track ?? project.track);
+  const changed = {
+    ...(assigneeEmail !== undefined && assigneeEmail !== workItem.assigneeEmail ? { assigneeEmail } : {}),
+    ...(track !== workItem.track ? { track } : {})
+  };
+  if (Object.keys(changed).length > 0) {
+    await db.update(workItems).set(changed).where(eq(workItems.id, workItem.id));
     touchCard(workItem.id);
   }
   const payload = buildDispatchPayload({
@@ -822,7 +825,8 @@ const startRun = async (
       pr: workItem.prNumber ?? undefined,
       branch: workItem.branch ?? undefined,
       round: briefRound(run, workItem.reviewRounds),
-      coAuthor
+      coAuthor,
+      track
     }
   });
   try {

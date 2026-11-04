@@ -87,6 +87,14 @@ const buttons = (card: ReturnType<typeof workItemCard>): { text: string; url?: s
   );
 
 describe('workItemCard', () => {
+  it('leaves Spec off an express track and says which track it is', () => {
+    const card = workItemCard(
+      input({ runs: [run(), run({ agent: 'implement', status: 'running', finishedAt: null })] }, { track: 'express' })
+    );
+    expect(track(card)).toBe(':tb-done: Triage   :tb-running: *Implement*   :tb-todo: Review   :tb-todo: Merge');
+    expect(JSON.stringify(card)).toContain('Express');
+  });
+
   it('shows a running stage on the track, with skipped stages struck through and the rest to do', () => {
     const card = workItemCard(
       input({ runs: [run(), run({ agent: 'implement', status: 'running', finishedAt: null })] })

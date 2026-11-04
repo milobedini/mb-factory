@@ -1,6 +1,7 @@
 import type { JobScope } from './config';
 import type { RunTrigger } from './runs';
 import type { AgentRole } from './stages';
+import type { Track } from './track';
 
 export const DISPATCH_EVENT = 'factory-stage';
 
@@ -15,6 +16,7 @@ export type Brief = {
   round?: number;
   // `Name <email>` of the person the work is for, credited on every commit.
   coAuthor?: string;
+  track?: Track;
 };
 
 // A scheduled job's brief: no issue or session, just the slot it fills and where the last run of it got to.
@@ -64,12 +66,13 @@ const indent = (text: string): string =>
 // Keeps a field on its own line, so no value can add lines that read as other brief fields.
 const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
-const renderBrief = ({ agent, issue, session, trigger, prompt, pr, branch, round, coAuthor }: Brief): string =>
+const renderBrief = ({ agent, issue, session, trigger, prompt, pr, branch, round, coAuthor, track }: Brief): string =>
   [
     `stage: ${agent}`,
     `issue: ${oneLine(issue.identifier)} ${oneLine(issue.url)}`,
     `session: ${oneLine(session)}`,
     `trigger: ${trigger}`,
+    track === undefined ? undefined : `track: ${track}`,
     pr === undefined ? undefined : `pr: ${pr}`,
     branch === undefined ? undefined : `branch: ${oneLine(branch)}`,
     round === undefined ? undefined : `round: ${round}`,

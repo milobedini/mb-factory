@@ -26,6 +26,7 @@ import {
 } from './slack';
 import type { AgentRole, Stage } from './stages';
 import { TERMINAL_STAGES } from './stages';
+import type { Track } from './track';
 
 // A work item's thread starts with a card, edited in place as the work moves: a title, then a coloured attachment with
 // the stage track, what's happening now, the size and project, and a button when there's something to do from it.
@@ -89,6 +90,8 @@ export type CardInput = {
     assignee: string | null;
     // A person took the factory off the issue; delegating it again carries on from here.
     undelegated?: boolean;
+    // The track it last ran on; empty for work from before Express.
+    track?: Track | null;
   };
   // Oldest first.
   runs: CardRun[];
@@ -232,7 +235,7 @@ const CURRENT_STEP: Record<CardStatus, StepState> = {
 };
 
 const trackSteps = (
-  stage: Stage,
+  { stage, track }: { stage: Stage; track?: Track | null },
   runs: CardRun[],
   entry: InboxEntry | undefined,
   status: CardStatus
@@ -248,8 +251,10 @@ const trackSteps = (
   const ran = (agent: AgentRole | null): boolean => agent === null || runs.some((run) => run.agent === agent);
   // Most work never needs design, so its step shows only on work that has gone through it.
   const designed = ran('design') || stage === 'design' || stage === 'design_review';
+  // Express has no spec, so its step shows only on work that had one before it switched.
+  const specced = track !== 'express' || ran('spec') || stage === 'spec' || stage === 'spec_review';
   return STEPS.flatMap(({ name, agent }, index): { name: string; state: StepState; current: boolean }[] => {
-    if (agent === 'design' && !designed) {
+    if ((agent === 'design' && !designed) || (agent === 'spec' && !specced)) {
       return [];
     }
     if (index < current) {
@@ -379,12 +384,15 @@ const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | un
   }
 };
 
+const TRACK_WORDS: Record<Track, string> = { express: 'Express', careful: 'Careful' };
+
 const metaText = (input: CardInput): string | undefined => {
   const { workItem, runs } = input;
   const { project, milestone } = workItem;
   const totals = runTotals(runs);
   const parts = [
     sizeText(sizeLabel(workItem.estimate), input.emojiPrefix),
+    workItem.track ? TRACK_WORDS[workItem.track] : undefined,
     projectText(project, milestone),
     workItem.assignee ? escapeSlack(workItem.assignee) : undefined,
     totals.runs > 0 ? plural(totals.runs, 'run') : undefined,
@@ -500,7 +508,7 @@ export const cardSummary = (input: CardInput): CardSummary => {
 export const workItemCard = (input: CardInput): SlackCard => {
   const { workItem, runs, emojiPrefix } = input;
   const { status, entry, line, buttons } = cardSummary(input);
-  const track = trackSteps(workItem.stage, runs, entry, status)
+  const track = trackSteps(workItem, runs, entry, status)
     .map(
       ({ name, state, current }) =>
         `${slackEmoji(emojiPrefix, STEP_EMOJI[state])} ${current ? `*${name}*` : state === 'skipped' ? `~${name}~` : name}`

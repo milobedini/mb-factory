@@ -2,6 +2,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 
 import { JOB_AGENTS } from './stages';
+import { TRACKS } from './track';
 
 const fraction = z.number().min(0).max(1);
 const isTimeZone = (zone: string): boolean => {
@@ -74,6 +75,8 @@ export const factoryConfigSchema = z.object({
   // What merging a PR sets off, said in Approve and merge's confirm ("…and merge it, which deploys it to production").
   // Left out, the confirm says nothing about it.
   mergeEffect: z.string().min(1).max(80).optional(),
+  // The track work takes unless its issue is labelled `express` or `careful` (docs/express.md).
+  track: z.enum(TRACKS).default('careful'),
   repositories: z
     .array(
       z.object({

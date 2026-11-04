@@ -16,6 +16,7 @@ Your prompt is the brief:
 - `session`: the Linear agent session ID, also in `LINEAR_AGENT_SESSION_ID`.
 - `trigger`: why this run exists: `delegated`, `prompted`, `spec_approved`, `design_approved`, `delivered`, `review_findings`, `ci_failed`, `conflict` (the PR no longer merges into its base), `answered` (a person answered your questions), `rerun` (after the usage limit), `console` (a person re-ran the stage), `scheduled` or `asked`. On `rerun` and `console`, carry on from what the issue, session and branch show: an earlier run may have stopped part-way.
 - `prompt`: with `prompted`, the person's latest message, verbatim; with `spec_approved` or `design_approved`, the suggestions they approved with; with `review_findings`, the findings to fix; with `ci_failed`, the failed run; with `conflict`, the base branch; with `answered`, each question and its answer.
+- `track`: `express` or `careful` (`docs/express.md` in mb-factory). Express has no spec: implement asks the spec's questions before it codes, and review never asks. Careful is the full pipeline.
 - `pr`, `branch` and `round` (the review round, 1 or 2), once they exist.
 - `co-author`: `Name <email>` of the person the issue is assigned to, credited on every commit per `git-text`.
 
