@@ -382,6 +382,10 @@ Four steps, each usable by itself. Each step's work is the factory's own (`mb-fa
 - **New metrics:**
   - **fixes or reverts within 7 days** of a merge: a later PR naming the same issue or reverting it, worked out for the baseline from git
   - **new Sentry issues tied to a PR** through the watch after merging
+- **How each is counted** (settled 4 Nov):
+  - **Taps:** every decision the person made on a merged PR's work item: questions answered, gates left (approved or sent back), findings fixed by choice, re-runs, a merge by the person (an auto-merge adds none) and Revert. Read from the console's own tables, from Slack or Linear alike. "Merge as it is" under findings starts no run, so it isn't counted.
+  - **Fixes or reverts within 7 days:** recorded when a PR merges. It counts against an earlier PR merged in the 7 days before when it reverts it (GitHub's "Reverts <repo>#<n>"), is a second PR for the same issue, or names the earlier issue after "fix", "fixes", "regression from" or "broke". "Depends on" and other mentions don't count, since slices name their earlier parts. The baseline is backfilled once from git with the same rule.
+  - **New Sentry issues tied to a PR:** for every merged PR in either period, the Sentry issues first seen within 30 minutes of its merge, resolved or not, read when the dashboard is built. The same rule on both sides, auto-merged or not.
 - **Phase 5's exit criteria:** two weeks of express against the baseline.
   - Cycle time and the person's taps per PR are down.
   - Fixes or reverts within 7 days, and new Sentry issues tied to a PR, are no worse.
