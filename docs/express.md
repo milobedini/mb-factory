@@ -298,6 +298,7 @@ Rejected:
   - It extends token-only styling from radius to colour, spacing and type.
   - It reads the retired `design-system-rubric` (in git before 4 Nov) for what else can become a check: tokens matching the approved boards, a story per state, keyboard tests, components that know no feature.
   - It's filed as Tastebook issues that go through express, which tests the new track on real work.
+  - **Done 4 Nov:** TAS-156 to 167. Of about 60 `AGENTS.md` bullets, 6 were already enforced, about 14 become checks and the rest stay as prose (judgement no tool makes); of 38 lessons, 9 become checks, 1 expired with verify and 28 stay (dependency and provider facts, process). Each issue's PR shortens the prose its check replaces.
 - **Fast-feedback hooks in stage runs.**
   - A `PostToolUse` hook runs the project's linter on each edited file and returns the errors to the agent.
   - A `Stop` hook won't let the run end until typecheck and the affected tests pass.

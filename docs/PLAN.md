@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 5 (Express, [docs/express.md](express.md)); Phase 4 closed on 3 Nov 2026 with its baseline frozen early (25 Oct–3 Nov) so Express could start at once. Exit: two weeks of express against that baseline, with cycle time and the person's taps per PR down, and fixes or reverts within 7 days and new Sentry issues tied to a PR no worse.
 
-**Next:** once [TAS-155](https://linear.app/tastebook/issue/TAS-155) (Stryker and mutmut commands and a timed manual workflow, filed for the user to delegate) merges, have the clean-up job run them on the week's changed files and file surviving mutants as `empty-test` findings ([docs/express.md](express.md#keeping-it-clean)); meanwhile, or after, the one-off audit of Tastebook's lessons and `AGENTS.md` filed as express issues.
+**Next:** once [TAS-155](https://linear.app/tastebook/issue/TAS-155) (Stryker and mutmut commands and a timed manual workflow) merges, have the clean-up job run them on the week's changed files and file surviving mutants as `empty-test` findings ([docs/express.md](express.md#keeping-it-clean)); the audit's checks (TAS-156 to 167) wait for the user to delegate.
 
 **Direction, in order:** Express (Phase 5) in its four steps, each the base for later factory changes, while Tastebook's Dino project and Accounts and households' slices (sliced 29 Oct; those that need design go through the design stage) keep running through the factory as the steps land; onboard `mb-factory` as a project (agreed 3 Nov: self-improvement PRs then go through the factory's own stages, and health findings arrive as triaged issues); then Phase 6. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
