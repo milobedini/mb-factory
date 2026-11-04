@@ -82,6 +82,9 @@ describe('mergeRoute', () => {
   it('lets a test of risky code through', () => {
     const signIn = { ...rules, humanMerge: ['frontend/src/sign-in-*.{ts,tsx}'] };
     expect(mergeRoute(signIn, { files: [file('frontend/src/sign-in-page.test.tsx')] })).toEqual({ route: 'auto' });
+    expect(
+      reasons([file('frontend/src/a.test.ts', { status: 'renamed', previousFilename: 'backend/config/settings.py' })])
+    ).toEqual(['changes a risky path: frontend/src/a.test.ts']);
     expect(mergeRoute(signIn, { files: [file('frontend/src/sign-in-page.tsx')] })).toEqual({
       route: 'person',
       reasons: ['changes a risky path: frontend/src/sign-in-page.tsx']

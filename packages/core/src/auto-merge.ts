@@ -169,8 +169,9 @@ export const mergeRoute = (
   const unread = files.filter(
     (file) => !file.patch && changed(file) > 0 && (isTest(file.filename) || !isUncounted(file.filename))
   );
-  // A test of risky code isn't risky itself.
-  const risky = files.filter((file) => !isTest(file.filename) && paths(file).some(isRisky));
+  // A test of risky code isn't risky itself, but only when every name it has is a test's: a risky file renamed to look
+  // like a test still counts.
+  const risky = files.filter((file) => paths(file).some(isRisky) && !paths(file).every(isTest));
   const bumps = files.flatMap(majorBumps);
   const testsGone = files.filter(
     (file) =>
