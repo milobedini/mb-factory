@@ -632,6 +632,13 @@ const handleRevertTap = async (
     return;
   }
   log('info', 'slack tap', { issue, user: action.userId, kind: action.kind });
+  // Only a merge the factory made and watched is reverted from here, whatever the button names.
+  if (!(await eventRecorded(watchId(repository, prNumber)))) {
+    await tellTapper(
+      `PR #${prNumber} isn’t a merge the factory watched, so nothing was reverted. Revert it on GitHub.`
+    );
+    return;
+  }
   const revertId = `revert:${repository}#${prNumber}`;
   const claimed = await recordEvent({
     source: 'github',
