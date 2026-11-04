@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 5 (Express, [docs/express.md](express.md)); Phase 4 closed on 3 Nov 2026 with its baseline frozen early (25 Oct–3 Nov) so Express could start at once. Exit: two weeks of express against that baseline, with cycle time and the person's taps per PR down, and fixes or reverts within 7 days and new Sentry issues tied to a PR no worse.
 
-**Next:** find why booked wake-ups stopped reaching `/api/scheduler/wake` after the unpin deploy (see To see live's One scheduler; only the hourly cron has woken the scheduler since 3 Nov, about 11:06), then start Express step 1 ([docs/express.md](express.md#rollout): slimmed agents and skills, verify removed, review narrowed, stage-run hooks, one visual per PR).
+**Next:** start Express step 1's last part, one visual per PR ([docs/express.md](express.md#rollout)), by mocking the Ready to merge Slack message with a collage image and with a video's poster frame and link (previewed in Block Kit Builder), and the top of a PR's description, before building it into implement, `stage.yml`'s evidence job, the report and the console.
 
 **Direction, in order:** Express (Phase 5) in its four steps, each the base for later factory changes, while Tastebook's Dino project and Accounts and households' slices (sliced 29 Oct; those that need design go through the design stage) keep running through the factory as the steps land; onboard `mb-factory` as a project (agreed 3 Nov: self-improvement PRs then go through the factory's own stages, and health findings arrive as triaged issues); then Phase 6. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
@@ -345,7 +345,7 @@ Learnt the hard way; each would bite again.
 
 Built but not yet seen working; delete each line once seen. Swept 3 Nov evening: everything not listed here was seen.
 
-- **One scheduler:** booked wake-ups reach production again (pinned, with forwarding from 4 Nov). Once deployed: a `woke` with cause `queued wake-up` at each booked moment, from the production `deploymentId`; after the next deploy, a `wake forwarded` from the old deployment for a moment it booked, then one `woke` from the new one; one governor probe per probe moment, and a `morning ready list` line beside every Ready message.
+- **One scheduler:** forwarding and queued wake-ups were seen working on 4 Nov (06:48: `wake forwarded` from the old deployment, then `woke` with cause `queued wake-up` from the new one). Still to see: one governor probe per probe moment, and a `morning ready list` line beside every Ready message.
 - **Stage-run hooks** (4 Nov): on the next implement run, a `check-edit` failure handed back and fixed in the transcript, and a run that ends only once the stop checks pass (or after three refusals); no guard refusal of an ordinary push or commit.
 - **Weekly-only governor** (`c1673ae`): the Usage page shows one Factory section with a single weekly gauge and the 5-run cap; the Slack Home shows only the week. (No `fiveHour` rows since 31 Oct.)
 - **New in Sentry:** the health check's section. The 29 and 30 Oct checks missed SENTRY-GRAY-FOUNTAIN-4 to 9 with no `sentry issues failed`, so check `project=` (the slug where Sentry may want the numeric ID) rather than waiting for a new issue.
@@ -365,6 +365,7 @@ Built but not yet seen working; delete each line once seen. Swept 3 Nov evening:
 
 mb-factory isn't a factory project yet, so its own follow-ups live here. Each is unbuilt unless it says otherwise (checked 3 Nov 2026).
 
+- **Review's re-run option:** review no longer asks about checks (4 Nov), so nothing reports a question's `rerun` any more; remove its path from core `questions.ts` and the console once a few weeks of review show none.
 - **PRD flow:** start a project's PRD with a person in the loop and, on approval, file "Slice <project>". Writing Accounts and households by hand (29 Oct) answered most of it: a Linear document on the project from the PRD template, drafted after reading the Vision and the project; one round of up to four questions that change requirements, each with a recommended answer, and every other choice drafted as an open question with a suggested answer; approval marks it Approved, links it from the project and files the slice issue for the person to delegate. Still open: which agent, and asking in Slack.
 - **Slicing hints at design:** slicing marks each slice it thinks needs design, and files the new Dino components a project needs as their own slices ahead of the features that use them (proposed 29 Oct; triage and the spec still decide).
 - **Design extensions:** start a feature by itself when its last `dino` issue merges, carrying the design approval's suggestions into that implement run's brief as well as `notes.md`; a design run whose hand-off commit fails (TAS-103, GitHub's 500, 30 Oct) is re-run as a fresh draw needing approval again, and should retry the hand-off instead.

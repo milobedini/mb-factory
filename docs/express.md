@@ -381,7 +381,7 @@ Four steps, each usable by itself. Each step's work is the factory's own (`mb-fa
 
 - **Rulesets:** check that a ruleset's bypass actor bypasses only that ruleset's rules (hence two rulesets), and that the bot's merge is still a merge commit co-authored as before. The bot's bypass must never let it push to the default branch, force-push or delete it: `plugin/hooks/guard-bash.sh` refuses those early but reads only the command's text, so GitHub's protection is what holds (security review, 4 Nov).
 - **Deploy signal:** the App's webhook events or a read-only Vercel token (the factory backlog's "Spend and deploys").
-- **The visual in Slack:** a Block Kit image block plays no video, so a flow's video may need a poster image linking to it, or a GIF. Decide at step 1.
+- **The visual in Slack** (settled 4 Nov): a flow's video goes to Slack as a poster frame linking to it, since an image block plays no video and a GIF is heavy and blurry. Implement makes the visual itself, rather than an agent-free step that would have to work out which screens changed.
 - **Which questions wait:** watch the first weeks of express for infrastructure questions that should have waited, and approach questions that were defaulted. Tune the line in `implement.md`.
 - **Mutation testing:** run time on the runner.
 - **Backlog items Express made moot** were removed from the plan when Phase 4 closed: triage's `next: verify` and verify on previews; review asking again about an accepted trade-off (TAS-81); review blaming a preview's setup (TAS-95); review reporting `human_decision_needed` with no question (TAS-95); a CI fix started for a failure kept at review (TAS-94).
