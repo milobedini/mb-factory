@@ -392,19 +392,24 @@ const MAX_REVIEW_GUARD = 120;
 
 // The week's review findings for the clean-up job's brief, one line each: the issue, tier, place, what was found and the
 // guard review suggested, so the job can tell what came up twice. Clipped, so a busy week can't crowd out the brief.
+// Review read PR content to write them, so brackets are escaped: no line can close the brief or open a tag.
 export const reviewFindingLines = (reviews: WeekReview[]): string[] => {
   const lines = reviews.flatMap(({ issue, report }) =>
     readReviewFindings(report).map(({ tier, path, line, summary, guard }) =>
-      [
-        issue,
-        tier ?? 'finding',
-        path ? clip(`${path}${line ? `:${line}` : ''}`, 80) : undefined,
-        '—',
-        clip(summary.replace(/\s+/g, ' ').trim(), MAX_REVIEW_SUMMARY),
-        guard ? `(guard: ${clip(guard.replace(/\s+/g, ' ').trim(), MAX_REVIEW_GUARD)})` : undefined
-      ]
-        .filter((part) => part !== undefined)
-        .join(' ')
+      neutraliseMarkdown(
+        [
+          issue,
+          tier ?? 'finding',
+          path ? clip(`${path}${line ? `:${line}` : ''}`, 80) : undefined,
+          '—',
+          clip(summary.replace(/\s+/g, ' ').trim(), MAX_REVIEW_SUMMARY),
+          guard ? `(guard: ${clip(guard.replace(/\s+/g, ' ').trim(), MAX_REVIEW_GUARD)})` : undefined
+        ]
+          .filter((part) => part !== undefined)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      )
     )
   );
   // The newest are kept: the oldest week's findings are the likeliest to have been dealt with.
