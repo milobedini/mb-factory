@@ -1,45 +1,37 @@
 ---
 name: linear-reporting
-description: How a factory stage talks to humans through the Linear agent session and the issue — thoughts, actions, elicitations, responses, errors, the plan checklist, links and stage briefs. Read before the first message a run posts to Linear.
+description: How a factory stage talks to people through the Linear agent session and the issue — activities, the plan, links, questions, gates and stage briefs. Read before the first message a run posts to Linear.
 ---
 
 # Linear reporting
 
-The Linear agent session is the factory's conversation with humans; the router mirrors what matters to Slack. The issue is the durable record. Post through the helper, which reads the token and session from the environment:
+The Linear agent session is the factory's conversation with people, and the router mirrors what matters to Slack. The issue is the durable record. Post through the helper, which reads the token and session from the environment (`--help` lists its commands); issue reads and writes (comments, estimate, labels, new issues, relations) go through `linear.py gql` with a GraphQL request on stdin:
 
 ```bash
 python3 -I ${CLAUDE_SKILL_DIR}/scripts/linear.py <command> ...
 ```
 
-Run it with `--help` for every command. Issue reads and writes (comments, estimate, labels, new issues, relations) go through `linear.py gql` with a GraphQL request on stdin.
-
 ## Activities
 
-Post each one at the moment it's true, not in a batch at the end.
+Post each when it's true, not in a batch at the end.
 
 | Type | When | Example |
 | --- | --- | --- |
-| `thought` | What you're doing or have found, in one line. `--ephemeral` for progress the next activity replaces | "Found the cause: the serializer drops `cook_time` when it's 0." |
+| `thought` | What you're doing or found, in a line. `--ephemeral` for progress the next activity replaces | "Found the cause: the serializer drops `cook_time` when it's 0." |
 | `action` | A step with a concrete result | `--action "Opened draft PR" --parameter "#42"` |
-| `elicitation` | A gate only a human can pass. Ends the run with outcome `needs_input`. Questions go in the stage report instead | see below |
+| `elicitation` | A gate only a person can pass; ends the run with `needs_input`. Questions go in the report instead | see Gates |
 | `response` | The stage's result, with links. One per run, last | "Spec ready for review: <PR link>. Two assumptions to check." |
-| `error` | The stage failed or is blocked; say what would unblock it | "CI can't start Postgres; the run needs the service container." |
+| `error` | The stage failed or is blocked, and what would unblock it | "CI can't start Postgres; the run needs the service container." |
 
-Within the first minute, post a `thought` that shows you understood the brief. Then keep the human oriented: a long silence reads as a stall, and narrating every command reads as noise. One thought per meaningful step is the rhythm.
+Post a `thought` within the first minute showing you understood the brief, then one per meaningful step: a long silence reads as a stall. Write as one factory ("I've found…"), never as a named agent, and don't describe stages or runs unless someone asks.
 
-Write as one factory, never as a named agent: "I've found…", not "The triage agent found…". Don't describe stages, dispatches or runs unless someone asks how the factory works.
+**Plan:** at the start, set the plan (`linear.py plan`) to three to six steps a person would recognise ("Write the failing test", not "Run pnpm install"), and update it as each finishes, sending every item each time.
 
-## Plan
-
-At the start of the run, set the plan to the stage's steps (`linear.py plan`), and update it as each finishes. The plan replaces the whole list each time, so send every item. Keep it to three to six items a human would recognise ("Write the failing test", not "Run pnpm install").
-
-## Links
-
-Add each artefact as a session link when it first exists: the spec PR, the implementation PR, the Actions run, evidence (`linear.py link`). Name every PR, issue and spec with a link, every time.
+**Links:** add each artefact as a session link when it first exists (`linear.py link`): the spec PR, the implementation PR, the Actions run. Name every PR, issue and spec with a link.
 
 ## Questions
 
-Don't post questions yourself. Put them in the stage report's `questions` and report `needs_input`; the router asks them one at a time in the session and the Slack thread, your suggestion first, with a shortcut to take the suggestions for the rest and free text always allowed. Once the last is answered it runs your stage again, once, with `trigger: answered` and every question and answer in the brief's `prompt`.
+Don't post questions yourself: put them in the report's `questions` with `needs_input`. The router asks them one at a time in the session and the Slack thread, your suggestion first, with free text always allowed, then runs your stage again once with `trigger: answered` and every question and answer in the `prompt`.
 
 ```json
 "questions": [
@@ -53,25 +45,22 @@ Don't post questions yourself. Put them in the stage report's `questions` and re
 ]
 ```
 
-- Ask only what the issue, the code and earlier stage briefs can't answer. One round; a second only for questions the answers created.
-- A question is for a decision. When a person has to change something before you can go on (a setting, a permission, a secret, an account), don't ask it, since answering in Slack changes nothing: report `blocked` and say in `summary` exactly what to change, where, and that a reply in the thread starts you again. A decision that hangs on the same change goes in the summary too, with your suggestion, so the reply can carry it.
-- `prompt` is the question itself, one sentence. `why` is the context and the trade-off, in one or two sentences, shown smaller under it (at most 600 characters).
-- `options` are two to four distinct labels, each a few words of at most 30 characters, because Slack buttons cut anything longer (80 is the hard limit). Put the detail in `why`, not in the labels. `suggested` is the label you'd pick.
-- `topic` names the decision in a few words (at most 60 characters): each question lists the ones still to come as topic and suggestion, so the human can take the rest of your suggestions knowingly.
-- At most ten questions, most important first.
-- Before the report, post one `thought` saying what's coming ("Three questions before I write the spec."), and no `response` or elicitation: the questions are the run's last word.
-- An answer marked "in their own words" may match no option: read it for intent. One marked "your default" means the human took your suggestion.
-- Record each answer where the next stage will find it: in the spec's Decisions as `Asked: <question, short> → <answer>`, or in the stage brief.
+- Ask only what the issue, the code and earlier briefs can't answer, in one round (a second only for questions the answers created), at most ten, most important first.
+- A question is for a decision. When a person must change something first (a setting, a permission, a secret, an account), report `blocked` instead, saying in `summary` exactly what to change and where, and that a reply in the thread starts you again; a decision hanging on it goes in the summary with your suggestion.
+- `prompt` is one sentence. `why` is the context and trade-off, at most 600 characters. `options` are two to four labels of at most 30 characters each (Slack cuts longer buttons); `suggested` is the one you'd pick. `topic` names the decision in at most 60 characters, so each question can list those still to come.
+- Before the report, post one `thought` saying what's coming ("Three questions before I write the spec."), and no `response` or elicitation.
+- An answer "in their own words" may match no option: read it for intent. "Your default" means they took your suggestion.
+- Record each answer where the next stage will find it: the spec's Decisions as `Asked: <question, short> → <answer>`, or the stage brief.
 
 ## Gates
 
-A **gate** is different: spec approval, slicing approval. A gate needs an explicit answer, and silence never passes it. A gate's report has no `questions`.
+A gate (spec approval, slicing approval) needs an explicit answer; silence never passes it, and its report has no `questions`.
 
-- **Spec approval:** post it yourself as one elicitation with a `select` (`--option "Approve=Approve" --option "Change something=Change something"`, label and value the same) and still end with the default you'd pick.
-- **Any other gate**, such as slicing approval: don't post it. Put it in the report's `gate` as `{ "body": "<markdown>", "options": ["<your default>", …] }` (two to four options, each under 75 characters) and report `needs_input`; the router posts it in the session and the Slack thread with one-tap options. A bare `Change something` is answered by the router asking what to change.
+- **Spec approval:** post it yourself as one elicitation with a `select` (`--option "Approve=Approve" --option "Change something=Change something"`), ending with the default you'd pick.
+- **Any other gate:** don't post it. Put it in the report's `gate` as `{ "body": "<markdown>", "options": ["<your default>", …] }` (two to four options, each under 75 characters) with `needs_input`; the router posts it with one-tap options and asks what to change after a bare `Change something`.
 
-The human may answer a gate in free text instead of picking an option. Read it for intent, except at the spec approval gate, which the router reads (see the `spec` agent).
+A free-text answer to a gate is read for intent, except at spec approval, which the router reads.
 
 ## Stage briefs
 
-Each stage that learns something leaves a brief as one comment on the issue, headed `**<Stage> brief**` (for example `**Triage brief**`). On a re-run, edit that comment instead of adding a second. A brief holds what the next stage would otherwise have to find again: code locations as `path:line`, commands and their output, the reproduction, decisions and their sources. Write it for a reader who has only the issue.
+A stage that learns something leaves one comment on the issue headed `**<Stage> brief**`, edited on a re-run rather than added again. It holds what the next stage would otherwise find again: `path:line` locations, commands and their output, the reproduction, decisions and their sources, written for a reader who has only the issue.
