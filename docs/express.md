@@ -304,7 +304,7 @@ Rejected:
   - anything Claude can read from the repo
 - **Rubrics** keep only the project-specific points Claude can't infer.
 - **Rules that must always hold** become hooks, allowed tools, lint or CI ([the ladder](#keeping-it-clean)).
-- **Target:** the roughly 1,260 lines in `plugin/agents/` and `plugin/skills/` (3 Nov) about halved.
+- **Target:** the roughly 1,260 lines in `plugin/agents/` and `plugin/skills/` (3 Nov) about halved. **Done 4 Nov:** words 20,605 → 13,825 (33%). What's left is mostly contract with the console (report fields, question and gate formats, wording the router matches). `design.md` was left as it was: design stays unchanged, and its rules are recent lessons. `design-system-rubric` and `verify.md` went.
 - **One set of prompts for both tracks.** A track changes only which stages and gates run.
 
 ## What each stage assumes
