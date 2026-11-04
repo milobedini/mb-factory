@@ -205,7 +205,7 @@ Rejected:
 - **Review is narrowed:**
   - It checks correctness and security against the issue (or spec), in a fresh context.
   - It never reports a failing check or a Vercel preview: the router already handles CI.
-  - Nit and Could cut go.
+  - Nit and Could cut go. Settled on 4 Nov: it keeps correctness, the issue and spec, security and privacy, workflows, accessibility as a user meets it, and untested behaviour; fundamentals, concision and the design-system rubric go.
   - In careful it may still ask the person, about the code only.
   - If review catches nothing for several weeks of express, revisit it.
 - **Slimmed agents and skills** ([Slimming](#slimming)).
@@ -287,6 +287,7 @@ Rejected:
   - Some are lint-shaped already: `biome-rejects-aria-listbox-on-list-elements`, `pressed-styles-lose-to-state-variants`, `request-field-defaults-are-required-in-the-schema`.
   - The audit also adds import boundaries: Dino imports no feature, and features don't reach into each other (Biome `noRestrictedImports` or GritQL; `import-linter` for Django).
   - It extends token-only styling from radius to colour, spacing and type.
+  - It reads the retired `design-system-rubric` (in git before 4 Nov) for what else can become a check: tokens matching the approved boards, a story per state, keyboard tests, components that know no feature.
   - It's filed as Tastebook issues that go through express, which tests the new track on real work.
 - **Fast-feedback hooks in stage runs.**
   - A `PostToolUse` hook runs the project's linter on each edited file and returns the errors to the agent.
