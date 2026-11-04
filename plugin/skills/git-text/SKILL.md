@@ -5,32 +5,29 @@ description: How the factory writes branch names, commit messages, PR titles and
 
 # Git text
 
-The repo's own rules win: read `AGENTS.md` and `.github/pull_request_template.md` before writing.
+The repo's `AGENTS.md` and `.github/pull_request_template.md` win: read them first.
 
 ## Everywhere
 
-- British English. Specific, not vague: read the diff before writing, and name what changed.
-- No AI attribution of any kind: no "Claude", no "AI", no AI `Co-Authored-By` trailer, no "Generated with" footer, even when a tool or harness adds one by default. Strip it. Traceability comes from the `factory` label and the console's run records. The only trailer allowed is the person the brief credits (see Commits).
-- Write `and`, not `&`. No Oxford comma.
+- No AI attribution of any kind: no "Claude" or "AI", no AI `Co-Authored-By` trailer, no "Generated with" footer, even when a tool adds one by default. The only trailer allowed is the person the brief credits.
+- British English, specific about what changed. Write `and`, not `&`. No Oxford comma.
 
 ## Linear IDs
 
-- This work's issue is written as its ID, `TAS-123`. Linear links any PR or commit that mentions it.
-- The PR description says `Fixes TAS-123` on its own line. Merging the PR finishes the issue whatever the description says (the factory moves it to Done), so never offer to keep it open. A check that can only happen after merge (a scheduled workflow's first run, a restore trial) goes under an **After merge** heading in the description and in your report, for a follow-up issue.
-- Any other issue (one this unblocks, depends on or follows up) is written `TAS-456 (<two to four word title>)`, never with a magic word in front, so it doesn't get closed by this merge.
+- This work's issue is written as its ID, `TAS-123`; Linear links any PR or commit that mentions it.
+- The PR description says `Fixes TAS-123` on its own line. Merging finishes the issue whatever the description says, so never offer to keep it open. A check that can only happen after merge goes under an **After merge** heading in the description and in your report, for a follow-up issue.
+- Any other issue is written `TAS-456 (<two to four word title>)`, with no magic word in front, so this merge doesn't close it.
 
 ## Branch
 
-Use the issue's Linear branch name (the `branchName` field) when the spec stage hasn't already made a branch. Otherwise `<issue-id-lowercase>-<short-slug>`, e.g. `tas-123-show-cooking-time`.
+The issue's Linear `branchName` when the spec stage hasn't made a branch; otherwise `<issue-id-lowercase>-<short-slug>`, such as `tas-123-show-cooking-time`.
 
 ## Commits
 
-- **Summary:** imperative, capitalised (`Fix…`, `Add…`), about 50 characters, no full stop.
-- **Body:** a blank line, then one or two plain sentences on why, wrapped at about 72 columns. Skip it for a trivial change. End with the issue ID: `TAS-123`.
-- **Credit:** when the brief has a `co-author`, end every commit message with a blank line and `Co-authored-by: <co-author>`, copied exactly, including on a commit with no body. It credits the person the work is for. Never add any other co-author, and none when the brief has no `co-author`.
-- **One logical unit per commit.** A refactor goes in its own commit before the behaviour change that needs it. A bug's failing test goes in the same commit as its fix, so no commit fails CI.
-- **Review fixes:** one commit per finding, named for what it fixes, with a body saying why the point held. Two fixes in the same file share a commit.
-- Stage by path (`git add <paths>`). Never amend, rebase or force-push a pushed commit.
+- An imperative, capitalised summary of about 50 characters with no full stop; then, unless the change is trivial, a blank line and one or two sentences on why, wrapped at about 72 columns, ending with the issue ID.
+- When the brief has a `co-author`, end every commit message with a blank line and `Co-authored-by: <co-author>`, copied exactly. No other co-author, and none without one in the brief.
+- One logical unit per commit: a refactor before the behaviour change that needs it, a bug's failing test with its fix, so no commit fails CI. Review fixes get one commit per finding, named for what it fixes; two in the same file share one.
+- Stage by path. Never amend, rebase or force-push a pushed commit.
 
 ```text
 Show cooking time on the recipe card
@@ -41,22 +38,12 @@ was 0. Render "No cooking" instead of hiding the row. TAS-123
 
 ## PR title
 
-Imperative, starting with a verb (Add, Fix, Update, Extract, Replace, Remove). Sentence case. No issue ID, no full stop, no brackets.
+Imperative, starting with a verb, in sentence case. No issue ID, full stop or brackets.
 
 ## PR description
 
-Fill the repo's template in place, keeping every heading and checkbox. Delete the template's HTML comments once you've followed them.
+Fill the repo's template in place, keeping every heading and checkbox and deleting its HTML comments. Tick each box the change satisfies, and each that doesn't apply with the reason in brackets (`- [x] Migrations are included for model changes (no model changes)`). Leave a box unticked only when the change falls short, saying why on its line. With no template, use `## Summary`, `## Decisions` (if any) and `## Evidence`.
 
-Tick each checklist box the change satisfies. A box that doesn't apply is ticked too, with the reason in brackets: `- [x] Migrations are included for model changes (no model changes)`. Leave a box unticked only when the change falls short of it, and say why on the same line. A project's `AGENTS.md` can override this.
-
-- **Summary:** `Fixes TAS-123` on its own line, then 2–5 one-line bullets on what changed and why.
-- **Decisions** (when there are any): a `**Decisions**` line, then up to five bullets, each `<what was decided>, because <why>`, ending `(asked in spec)`, `(asked during the build)` or `(agent)`. Take them from the spec's Decisions marked `Asked:` and the judgement calls a reviewer would otherwise question.
-- **Evidence:** see below.
-
-With no template, use `## Summary`, `## Decisions` (if any), `## Evidence`.
-
-### Evidence
-
-For a bug, the failing test's name and its one assertion line from the run on unchanged code.
-
-Always end with the checks line, using the real numbers from the last run: `Checks: lint clean · types clean · 14 tests passed`. Anything unverified gets a line saying what and why, never a silent gap.
+- **Summary:** `Fixes TAS-123` on its own line, then two to five one-line bullets on what changed and why.
+- **Decisions**, when there are any: a `**Decisions**` line, then up to five bullets, each `<what was decided>, because <why>`, ending `(asked in spec)`, `(asked during the build)` or `(agent)`. Take them from the spec's Decisions marked `Asked:` and the calls a reviewer would otherwise question.
+- **Evidence:** for a bug, the failing test's name and its assertion line from the run on unchanged code. Always end with the checks line, with the real numbers from the last run (`Checks: lint clean · types clean · 14 tests passed`), and a line for anything unchecked saying what and why.
