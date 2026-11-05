@@ -20,15 +20,22 @@ Your brief carries `stage: cleanup`, `job`, `trigger: scheduled`, `slot` (the mo
 - **`head`** is `git rev-parse HEAD` on the default branch, with full history. `commits` is `null`.
 - **Time:** the run is stopped at 50 minutes and a stopped run reports nothing, so report by about 35. What you didn't reach is a line in `gaps`.
 - **Dependencies** are installed before the tools run, from the lockfiles (`pnpm install --frozen-lockfile`, `uv sync --frozen`), as knip and the tests need them.
-- **Rules to enforce** come first, since they stop a whole class of problem:
-  - Group the brief's review findings by the class of problem they share (their guards help), and add the lessons added or changed in the week: `git log --since=<slot minus 7 days> --until=<slot> --name-status -- specs/lessons`.
+- **The week** is what landed on the default branch between `slot` minus 7 days and `slot`, whenever its commits were written: `from=$(git rev-list -1 --first-parent --before="<slot minus 7 days>" HEAD)`, `to=$(git rev-list -1 --first-parent --before="<slot>" HEAD)`, then `git diff --name-status "$from" "$to"`. Shell variables don't last from one command to the next, so note the two SHAs and use them where this file says `$from` and `$to`. Not `git log --since`: it goes by each commit's own date, so a PR written before the week and merged in it is missed.
+- **Mutation testing** runs first, when the project's `AGENTS.md` documents mutation-testing commands, since it's the slowest part:
+  - Pick the week's changed source files, leaving out tests, stories, generated files, data, migrations, config and styles: at most 4 frontend and 4 backend, those with the most logic changed (conditions, calculations, data handling, not markup), preferring core logic, server endpoints and mutations, permissions and anything touching a household's data.
+  - Start both sides at once in the background, each with its files and `--out` to a file under `$RUNNER_TEMP`, under `timeout 20m`, and carry on with the rest of the pass. A side that times out or fails is a line in `gaps`.
+  - Each survivor is a lead: read the mutated line and the tests that run it. Drop a survivor that doesn't change behaviour (an equivalent mutant) or only changes a log line or message wording. What's left is the behaviour the tests run but don't check (or, with `no-coverage`, don't run at all).
+  - One `empty-test` finding per source file whose remaining survivors show behaviour people rely on going unchecked. Fingerprint `cleanup:empty-test:<source path>`; the evidence lists each survivor (line, change) and the test file that should catch it; the fix names the assertions to add. No finding when only a stray survivor or two remains.
+  - Say in `summary` which files were mutated, how many mutants and survivors each side had, and how long each side took.
+- **Rules to enforce** come first among the findings, since they stop a whole class of problem:
+  - Group the brief's review findings by the class of problem they share (their guards help), and add the lessons added or changed in the week: `git diff --name-status "$from" "$to" -- specs/lessons`.
   - A class that came up at least twice (two findings, on any issues, or a finding and a lesson) is a candidate.
   - Look for what already enforces it: `biome.json` and the GritQL rules it loads, ruff settings, tests, `.claude/` hooks, `.github/workflows/`. Already enforced and it caught both: not a finding. Enforced but it missed them: the finding is the gap in that check.
   - Pick the highest step of the rubric's ladder that can check it.
 - **The sweep** covers the whole tree at `head`, with the rubric's categories. Tools give leads, never findings: each lead is read in context and verified before it's reported.
   - Dead code: `pnpm dlx knip@5 --no-progress` in the frontend workspace and `uvx vulture@2 <package dirs> --min-confidence 80` for the backend.
   - Duplication: `pnpm dlx jscpd@4 --silent --reporters json --output "$RUNNER_TEMP/jscpd" <source dirs>` for both, ignoring generated files, data, migrations and screenshot baselines.
-  - Tests that test nothing: start with the tests the week added or changed (`git log --since=<slot minus 7 days> --until=<slot> --name-only` over test files), then the rest as time allows.
+  - Tests that test nothing: start with the tests the week added or changed, then the rest as time allows. Mutation testing's findings already cover the files it mutated.
   - Strays from `AGENTS.md`: each convention it states that the code can be checked against, starting with what the week changed.
   - A tool that fails or can't be fetched is a line in `gaps`, and the pass carries on without it.
 - Every finding survived the rubric's verification.

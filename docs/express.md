@@ -282,7 +282,8 @@ Rejected:
 - **Mutation testing** in that job: Stryker for the frontend and mutmut for the backend, on the week's changed files only. Surviving mutants in new tests become issues.
   - It answers TAS-137, 33 and 111.
   - A coverage floor was rejected: a test that tests nothing still raises coverage.
-  - Drop it if the runs are too slow.
+  - **How it runs (5 Nov):** the project's own commands (Tastebook's `pnpm mutation:frontend` and `pnpm mutation:backend`, from TAS-155), started first and in the background under a 20-minute timeout. Local timings were about 8 minutes for 4 frontend files and 7 for 2 backend files, so the job takes at most 4 files a side: those with the most logic changed in what landed on `main` that week, preferring core logic, endpoints, permissions and household data. It files one `empty-test` finding per file whose survivors, read and stripped of equivalent mutants, leave behaviour unchecked.
+  - **Judged after three runs** (Mondays 9, 16 and 23 Nov): if it has filed nothing worth fixing, take it out of the job and keep the commands for use by hand.
 - **The promotion ladder.** A rule is enforced at the highest of these steps that fits:
   1. a type or lint rule (Biome GritQL, ruff)
   2. a test

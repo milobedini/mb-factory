@@ -29,7 +29,7 @@ The fingerprint's category is one of these:
 
 - **`dead-code`:** an export, file, component, endpoint, setting or dependency nothing uses. A tool's "unused" is a lead: check for dynamic use (string imports, Django's settings and URL includes, Storybook stories, management commands, entry points named in config) before reporting.
 - **`duplication`:** two or more copies of the same logic that should be one, where a change to one would need the same change to the others. Similar-looking UI built from the same components, test fixtures and generated code aren't duplication.
-- **`empty-test`:** a test that would still pass if the code it names were broken: no assertion, assertions only on its own mocks or fixtures, a snapshot of nothing meaningful, an `expect` that can't fail, a skipped or `todo` test left behind, or a test whose name promises a case its body never reaches. Name the change to the code that the test wouldn't catch.
+- **`empty-test`:** a test that would still pass if the code it names were broken: no assertion, assertions only on its own mocks or fixtures, a snapshot of nothing meaningful, an `expect` that can't fail, a skipped or `todo` test left behind, or a test whose name promises a case its body never reaches. Mutation testing's surviving mutants count too, once read and grouped by source file. Name the change to the code that the test wouldn't catch.
 - **`agents-drift`:** code at `head` that does what `AGENTS.md` says not to, or doesn't do what it requires, in a way a reader can check. A convention the code has moved past on purpose is the docs check's concern (`AGENTS.md` is wrong), not this one.
 
 ## What not to file
