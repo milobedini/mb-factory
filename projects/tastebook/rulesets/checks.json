@@ -37,6 +37,10 @@
           {
             "context": "End-to-end",
             "integration_id": 15368
+          },
+          {
+            "context": "Workflows",
+            "integration_id": 15368
           }
         ]
       }

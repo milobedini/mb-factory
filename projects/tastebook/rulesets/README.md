@@ -3,7 +3,7 @@
 They replace the classic branch protection (docs/express.md, "Who merges"), so the factory's App can merge an express
 PR without an approval but never without green checks.
 
-- **Checks** (`checks.json`): the four required checks on an up-to-date branch, resolved conversations, no force push
+- **Checks** (`checks.json`): the five required checks (CI's jobs) on an up-to-date branch, resolved conversations, no force push
   or deletion. No bypass for anyone.
 - **Review** (`review.json`): one approving review, dismissed on a new push. `mb-factory-bot` (App 5483828) and the
   repository's admins may bypass it.
