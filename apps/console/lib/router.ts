@@ -456,7 +456,7 @@ const mergeByItself = async (project: FactoryConfig, workItem: WorkItem): Promis
     (error: unknown): GitHubRefusal => ({ ok: false, message: errorMessage(error) })
   );
   if (!merged.ok) {
-    log('warn', 'auto-merge refused', { issue, pr: prNumber, message: merged.message });
+    log('warn', 'auto-merge refused', { issue, pr: prNumber, error: merged.message });
     const text = `I couldn’t merge PR #${prNumber} by myself: GitHub said “${merged.message}”. It’s yours to merge.`;
     await Promise.all([
       postActivity(workItem, { type: 'error', body: text }),
@@ -760,7 +760,7 @@ const mergeRevertsByThemselves = async (event: Extract<GitHubEvent, { kind: 'che
           log('warn', 'revert merge refused', {
             issue: workItem.issueIdentifier,
             pr: revert.prNumber,
-            message: merged.message
+            error: merged.message
           });
           await replyInThread(
             project,
@@ -3168,13 +3168,13 @@ const handleMergeTap = async (
     }
     const approved = await approvePull(connection.token, repository, prNumber, accepted);
     if (!approved.ok) {
-      log('warn', 'github approve refused', { issue, login: connection.login, message: approved.message });
+      log('warn', 'github approve refused', { issue, login: connection.login, error: approved.message });
       await tellTapper(approveRefusedText(prNumber, approved.message));
       return;
     }
     const merged = await mergePull(connection.token, repository, prNumber, accepted);
     if (!merged.ok) {
-      log('warn', 'github merge refused', { issue, login: connection.login, message: merged.message });
+      log('warn', 'github merge refused', { issue, login: connection.login, error: merged.message });
       await tellTapper(mergeRefusedText(prNumber, merged.message));
       return;
     }

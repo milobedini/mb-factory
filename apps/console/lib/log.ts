@@ -47,7 +47,10 @@ const recordProblem = async (level: ProblemLevel, message: string, fields: Recor
   }
 };
 
-export const log = (level: LogLevel, message: string, fields: Record<string, unknown> = {}) => {
+// A line's own keys, which a field of the same name would overwrite (a merge refusal logged as "Server Error", 4 Nov).
+type LogFields = Record<string, unknown> & { level?: never; message?: never; at?: never };
+
+export const log = (level: LogLevel, message: string, fields: LogFields = {}) => {
   const at = new Date();
   write({ level, message, ...fields, at: at.toISOString() });
   if (level !== 'info') {

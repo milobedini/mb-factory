@@ -64,7 +64,7 @@ export const forwardWake = async (message: WakeMessage): Promise<boolean> => {
     return false;
   }
   const { messageId } = await new QueueClient({ deploymentId: delivery.to }).send(WAKE_TOPIC, message);
-  log('info', 'wake forwarded', { at: message.at, from: own, to: delivery.to, messageId });
+  log('info', 'wake forwarded', { wakeAt: message.at, from: own, to: delivery.to, messageId });
   return true;
 };
 
@@ -85,9 +85,9 @@ export const bookWake = async (at: Date, cause: string): Promise<void> => {
       await getDb().delete(wakeBookings).where(eq(wakeBookings.at, at));
       throw error;
     });
-    log('info', 'wake booked', { at: at.toISOString(), cause, delaySeconds: booking.delaySeconds, messageId });
+    log('info', 'wake booked', { wakeAt: at.toISOString(), cause, delaySeconds: booking.delaySeconds, messageId });
   } catch (error) {
-    log('error', 'wake booking failed', { at: at.toISOString(), cause, error: errorMessage(error) });
+    log('error', 'wake booking failed', { wakeAt: at.toISOString(), cause, error: errorMessage(error) });
   }
 };
 
