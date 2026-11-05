@@ -434,14 +434,27 @@ export const branchContains = async (repository: string, branch: string, sha: st
   return status === 'ahead' || status === 'identical';
 };
 
-// How many commits `base` has that `branch` doesn't.
-export const behindBy = async (repository: string, branch: string, base: string): Promise<number> =>
-  (
-    await githubGet<{ ahead_by: number }>(
-      `/repos/${repository}/compare/${encodeURIComponent(branch)}...${encodeURIComponent(base)}`,
-      'compare'
-    )
-  ).ahead_by;
+// How many commits `base` has that `branch` doesn't; 0 once the branch is gone. The repo deletes a PR's branch as it
+// merges, and the push of that merge can reach the console while the PR still reads open (four times, 29 Oct–3 Nov).
+export const behindBy = async (repository: string, branch: string, base: string): Promise<number> => {
+  const response = await fetch(
+    `${API_URL}/repos/${repository}/compare/${encodeURIComponent(branch)}...${encodeURIComponent(base)}`,
+    {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${requireEnv('GITHUB_DISPATCH_TOKEN')}`,
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    }
+  );
+  if (response.status === 404) {
+    return 0;
+  }
+  if (!response.ok) {
+    throw await failure('compare', response);
+  }
+  return ((await response.json()) as { ahead_by: number }).ahead_by;
+};
 
 // Merges `base` into `branch` with a merge commit GitHub computes, as its Update branch does, and under its message so
 // the push isn't counted as a person's work. The new commit, or why there isn't one.
