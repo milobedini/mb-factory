@@ -297,6 +297,7 @@ Learnt the hard way; each would bite again.
 - Environment names are case-insensitive, and Vercel creates a `Production` environment (hence `backups`).
 - `hashFiles()` in a step's `if:` sees only the workspace, never `runner.temp`: check for such a file inside the step.
 - A job that parses files an agent made (ImageMagick, ffmpeg) holds no secret: a crafted file could plant something in a later step's environment and read its token. Hence `stage.yml`'s separate `visual` job (4 Nov, caught in self-review).
+- Runs started by `repository_dispatch`, `schedule` or `workflow_dispatch` file their check runs on the default branch's head, so `main`'s head carries every stage run's `stage / …` checks. A one-commit PR's parent is that head: counting the parent's checks as still to come held TAS-158's merge for good (5 Nov); `headChecks` now drops those runs' suites.
 - A ruleset's `pull_request` rule takes `require_extra_approval_for_unattributed_changes: true` by default, undocumented (4 Nov): set it `false`, or a no-bypass ruleset may hold the App's merge.
 - `GET /apps/<slug>` answers 404 for a private App even to its owner: read its ID from `performed_via_github_app` on one of its comments.
 - Vercel reports every deploy to GitHub as a deployment with statuses, so `deployment_status` webhooks give deploy results without a Vercel token, once the repo's webhook subscribes to them.
