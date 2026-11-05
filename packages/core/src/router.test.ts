@@ -1198,6 +1198,7 @@ describe('failedChecks', () => {
   const run = (workflowId: number, name: string, conclusion: string | null, event = 'pull_request') => ({
     id: workflowId * 10,
     workflowId,
+    suiteId: workflowId * 100,
     name,
     event,
     conclusion,

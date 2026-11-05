@@ -46,7 +46,7 @@ describe('commitStatusState', () => {
 });
 
 describe('checksToWaitFor', () => {
-  it('drops the checks of runs filed on the default branch, keeping the rest and commit statuses', () => {
+  it('drops the checks of runs whose event never reaches a PR, keeping the rest and commit statuses', () => {
     const previous = [
       { name: 'Frontend', suiteId: 1 },
       { name: 'Preview checks', suiteId: 2 },
@@ -55,10 +55,30 @@ describe('checksToWaitFor', () => {
       { name: 'Back up production', suiteId: 4 },
       { name: 'Vercel', suiteId: null }
     ];
-    expect(checksToWaitFor(previous, [3, 4])).toEqual(['Frontend', 'Preview checks', 'Vercel']);
+    const runs = [
+      { event: 'push', suiteId: 1 },
+      { event: 'deployment_status', suiteId: 2 },
+      { event: 'repository_dispatch', suiteId: 3 },
+      { event: 'schedule', suiteId: 4 }
+    ];
+    expect(checksToWaitFor(previous, runs)).toEqual(['Frontend', 'Preview checks', 'Vercel']);
   });
 
-  it('keeps every check when no run came from a default-branch event', () => {
+  it("drops Dependabot's update and dependency-graph runs, which GitHub files as dynamic", () => {
+    const previous = [
+      { name: 'Backend', suiteId: 1 },
+      { name: 'Dependabot', suiteId: 5 },
+      { name: 'update-uv-graph', suiteId: 6 }
+    ];
+    const runs = [
+      { event: 'push', suiteId: 1 },
+      { event: 'dynamic', suiteId: 5 },
+      { event: 'dynamic', suiteId: 6 }
+    ];
+    expect(checksToWaitFor(previous, runs)).toEqual(['Backend']);
+  });
+
+  it("keeps another app's check runs, which have no Actions run", () => {
     expect(checksToWaitFor([{ name: 'Frontend', suiteId: 1 }], [])).toEqual(['Frontend']);
   });
 });

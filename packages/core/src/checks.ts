@@ -37,16 +37,20 @@ export const commitStatusState = (state: string): HeadCheckState =>
 const latestByName = (checks: HeadCheck[]): HeadCheck[] =>
   checks.filter((check, index) => checks.findIndex(({ name }) => name === check.name) === index);
 
-// Runs GitHub files on the default branch's head whatever started them: the factory's stage dispatches, schedules and
-// manual runs. A PR's head never gets them, so a PR's first commit, whose parent is the base's head, must not wait.
-export const DEFAULT_BRANCH_EVENTS = ['repository_dispatch', 'schedule', 'workflow_dispatch'] as const;
+// Events whose Actions runs also land on a PR's own commits. Runs from any other event (the factory's stage dispatches,
+// schedules, manual runs, Dependabot's updates and dependency-graph submissions, which GitHub calls `dynamic`) are filed
+// on the default branch's head whatever started them, so a PR's first commit, whose parent is the base's head, must
+// not wait for them. Listing the events that do reach a PR keeps a new kind of default-branch run from holding a merge.
+export const PULL_REQUEST_EVENTS = ['push', 'pull_request', 'deployment', 'deployment_status'] as const;
 
 // A check on the commit before the head, with the check suite it came from (null for a commit status).
 export type PreviousCheck = { name: string; suiteId: number | null };
 
-// The names of the earlier commit's checks the head should wait for: all but those from a default-branch-only run.
-export const checksToWaitFor = (previous: PreviousCheck[], defaultBranchSuites: number[]): string[] => {
-  const skipped = new Set(defaultBranchSuites);
+// The names of the earlier commit's checks the head should wait for: all but those from an Actions run whose event
+// never reaches a PR. Other apps' checks and commit statuses have no Actions run, so they're kept.
+export const checksToWaitFor = (previous: PreviousCheck[], runs: { event: string; suiteId: number }[]): string[] => {
+  const pullRequestEvents: readonly string[] = PULL_REQUEST_EVENTS;
+  const skipped = new Set(runs.filter(({ event }) => !pullRequestEvents.includes(event)).map(({ suiteId }) => suiteId));
   return previous.filter(({ suiteId }) => suiteId === null || !skipped.has(suiteId)).map(({ name }) => name);
 };
 

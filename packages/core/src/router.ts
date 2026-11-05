@@ -401,6 +401,7 @@ export const decideCiFailure = (
 export type CommitRun = {
   id: number;
   workflowId: number;
+  suiteId: number;
   name: string | null;
   event: string;
   conclusion: string | null;

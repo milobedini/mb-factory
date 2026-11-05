@@ -15,7 +15,6 @@ import {
   checksToWaitFor,
   commitStatusState,
   currentMergeable,
-  DEFAULT_BRANCH_EVENTS,
   DISPATCH_EVENT,
   summariseChecks
 } from '@mb-factory/core';
@@ -309,19 +308,6 @@ const commitChecks = async (repository: string, sha: string): Promise<(HeadCheck
   return [...runs, ...fromStatuses];
 };
 
-// The check suites of a commit's Actions runs that GitHub files on the default branch's head whatever started them.
-const defaultBranchSuites = async (repository: string, sha: string): Promise<number[]> => {
-  const pages = await Promise.all(
-    DEFAULT_BRANCH_EVENTS.map((event) =>
-      githubGet<{ workflow_runs: { check_suite_id: number }[] }>(
-        `/repos/${repository}/actions/runs?${new URLSearchParams({ head_sha: sha, event, per_page: '100' })}`,
-        'commit runs'
-      )
-    )
-  );
-  return pages.flatMap(({ workflow_runs: workflowRuns }) => workflowRuns.map(({ check_suite_id: id }) => id));
-};
-
 // The checks on a PR's head, counting those that ran on the commit before it and haven't started here yet.
 export const headChecks = async (repository: string, sha: string): Promise<ChecksSummary> => {
   const [commit, head] = await Promise.all([
@@ -329,10 +315,10 @@ export const headChecks = async (repository: string, sha: string): Promise<Check
     commitChecks(repository, sha)
   ]);
   const parent = commit.parents[0]?.sha;
-  const [previous, suites] = parent
-    ? await Promise.all([commitChecks(repository, parent), defaultBranchSuites(repository, parent)])
+  const [previous, runs] = parent
+    ? await Promise.all([commitChecks(repository, parent), commitRuns(repository, parent)])
     : [[], []];
-  return summariseChecks(head, checksToWaitFor(previous, suites));
+  return summariseChecks(head, checksToWaitFor(previous, runs));
 };
 
 type ScheduledRuns = {
@@ -359,6 +345,7 @@ type CommitWorkflowRuns = {
   workflow_runs: {
     id: number;
     workflow_id: number;
+    check_suite_id: number;
     name: string | null;
     event: string;
     conclusion: string | null;
@@ -366,7 +353,8 @@ type CommitWorkflowRuns = {
   }[];
 };
 
-// Every Actions run on a commit, newest first: its checks, whichever event started them.
+// Every Actions run on a commit, newest first: its checks, whichever event started them. One page: a commit with more
+// runs has some left out.
 export const commitRuns = async (repository: string, sha: string): Promise<CommitRun[]> => {
   const query = new URLSearchParams({ head_sha: sha, per_page: '100' });
   const { workflow_runs: workflowRuns } = await githubGet<CommitWorkflowRuns>(
@@ -376,6 +364,7 @@ export const commitRuns = async (repository: string, sha: string): Promise<Commi
   return workflowRuns.map((run) => ({
     id: run.id,
     workflowId: run.workflow_id,
+    suiteId: run.check_suite_id,
     name: run.name,
     event: run.event,
     conclusion: run.conclusion,

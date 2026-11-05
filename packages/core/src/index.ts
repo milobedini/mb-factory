@@ -35,7 +35,7 @@ export {
   checksPassedText,
   checksToWaitFor,
   commitStatusState,
-  DEFAULT_BRANCH_EVENTS,
+  PULL_REQUEST_EVENTS,
   summariseChecks
 } from './checks';
 export type { CommandRequest, SlashCommand } from './command';
