@@ -3,6 +3,7 @@ import { after } from 'next/server';
 
 import { requireEnv } from '@/lib/env';
 import { recordEvent } from '@/lib/events';
+import { withSharedReads } from '@/lib/github-api';
 import { log } from '@/lib/log';
 import { handleGitHubEvent, releaseQueueOnActivity } from '@/lib/router';
 
@@ -49,7 +50,7 @@ export const POST = async (request: Request) => {
   if (isNew) {
     after(async () => {
       try {
-        await handleGitHubEvent(eventName, event);
+        await withSharedReads(() => handleGitHubEvent(eventName, event));
       } catch (error) {
         log('error', 'github event routing failed', {
           delivery,

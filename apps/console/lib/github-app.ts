@@ -1,6 +1,7 @@
 import { createSign } from 'node:crypto';
 
 import { requireEnv } from './env';
+import { log } from './log';
 
 // The factory's own GitHub App (`mb-factory-bot`), for what only the App may do: merging an express PR without an
 // approval, which the repo's Review ruleset lets the App bypass, and merging the base branch into a PR that changes a
@@ -66,6 +67,41 @@ export const appToken = async (repository: string, { workflows = false } = {}): 
   );
   tokens.set(key, { token: created.token, expiresAt: Date.parse(created.expires_at) });
   return created.token;
+};
+
+// After the App couldn't give a read token for a repository (not installed there, or missing a read permission), the
+// console's own token reads it for this long before the App is asked again.
+const READ_RETRY_MS = 10 * 60 * 1000;
+const READ_PERMISSIONS = { contents: 'read', pull_requests: 'read', checks: 'read', actions: 'read', statuses: 'read' };
+const readTokens = new Map<string, { token: string | null; expiresAt: number }>();
+
+// A read-only installation token for one repository, or null when there isn't one to be had. The App's requests count
+// against its own rate limit, not the person whose token the console otherwise reads with (5 Nov: a busy hour of
+// check webhooks spent all 5,000 of theirs).
+export const appReadToken = async (repository: string): Promise<string | null> => {
+  const kept = readTokens.get(repository);
+  if (kept && kept.expiresAt - MARGIN_MS > Date.now()) {
+    return kept.token;
+  }
+  try {
+    const [, name] = repository.split('/');
+    const { id } = await asApp<{ id: number }>('GET', `/repos/${repository}/installation`, 'app installation');
+    const created = await asApp<{ token: string; expires_at: string }>(
+      'POST',
+      `/app/installations/${id}/access_tokens`,
+      'app read token',
+      { repositories: [name], permissions: READ_PERMISSIONS }
+    );
+    readTokens.set(repository, { token: created.token, expiresAt: Date.parse(created.expires_at) });
+    return created.token;
+  } catch (error) {
+    log('warn', 'app read token unavailable', {
+      repository,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    readTokens.set(repository, { token: null, expiresAt: Date.now() + MARGIN_MS + READ_RETRY_MS });
+    return null;
+  }
 };
 
 // GitHub's own revert of a merged PR, opened as the App: a branch with the revert commit and a PR for it.

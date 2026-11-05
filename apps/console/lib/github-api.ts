@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type {
   ChangedFile,
@@ -20,6 +21,8 @@ import {
 } from '@mb-factory/core';
 
 import { requireEnv } from './env';
+import { appReadToken } from './github-app';
+import { log } from './log';
 
 const API_URL = 'https://api.github.com';
 
@@ -201,14 +204,33 @@ export const startGovernorProbe = async (): Promise<void> => {
   }
 };
 
-const githubGet = async <T>(path: string, action: string): Promise<T> => {
-  const response = await fetch(`${API_URL}${path}`, {
+const getWith = (path: string, token: string) =>
+  fetch(`${API_URL}${path}`, {
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${requireEnv('GITHUB_DISPATCH_TOKEN')}`,
+      Authorization: `Bearer ${token}`,
       'X-GitHub-Api-Version': '2022-11-28'
     }
   });
+
+// Reads a project repo as the factory's App, so they count against the App's rate limit rather than the person's whose
+// token the console holds. Anything the App can't read (no token, a missing permission, its own limit spent) is read
+// again with the console's token, so reads never do worse than with it alone.
+const githubRead = async (path: string): Promise<Response> => {
+  const repository = /^\/repos\/([^/]+\/[^/]+)\//.exec(path)?.[1];
+  const token = repository ? await appReadToken(repository) : null;
+  if (token) {
+    const response = await getWith(path, token);
+    if (response.status !== 401 && response.status !== 403) {
+      return response;
+    }
+    log('warn', 'app read refused', { repository, status: response.status });
+  }
+  return getWith(path, requireEnv('GITHUB_DISPATCH_TOKEN'));
+};
+
+const githubGet = async <T>(path: string, action: string): Promise<T> => {
+  const response = await githubRead(path);
   if (!response.ok) {
     throw await failure(action, response);
   }
@@ -308,8 +330,27 @@ const commitChecks = async (repository: string, sha: string): Promise<(HeadCheck
   return [...runs, ...fromStatuses];
 };
 
+// One webhook's reads of a commit's checks, shared: a check event redraws the card, asks whether the checks just
+// passed and whether the PR merges by itself, each reading the same head (about seven requests a time). Kept for that
+// one event only, so a later event always reads afresh.
+const sharedChecks = new AsyncLocalStorage<Map<string, Promise<ChecksSummary>>>();
+
+export const withSharedReads = <T>(handle: () => Promise<T>): Promise<T> => sharedChecks.run(new Map(), handle);
+
+export const headChecks = (repository: string, sha: string): Promise<ChecksSummary> => {
+  const shared = sharedChecks.getStore();
+  const key = `${repository}@${sha}`;
+  const kept = shared?.get(key);
+  if (kept) {
+    return kept;
+  }
+  const read = readHeadChecks(repository, sha);
+  shared?.set(key, read);
+  return read;
+};
+
 // The checks on a PR's head, counting those that ran on the commit before it and haven't started here yet.
-export const headChecks = async (repository: string, sha: string): Promise<ChecksSummary> => {
+const readHeadChecks = async (repository: string, sha: string): Promise<ChecksSummary> => {
   const [commit, head] = await Promise.all([
     githubGet<{ parents: { sha: string }[] }>(`/repos/${repository}/git/commits/${sha}`, 'commit'),
     commitChecks(repository, sha)
@@ -426,15 +467,8 @@ export const branchContains = async (repository: string, branch: string, sha: st
 // How many commits `base` has that `branch` doesn't; 0 once the branch is gone. The repo deletes a PR's branch as it
 // merges, and the push of that merge can reach the console while the PR still reads open (four times, 29 Oct–3 Nov).
 export const behindBy = async (repository: string, branch: string, base: string): Promise<number> => {
-  const response = await fetch(
-    `${API_URL}/repos/${repository}/compare/${encodeURIComponent(branch)}...${encodeURIComponent(base)}`,
-    {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${requireEnv('GITHUB_DISPATCH_TOKEN')}`,
-        'X-GitHub-Api-Version': '2022-11-28'
-      }
-    }
+  const response = await githubRead(
+    `/repos/${repository}/compare/${encodeURIComponent(branch)}...${encodeURIComponent(base)}`
   );
   if (response.status === 404) {
     return 0;
