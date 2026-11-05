@@ -37,6 +37,19 @@ export const commitStatusState = (state: string): HeadCheckState =>
 const latestByName = (checks: HeadCheck[]): HeadCheck[] =>
   checks.filter((check, index) => checks.findIndex(({ name }) => name === check.name) === index);
 
+// Runs GitHub files on the default branch's head whatever started them: the factory's stage dispatches, schedules and
+// manual runs. A PR's head never gets them, so a PR's first commit, whose parent is the base's head, must not wait.
+export const DEFAULT_BRANCH_EVENTS = ['repository_dispatch', 'schedule', 'workflow_dispatch'] as const;
+
+// A check on the commit before the head, with the check suite it came from (null for a commit status).
+export type PreviousCheck = { name: string; suiteId: number | null };
+
+// The names of the earlier commit's checks the head should wait for: all but those from a default-branch-only run.
+export const checksToWaitFor = (previous: PreviousCheck[], defaultBranchSuites: number[]): string[] => {
+  const skipped = new Set(defaultBranchSuites);
+  return previous.filter(({ suiteId }) => suiteId === null || !skipped.has(suiteId)).map(({ name }) => name);
+};
+
 export const summariseChecks = (headChecks: HeadCheck[], previousNames: string[]): ChecksSummary => {
   const head = latestByName(headChecks);
   const onHead = new Set(head.map(({ name }) => name));

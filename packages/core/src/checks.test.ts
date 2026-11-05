@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { HeadCheck } from './checks';
-import { checkRunState, checksLine, checksPassedText, commitStatusState, summariseChecks } from './checks';
+import {
+  checkRunState,
+  checksLine,
+  checksPassedText,
+  checksToWaitFor,
+  commitStatusState,
+  summariseChecks
+} from './checks';
 
 const check = (name: string, state: HeadCheck['state'], finishedAt: string | null = null): HeadCheck => ({
   name,
@@ -35,6 +42,24 @@ describe('commitStatusState', () => {
     ['error', 'failed']
   ] as const)('reads %s as %s', (state, expected) => {
     expect(commitStatusState(state)).toBe(expected);
+  });
+});
+
+describe('checksToWaitFor', () => {
+  it('drops the checks of runs filed on the default branch, keeping the rest and commit statuses', () => {
+    const previous = [
+      { name: 'Frontend', suiteId: 1 },
+      { name: 'Preview checks', suiteId: 2 },
+      { name: 'stage / stage', suiteId: 3 },
+      { name: 'stage / visual', suiteId: 3 },
+      { name: 'Back up production', suiteId: 4 },
+      { name: 'Vercel', suiteId: null }
+    ];
+    expect(checksToWaitFor(previous, [3, 4])).toEqual(['Frontend', 'Preview checks', 'Vercel']);
+  });
+
+  it('keeps every check when no run came from a default-branch event', () => {
+    expect(checksToWaitFor([{ name: 'Frontend', suiteId: 1 }], [])).toEqual(['Frontend']);
   });
 });
 

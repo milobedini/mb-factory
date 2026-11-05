@@ -5,11 +5,20 @@ import type {
   CommitRun,
   DispatchPayload,
   HeadCheck,
+  PreviousCheck,
   PullForMerge,
   ReviewThread,
   ScheduledRun
 } from '@mb-factory/core';
-import { checkRunState, commitStatusState, currentMergeable, DISPATCH_EVENT, summariseChecks } from '@mb-factory/core';
+import {
+  checkRunState,
+  checksToWaitFor,
+  commitStatusState,
+  currentMergeable,
+  DEFAULT_BRANCH_EVENTS,
+  DISPATCH_EVENT,
+  summariseChecks
+} from '@mb-factory/core';
 
 import { requireEnv } from './env';
 
@@ -266,6 +275,7 @@ type CheckRuns = {
     html_url: string | null;
     started_at: string | null;
     completed_at: string | null;
+    check_suite: { id: number } | null;
   }[];
 };
 
@@ -275,30 +285,41 @@ type CombinedStatus = {
 
 // Every check GitHub shows under a PR for one commit: its check runs (the latest of each, newest first) and its commit
 // statuses. Needs the token's Checks and Commit statuses read.
-const commitChecks = async (repository: string, sha: string): Promise<HeadCheck[]> => {
+const commitChecks = async (repository: string, sha: string): Promise<(HeadCheck & PreviousCheck)[]> => {
   const [{ check_runs: checkRuns }, { statuses }] = await Promise.all([
     githubGet<CheckRuns>(`/repos/${repository}/commits/${sha}/check-runs?filter=latest&per_page=100`, 'check runs'),
     githubGet<CombinedStatus>(`/repos/${repository}/commits/${sha}/status?per_page=100`, 'commit status')
   ]);
   const runs = [...checkRuns]
     .sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''))
-    .map(
-      (run): HeadCheck => ({
-        name: run.name,
-        state: checkRunState(run),
-        url: run.html_url,
-        finishedAt: run.completed_at ? new Date(run.completed_at) : null
-      })
-    );
-  const fromStatuses = statuses.map(
-    (status): HeadCheck => ({
-      name: status.context,
-      state: commitStatusState(status.state),
-      url: status.target_url,
-      finishedAt: status.state === 'pending' ? null : new Date(status.updated_at)
-    })
-  );
+    .map((run): HeadCheck & PreviousCheck => ({
+      name: run.name,
+      state: checkRunState(run),
+      url: run.html_url,
+      finishedAt: run.completed_at ? new Date(run.completed_at) : null,
+      suiteId: run.check_suite?.id ?? null
+    }));
+  const fromStatuses = statuses.map((status): HeadCheck & PreviousCheck => ({
+    name: status.context,
+    state: commitStatusState(status.state),
+    url: status.target_url,
+    finishedAt: status.state === 'pending' ? null : new Date(status.updated_at),
+    suiteId: null
+  }));
   return [...runs, ...fromStatuses];
+};
+
+// The check suites of a commit's Actions runs that GitHub files on the default branch's head whatever started them.
+const defaultBranchSuites = async (repository: string, sha: string): Promise<number[]> => {
+  const pages = await Promise.all(
+    DEFAULT_BRANCH_EVENTS.map((event) =>
+      githubGet<{ workflow_runs: { check_suite_id: number }[] }>(
+        `/repos/${repository}/actions/runs?${new URLSearchParams({ head_sha: sha, event, per_page: '100' })}`,
+        'commit runs'
+      )
+    )
+  );
+  return pages.flatMap(({ workflow_runs: workflowRuns }) => workflowRuns.map(({ check_suite_id: id }) => id));
 };
 
 // The checks on a PR's head, counting those that ran on the commit before it and haven't started here yet.
@@ -308,11 +329,10 @@ export const headChecks = async (repository: string, sha: string): Promise<Check
     commitChecks(repository, sha)
   ]);
   const parent = commit.parents[0]?.sha;
-  const previous = parent ? await commitChecks(repository, parent) : [];
-  return summariseChecks(
-    head,
-    previous.map(({ name }) => name)
-  );
+  const [previous, suites] = parent
+    ? await Promise.all([commitChecks(repository, parent), defaultBranchSuites(repository, parent)])
+    : [[], []];
+  return summariseChecks(head, checksToWaitFor(previous, suites));
 };
 
 type ScheduledRuns = {

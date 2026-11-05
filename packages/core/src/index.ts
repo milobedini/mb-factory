@@ -28,8 +28,16 @@ export type { AskBrief, Brief, DispatchPayload, JobBrief, SizeBrief } from './br
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
 export type { CardInput, CardRun, CardStatus, NextIssue, SlackCard } from './card';
 export { CARD_COLOURS, cardStatus, readNextIssues, workItemCard } from './card';
-export type { ChecksSummary, HeadCheck, HeadCheckState } from './checks';
-export { checkRunState, checksLine, checksPassedText, commitStatusState, summariseChecks } from './checks';
+export type { ChecksSummary, HeadCheck, HeadCheckState, PreviousCheck } from './checks';
+export {
+  checkRunState,
+  checksLine,
+  checksPassedText,
+  checksToWaitFor,
+  commitStatusState,
+  DEFAULT_BRANCH_EVENTS,
+  summariseChecks
+} from './checks';
 export type { CommandRequest, SlashCommand } from './command';
 export {
   alreadyPausedText,
