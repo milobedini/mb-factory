@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { PullForMerge } from './merge';
 import {
+  baseMergeRefusedText,
+  behindRefusalText,
   checksAllowMerge,
   closedLine,
   connectGitHubMessage,
@@ -29,6 +31,8 @@ const pull = (overrides: Partial<PullForMerge> = {}): PullForMerge => ({
   draft: false,
   head: accepted,
   mergeable: true,
+  behind: false,
+  base: 'main',
   ...overrides
 });
 
@@ -226,6 +230,18 @@ describe('mergeRefusal', () => {
   it('quotes GitHub’s refusal safely', () => {
     expect(mergeRefusedText(39, 'Base <branch> was\nmodified')).toBe(
       'I approved PR #39 as you, but GitHub refused the merge: “Base &lt;branch&gt; was modified”. Tap again, or merge it on GitHub.'
+    );
+  });
+
+  it('says a PR behind its base needs updating, rather than GitHub’s “checks are expected”', () => {
+    expect(behindRefusalText(135, 'main')).toBe(
+      'PR #135 is behind main, and the repo’s rules want it up to date to merge, so nothing was merged. Use Update branch on GitHub, then tap again once its checks pass.'
+    );
+  });
+
+  it('quotes GitHub when the base branch couldn’t be merged in', () => {
+    expect(baseMergeRefusedText(135, 'main', 'Resource not accessible\nby integration')).toBe(
+      'I couldn’t merge main into PR #135 to bring it up to date: GitHub said “Resource not accessible by integration”. Use Update branch on GitHub, then tap Approve and merge once its checks pass.'
     );
   });
 });

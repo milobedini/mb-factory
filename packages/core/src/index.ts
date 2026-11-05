@@ -236,6 +236,8 @@ export { isLinearPassFor, isReadOnlyDocument, signLinearPass } from './linear-pr
 export type { AcceptedPr, PullForMerge } from './merge';
 export {
   approveRefusedText,
+  baseMergeRefusedText,
+  behindRefusalText,
   checksAllowMerge,
   checksUnreadText,
   closedLine,

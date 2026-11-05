@@ -39,6 +39,8 @@ import {
   askTicketIssue,
   BACK_TO_SPEC_QUESTION,
   BLOCKING_OUTCOMES,
+  baseMergeRefusedText,
+  behindRefusalText,
   blockedThought,
   briefRound,
   buildDispatchPayload,
@@ -1055,9 +1057,30 @@ const bringUpToDate = (
         if (!shouldBringUpToDate({ stage, openRuns: openRuns.length, mergeable, behindBy: behind })) {
           return;
         }
-        const merged = await mergeBaseIntoBranch(repository, branch, base);
+        // A token that can't be had (no key, or the App not installed) is refused like the merge, so the thread hears.
+        const merged = await appToken(repository, { workflows: true }).then(
+          (token) => mergeBaseIntoBranch(token, repository, branch, base),
+          (error: unknown): GitHubRefusal => ({ ok: false, message: errorMessage(error) })
+        );
         log('info', 'brought up to date', { issue: workItem.issueIdentifier, pr: prNumber, base, behind, merged });
         if (typeof merged === 'string') {
+          return;
+        }
+        if ('ok' in merged) {
+          // Once for each count behind, so a refusal is told again only when the base moves on.
+          const first = await recordEvent({
+            source: 'github',
+            deliveryId: `base-merge-refused:${repository}#${prNumber}:${behind}`,
+            type: BASE_MERGE_REFUSED_EVENT,
+            payload: { repository, branch, base, refused: merged.message }
+          });
+          if (first) {
+            const text = baseMergeRefusedText(prNumber, base, merged.message);
+            await Promise.all([
+              postActivity(workItem, { type: 'error', body: text }),
+              replyInThread(project, workItem, askingFor(project, workItem)(text))
+            ]);
+          }
           return;
         }
         // The merge gate takes a head made of merges recorded here without comparing files (`acceptedHead`).
@@ -3160,7 +3183,9 @@ const handleMergeTap = async (
       await tellTapper(checksUnreadText(prNumber));
       return;
     }
-    const refusal = mergeRefusal(prNumber, { pull, acceptedHead: accepted, checks: summary.state });
+    const refusal =
+      mergeRefusal(prNumber, { pull, acceptedHead: accepted, checks: summary.state }) ??
+      (pull.behind ? behindRefusalText(prNumber, pull.base) : undefined);
     if (refusal !== undefined || accepted === null) {
       log('info', 'merge from slack refused', { issue, login: connection.login, refusal });
       await tellTapper(refusal ?? notWaitingToMergeText(issue));
@@ -3567,6 +3592,7 @@ const lockfileOnlyMerge = async (
 };
 
 const BASE_MERGE_EVENT = 'base_merge';
+const BASE_MERGE_REFUSED_EVENT = 'base_merge_refused';
 
 // The PR's head when every commit from it back to `reviewed` is a merge of the default branch the console made and
 // recorded, and the PR still targets the default branch.

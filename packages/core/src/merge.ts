@@ -257,6 +257,9 @@ export type PullForMerge = {
   head: string;
   // Null while GitHub works out whether it merges.
   mergeable: boolean | null;
+  // The base branch has moved on and the repo's rules want the PR up to date before it merges.
+  behind: boolean;
+  base: string;
 };
 
 const short = (sha: string): string => sha.slice(0, SHORT_SHA);
@@ -296,6 +299,14 @@ export const mergeRefusal = (
   }
   return undefined;
 };
+
+// A tap on a PR the rules won't merge until it's up to date: GitHub would only say its required checks are "expected".
+export const behindRefusalText = (prNumber: number, base: string): string =>
+  `PR #${prNumber} is behind ${base}, and the repo’s rules want it up to date to merge, so nothing was merged. Use Update branch on GitHub, then tap again once its checks pass.`;
+
+// The console couldn't merge the base branch in to bring a PR at the merge gate up to date.
+export const baseMergeRefusedText = (prNumber: number, base: string, message: string): string =>
+  `I couldn’t merge ${base} into PR #${prNumber} to bring it up to date: GitHub said “${escapeSlack(clip(oneLine(message), 200))}”. Use Update branch on GitHub, then tap Approve and merge once its checks pass.`;
 
 export const checksUnreadText = (prNumber: number): string =>
   `I couldn’t read PR #${prNumber}’s checks from GitHub, so nothing was merged. Tap again in a minute, or merge it on GitHub after a look.`;

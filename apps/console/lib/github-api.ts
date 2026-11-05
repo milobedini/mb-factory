@@ -446,16 +446,24 @@ export const behindBy = async (repository: string, branch: string, base: string)
 };
 
 // Merges `base` into `branch` with a merge commit GitHub computes, as its Update branch does, and under its message so
-// the push isn't counted as a person's work. The new commit, or why there isn't one.
+// the push isn't counted as a person's work. The new commit, or why there isn't one. Takes the App's token: when the
+// branch changes a workflow file the base also changed, the merge writes a new workflow file, which GitHub refuses
+// without the Workflows permission (with a 409, like a conflict, so only GitHub's "Merge conflict" counts as one).
 export const mergeBaseIntoBranch = async (
+  token: string,
   repository: string,
   branch: string,
   base: string
-): Promise<{ sha: string } | 'up_to_date' | 'conflict'> => {
-  const response = await githubRequest(`/repos/${repository}/merges`, {
-    base: branch,
-    head: base,
-    commit_message: `Merge branch '${base}' into ${branch}`
+): Promise<{ sha: string } | 'up_to_date' | 'conflict' | GitHubRefusal> => {
+  const response = await fetch(`${API_URL}/repos/${repository}/merges`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ base: branch, head: base, commit_message: `Merge branch '${base}' into ${branch}` })
   });
   if (response.status === 201) {
     const { sha } = (await response.json()) as { sha: string };
@@ -464,10 +472,10 @@ export const mergeBaseIntoBranch = async (
   if (response.status === 204) {
     return 'up_to_date';
   }
-  if (response.status === 409) {
-    return 'conflict';
-  }
-  throw await failure('merge of the base branch', response);
+  const { message } = (await response.json().catch(() => ({}))) as { message?: string };
+  return response.status === 409 && /merge conflict/i.test(message ?? '')
+    ? 'conflict'
+    : { ok: false, message: message ?? `GitHub answered ${response.status}` };
 };
 
 export const commitParents = async (repository: string, sha: string): Promise<string[]> =>
@@ -528,7 +536,10 @@ type PullNow = {
   merged: boolean;
   draft: boolean;
   mergeable: boolean | null;
+  // `behind` only when the rules want the PR up to date with its base.
+  mergeable_state: string;
   head: { sha: string };
+  base: { ref: string };
 };
 
 // A PR as Approve and merge checks it. GitHub's own `mergeable` is taken as it stands, even when its test merge predates
@@ -550,7 +561,9 @@ export const pullForMerge = async (
     merged: pull.merged,
     draft: pull.draft,
     head: pull.head.sha,
-    mergeable: pull.mergeable
+    mergeable: pull.mergeable,
+    behind: pull.mergeable_state === 'behind',
+    base: pull.base.ref
   };
 };
 

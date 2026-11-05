@@ -3,9 +3,10 @@ import { createSign } from 'node:crypto';
 import { requireEnv } from './env';
 
 // The factory's own GitHub App (`mb-factory-bot`), for what only the App may do: merging an express PR without an
-// approval, which the repo's Review ruleset lets the App bypass. Its key is the console's `FACTORY_APP_PRIVATE_KEY`
-// and its client ID `FACTORY_APP_CLIENT_ID`. Each token is limited to one repository and the two permissions a merge
-// needs, and lasts an hour.
+// approval, which the repo's Review ruleset lets the App bypass, and merging the base branch into a PR that changes a
+// workflow file, which takes the Workflows permission the console's own token lacks. Its key is the console's
+// `FACTORY_APP_PRIVATE_KEY` and its client ID `FACTORY_APP_CLIENT_ID`. Each token is limited to one repository and the
+// permissions those merges need, and lasts an hour.
 
 const API_URL = 'https://api.github.com';
 // A token is used only while it has this long left, so a merge never starts on one about to lapse.
@@ -46,21 +47,24 @@ const asApp = async <T>(method: 'GET' | 'POST', path: string, action: string, bo
 
 const tokens = new Map<string, { token: string; expiresAt: number }>();
 
-// An installation token for one repository, kept while it has time left.
-export const appToken = async (repository: string): Promise<string> => {
-  const kept = tokens.get(repository);
+// An installation token for one repository, kept while it has time left. `workflows` adds write access to workflow
+// files, asked for only by the merges that may need it, so an installation without it fails those alone.
+export const appToken = async (repository: string, { workflows = false } = {}): Promise<string> => {
+  const key = `${repository}${workflows ? ' workflows' : ''}`;
+  const kept = tokens.get(key);
   if (kept && kept.expiresAt - MARGIN_MS > Date.now()) {
     return kept.token;
   }
   const [, name] = repository.split('/');
   const { id } = await asApp<{ id: number }>('GET', `/repos/${repository}/installation`, 'app installation');
+  const permissions = { contents: 'write', pull_requests: 'write', ...(workflows ? { workflows: 'write' } : {}) };
   const created = await asApp<{ token: string; expires_at: string }>(
     'POST',
     `/app/installations/${id}/access_tokens`,
     'app token',
-    { repositories: [name], permissions: { contents: 'write', pull_requests: 'write' } }
+    { repositories: [name], permissions }
   );
-  tokens.set(repository, { token: created.token, expiresAt: Date.parse(created.expires_at) });
+  tokens.set(key, { token: created.token, expiresAt: Date.parse(created.expires_at) });
   return created.token;
 };
 
