@@ -4,10 +4,12 @@ import type { DesignBrief } from './design';
 import {
   designCommitMessage,
   designFireText,
+  designIssueText,
   dinoIssue,
   dinoWaitText,
   latestCanvas,
   latestSpecDesign,
+  latestTriageBrief,
   picksSpecChange,
   readCanvas,
   readDesignComponents,
@@ -194,6 +196,8 @@ describe('designFireText', () => {
       reportUrl: 'https://console.example/api/runs/run-1/design',
       pass: '1793270000000.abc',
       issue: { identifier: 'TAS-90', url: 'https://linear.app/tastebook/issue/TAS-90', title: 'Households' },
+      issueText: '## Goal\n\nA household shares its recipes.',
+      triageBrief: '**Triage brief**\n\n**Size:** M',
       repository: 'milobedini/tastebook',
       branch: 'tas-90-households',
       pr: 70,
@@ -211,6 +215,41 @@ describe('designFireText', () => {
     const text = designFireText(brief);
     expect(text.startsWith('mb-factory design run.')).toBe(true);
     expect(JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))).toEqual(brief);
+  });
+});
+
+describe('latestTriageBrief', () => {
+  it('picks the latest comment that is a triage brief', () => {
+    expect(
+      latestTriageBrief([
+        { body: '**Triage brief**\n\n**Size:** S', createdAt: '2026-11-08T09:00:00Z' },
+        { body: 'The stage ended without a valid report.', createdAt: '2026-11-08T11:00:00Z' },
+        { body: '  **Triage brief**\n\n**Size:** L  ', createdAt: '2026-11-08T10:00:00Z' }
+      ])
+    ).toBe('**Triage brief**\n\n**Size:** L');
+  });
+
+  it('is null when triage posted no brief', () => {
+    expect(
+      latestTriageBrief([{ body: 'Triage done: size L. Brief is on the issue.', createdAt: '2026-11-08T10:00:00Z' }])
+    ).toBeNull();
+    expect(latestTriageBrief([])).toBeNull();
+  });
+
+  it('cuts a runaway brief', () => {
+    const brief = latestTriageBrief([
+      { body: `**Triage brief**\n${'x'.repeat(40_000)}`, createdAt: '2026-11-08T10:00:00Z' }
+    ]);
+    expect(brief?.length).toBeLessThan(31_000);
+    expect(brief?.endsWith('[cut at 30000 characters]')).toBe(true);
+  });
+});
+
+describe('designIssueText', () => {
+  it('keeps a description and drops an empty one', () => {
+    expect(designIssueText('  ## Goal\n\nLists.  ')).toBe('## Goal\n\nLists.');
+    expect(designIssueText('   ')).toBeNull();
+    expect(designIssueText(null)).toBeNull();
   });
 });
 

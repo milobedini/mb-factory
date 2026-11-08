@@ -122,6 +122,10 @@ export type DesignBrief = {
   reportUrl: string;
   pass: string;
   issue: { identifier: string; url: string; title: string | null };
+  // On express, the issue's description and triage's brief, read by the console: the session has no Linear of its own,
+  // and gets no way into it. Null on careful (the spec is the contract) or when the console couldn't read them.
+  issueText: string | null;
+  triageBrief: string | null;
   repository: string;
   branch: string | null;
   pr: number | null;
@@ -136,6 +140,29 @@ export type DesignBrief = {
   track: Track;
   // The project's Design System artifact, to bring up to date and draw with.
   designSystem: { url: string; build: string; out: string } | null;
+};
+
+// Triage posts its brief to the issue as a comment that starts with this heading.
+const TRIAGE_BRIEF_HEADING = '**Triage brief**';
+
+// Far more than a description or a brief runs to, so a runaway one can't swamp the fire text.
+const MAX_DESIGN_TEXT = 30_000;
+
+const capped = (text: string): string =>
+  text.length > MAX_DESIGN_TEXT ? `${text.slice(0, MAX_DESIGN_TEXT)}\n\n[cut at ${MAX_DESIGN_TEXT} characters]` : text;
+
+export type IssueComment = { body: string; createdAt: string };
+
+// The issue's text for a design brief: empty becomes null.
+export const designIssueText = (description: string | null): string | null =>
+  description?.trim() ? capped(description.trim()) : null;
+
+// Triage's brief among an issue's comments: the latest, since a re-run triage posts a new one.
+export const latestTriageBrief = (comments: IssueComment[]): string | null => {
+  const briefs = comments
+    .filter(({ body }) => body.trimStart().startsWith(TRIAGE_BRIEF_HEADING))
+    .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  return briefs[0] ? capped(briefs[0].body.trim()) : null;
 };
 
 export const designFireText = (brief: DesignBrief): string =>

@@ -100,6 +100,7 @@ export type {
   DesignFile,
   DesignVariant,
   FiredSession,
+  IssueComment,
   SpecComponent,
   SpecDesign
 } from './design';
@@ -108,10 +109,12 @@ export {
   designCommitMessage,
   designFireText,
   designFolder,
+  designIssueText,
   dinoIssue,
   dinoWaitText,
   latestCanvas,
   latestSpecDesign,
+  latestTriageBrief,
   picksSpecChange,
   readCanvas,
   readDesignComponents,

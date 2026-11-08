@@ -71,6 +71,7 @@ import {
   dependencyTakenText,
   deployStateOf,
   designFireText,
+  designIssueText,
   designRunLapsesAt,
   designStageOn,
   dinoIssue,
@@ -97,6 +98,7 @@ import {
   latestCanvas,
   latestSpecDesign,
   latestSpecParts,
+  latestTriageBrief,
   linearSlackReplyText,
   linearStatusFor,
   MAX_READY_ROWS,
@@ -278,6 +280,7 @@ import {
   findUserIdByEmail,
   hasClosingActivity,
   issueAssigneeAndLabels,
+  issueForDesign,
   issueToSize,
   issueToStart,
   moveIssueToStatus,
@@ -1198,20 +1201,31 @@ const startDesignRun = async (project: FactoryConfig, found: RunWithWorkItem, no
     return 'not_claimed';
   }
   const db = getDb();
-  const [, specs, designs, triages] = await Promise.all([
+  const track = workItem.track ?? project.track;
+  const [, specs, designs, triages, issue] = await Promise.all([
     db
       .update(queue)
       .set({ releasedAt: now })
       .where(and(eq(queue.runId, run.id), isNull(queue.releasedAt))),
     finishedReports(workItem, 'spec'),
     finishedReports(workItem, 'design'),
-    finishedReports(workItem, 'triage')
+    finishedReports(workItem, 'triage'),
+    // On express there's no spec: the issue and triage's brief are the contract, and the session can't read Linear.
+    // A failed read still starts the run, which says what it assumed.
+    track === 'express'
+      ? issueForDesign(workItem.linearOrganizationId, workItem.linearIssueId).catch((error: unknown) => {
+          log('warn', 'design issue read failed', { runId: run.id, error: errorMessage(error) });
+          return null;
+        })
+      : null
   ]);
   const text = designFireText({
     runId: run.id,
     reportUrl: `${requireEnv('CONSOLE_URL')}/api/runs/${run.id}/design`,
     pass: designPass(run.id, new Date(now.getTime() + DESIGN_PASS_VALIDITY_MS)),
     issue: { identifier: workItem.issueIdentifier, url: workItem.issueUrl, title: workItem.title },
+    issueText: issue ? designIssueText(issue.description) : null,
+    triageBrief: issue ? latestTriageBrief(issue.comments) : null,
     repository: workItem.repository,
     branch: workItem.branch,
     pr: workItem.prNumber,
@@ -1220,7 +1234,7 @@ const startDesignRun = async (project: FactoryConfig, found: RunWithWorkItem, no
     canvas: latestCanvas(designs),
     // On express there's no spec: triage made the design call.
     design: latestSpecDesign(specs) ?? latestSpecDesign(triages),
-    track: workItem.track ?? project.track,
+    track,
     designSystem: project.design.system ?? null
   });
   const fired = await fireRoutine(project.design.routine, text).catch(async (error: unknown) => {

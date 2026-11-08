@@ -1,3 +1,4 @@
+import type { IssueComment } from '@mb-factory/core';
 import { decryptSecret, encryptSecret, partStateId } from '@mb-factory/core';
 import { eq } from 'drizzle-orm';
 
@@ -640,6 +641,21 @@ export const issueToSize = async (organizationId: string, issueId: string): Prom
     { id: issueId }
   );
   return issue;
+};
+
+export type IssueForDesign = { description: string | null; comments: IssueComment[] };
+
+// What an express design run draws from: the issue's text and its comments, where triage posted its brief. The console
+// reads them so the design session, which has no Linear of its own, needs no way into it.
+export const issueForDesign = async (organizationId: string, issueId: string): Promise<IssueForDesign | null> => {
+  const { issue } = await linearGraphql<{
+    issue: { description: string | null; comments: { nodes: IssueComment[] } } | null;
+  }>(
+    organizationId,
+    'query IssueForDesign($id: String!) { issue(id: $id) { description comments(first: 100) { nodes { body createdAt } } } }',
+    { id: issueId }
+  );
+  return issue && { description: issue.description, comments: issue.comments.nodes };
 };
 
 export const commentOnIssue = async (organizationId: string, issueId: string, body: string): Promise<void> => {
