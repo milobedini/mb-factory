@@ -232,17 +232,24 @@ export const answeredRequest = (agent: AgentRole, round: AskedQuestion[]): RunRe
 });
 
 // A review's questions settle findings that need a human. Answers that all keep the PR as it is need no run; any other
-// answer is a change for the implement stage, which the next review round then checks.
+// answer is a change for the implement stage, which the next review round then checks. A design's questions settle
+// the product calls its boards make: answers that all keep what's drawn need no run, as Design Review is still open;
+// any other answer redraws the canvas.
 export type AfterAnswers = { kind: 'run'; request: RunRequest } | { kind: 'keep' };
 
+const KEEPING_AGENTS: readonly AgentRole[] = ['review', 'design'];
+
 export const afterAnswers = (agent: AgentRole, round: AskedQuestion[], reported: Question[]): AfterAnswers => {
-  if (agent !== 'review') {
+  if (!KEEPING_AGENTS.includes(agent)) {
     return { kind: 'run', request: answeredRequest(agent, round) };
   }
   const keeps = byPosition(round).every(({ position, answer }) => {
     const keep = reported[position - 1]?.keep;
     return keep !== null && keep !== undefined && answer !== null && normalise(answer) === normalise(keep);
   });
+  if (agent === 'design') {
+    return keeps ? { kind: 'keep' } : { kind: 'run', request: answeredRequest(agent, round) };
+  }
   return keeps
     ? { kind: 'keep' }
     : {

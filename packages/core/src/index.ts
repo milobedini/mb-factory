@@ -95,8 +95,11 @@ export {
 export type { Bump, DependencyPr, DependencyWork } from './dependencies';
 export { DEPENDABOT_LOGIN, dependencyIssue, dependencyTakenText, isMajorBump, readBump } from './dependencies';
 export type {
+  AskedDesignQuestion,
   ComponentChange,
+  CriterionCoverage,
   DesignBrief,
+  DesignDecision,
   DesignFile,
   DesignVariant,
   FiredSession,
@@ -105,8 +108,10 @@ export type {
   SpecDesign
 } from './design';
 export {
+  acceptanceCriteria,
   COMPONENT_CHANGES,
   designCommitMessage,
+  designDecisions,
   designFireText,
   designFolder,
   designIssueText,
@@ -118,12 +123,15 @@ export {
   picksSpecChange,
   readCanvas,
   readDesignComponents,
+  readDesignCoverage,
   readDesignFiles,
   readDesignReportBody,
   readDesignVariants,
   readFiredSession,
   readSpecDesign,
-  readVariantPick
+  readVariantPick,
+  uncoveredCriteria,
+  withDesignReviewNotes
 } from './design';
 export type {
   DashboardAnswer,
@@ -440,6 +448,8 @@ export {
   DESIGN_BACK_TO_SPEC,
   DESIGN_GATE_GONE,
   delegateFailedText,
+  designAskingText,
+  designKeptText,
   emptyMentionText,
   escapeSlack,
   filedChoiceMessage,

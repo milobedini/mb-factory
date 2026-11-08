@@ -5,7 +5,8 @@ import {
   designFolder,
   readDesignFiles,
   readDesignReportBody,
-  summariseRun
+  summariseRun,
+  withDesignReviewNotes
 } from '@mb-factory/core';
 import { after } from 'next/server';
 
@@ -13,7 +14,7 @@ import { isDesignPass } from '@/lib/design-pass';
 import { commitFiles } from '@/lib/github-api';
 import { log } from '@/lib/log';
 import { findProject } from '@/lib/projects';
-import { handleRunFinished, startWorkBranch } from '@/lib/router';
+import { designCriteria, handleRunFinished, startWorkBranch } from '@/lib/router';
 import type { FoundRun } from '@/lib/runs';
 import { findAnyRun, recordRunReport } from '@/lib/runs';
 
@@ -77,11 +78,13 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
   if (found.run.status !== 'running') {
     return new Response(`run is ${found.run.status}, not running`, { status: 409 });
   }
-  const summary = await commitHandOff(
-    found,
-    raw,
-    summariseRun({ conclusion: null, report: body.report, events: [] }, now)
-  );
+  const reported = summariseRun({ conclusion: null, report: body.report, events: [] }, now);
+  // A design ready for review gets the decisions it made and any acceptance criterion no board shows.
+  const reviewed =
+    reported.outcome === 'needs_input'
+      ? withDesignReviewNotes(reported, await designCriteria(found.workItem))
+      : reported;
+  const summary = await commitHandOff(found, raw, reviewed);
   if (!(await recordRunReport(found, summary, now))) {
     return new Response(`run is ${found.run.status}, not running`, { status: 409 });
   }

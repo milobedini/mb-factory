@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { DesignBrief } from './design';
 import {
+  acceptanceCriteria,
   designCommitMessage,
+  designDecisions,
   designFireText,
   designIssueText,
   dinoIssue,
@@ -13,13 +15,16 @@ import {
   picksSpecChange,
   readCanvas,
   readDesignComponents,
+  readDesignCoverage,
   readDesignFiles,
   readDesignReportBody,
   readDesignVariants,
   readFiredSession,
   readSpecDesign,
   readVariantPick,
-  useVariantReply
+  uncoveredCriteria,
+  useVariantReply,
+  withDesignReviewNotes
 } from './design';
 
 describe('readSpecDesign', () => {
@@ -198,6 +203,8 @@ describe('designFireText', () => {
       issue: { identifier: 'TAS-90', url: 'https://linear.app/tastebook/issue/TAS-90', title: 'Households' },
       issueText: '## Goal\n\nA household shares its recipes.',
       triageBrief: '**Triage brief**\n\n**Size:** M',
+      criteria: ['A household shares its recipes.'],
+      decisions: [{ question: 'Who can leave?', answer: 'Anyone but the last member.' }],
       repository: 'milobedini/tastebook',
       branch: 'tas-90-households',
       pr: 70,
@@ -242,6 +249,114 @@ describe('latestTriageBrief', () => {
     ]);
     expect(brief?.length).toBeLessThan(31_000);
     expect(brief?.endsWith('[cut at 30000 characters]')).toBe(true);
+  });
+});
+
+describe('acceptanceCriteria', () => {
+  it('reads the checkbox lines, ticked or not, in order', () => {
+    const issueText = [
+      '## Goal',
+      '',
+      'Lists.',
+      '',
+      '## Acceptance criteria',
+      '',
+      '- [ ] You can make more lists. (33)',
+      '* [x] A list shows its recipes newest first.',
+      '  - [ ]   Extend the API test.  ',
+      '- Not a criterion',
+      '- [] Not one either'
+    ].join('\n');
+    expect(acceptanceCriteria(issueText)).toEqual([
+      'You can make more lists. (33)',
+      'A list shows its recipes newest first.',
+      'Extend the API test.'
+    ]);
+  });
+
+  it('is empty without a description', () => {
+    expect(acceptanceCriteria(null)).toEqual([]);
+  });
+});
+
+describe('design coverage', () => {
+  const criteria = ['You can make lists.', 'Recipes can be removed from a list.', 'Leaving keeps your lists.'];
+  const report = {
+    stage: 'design',
+    outcome: 'needs_input',
+    summary: 'Design ready for review.',
+    coverage: [
+      { criterion: 1, board: 'New list' },
+      { criterion: 3, why: 'No screen: it happens on leaving a household.' },
+      { criterion: 0, board: 'Out of range' }
+    ]
+  };
+
+  it('reads the valid entries and drops the rest', () => {
+    expect(readDesignCoverage(report)).toEqual([
+      { criterion: 1, board: 'New list', why: null },
+      { criterion: 3, board: null, why: 'No screen: it happens on leaving a household.' }
+    ]);
+    expect(readDesignCoverage({ coverage: 'all of it' })).toEqual([]);
+  });
+
+  it('finds each criterion with neither a board nor a reason', () => {
+    expect(uncoveredCriteria(criteria, report)).toEqual(['Recipes can be removed from a list.']);
+    expect(uncoveredCriteria(criteria, { summary: 'No coverage reported.' })).toEqual(criteria);
+    expect(uncoveredCriteria([], report)).toEqual([]);
+  });
+
+  const ready = {
+    status: 'finished' as const,
+    outcome: 'needs_input' as const,
+    summary: 'Design ready for review.',
+    report: report as never,
+    usage: null,
+    readings: [],
+    stageMs: null
+  };
+
+  it('tells Design Review about an uncovered criterion', () => {
+    expect(withDesignReviewNotes(ready, criteria).summary).toBe(
+      'Design ready for review.\n\nNo board shows these acceptance criteria, and the design gave no reason:\n• Recipes can be removed from a list.'
+    );
+  });
+
+  it('adds nothing when every criterion is covered, or to a hand-off', () => {
+    expect(withDesignReviewNotes(ready, ['You can make lists.'])).toBe(ready);
+    const handOff = { ...ready, outcome: 'done' as const };
+    expect(withDesignReviewNotes(handOff, criteria)).toBe(handOff);
+  });
+});
+
+describe('designDecisions', () => {
+  it('settles each question by its answer, or by the suggestion drawn when approval came first', () => {
+    expect(
+      designDecisions([
+        {
+          prompt: 'Can a list change who it’s for?',
+          options: ['No, chosen once', 'Yes, any time'],
+          answer: 'Yes, any time'
+        },
+        { prompt: 'Who can delete a household list?', options: ['Any member', 'Only its maker'], answer: null }
+      ])
+    ).toEqual([
+      { question: 'Can a list change who it’s for?', answer: 'Yes, any time' },
+      { question: 'Who can delete a household list?', answer: 'Any member' }
+    ]);
+  });
+
+  it('lets a later round’s answer to the same question win', () => {
+    expect(
+      designDecisions([
+        { prompt: 'Who can delete a household list?', options: ['Any member', 'Only its maker'], answer: 'Any member' },
+        {
+          prompt: 'who can delete a household list? ',
+          options: ['Any member', 'Only its maker'],
+          answer: 'Only its maker'
+        }
+      ])
+    ).toEqual([{ question: 'who can delete a household list?', answer: 'Only its maker' }]);
   });
 });
 

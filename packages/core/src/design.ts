@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { RunSummary } from './run-report';
 import type { Track } from './track';
 
 const MAX_WHY = 500;
@@ -126,6 +127,11 @@ export type DesignBrief = {
   // and gets no way into it. Null on careful (the spec is the contract) or when the console couldn't read them.
   issueText: string | null;
   triageBrief: string | null;
+  // On express, the issue's acceptance criteria, numbered from 1 by their place here: the report says which board
+  // shows each. Empty on careful, where the spec's behaviours are what the boards answer to.
+  criteria: string[];
+  // The product calls Design Review's questions settled, for the hand-off's notes.
+  decisions: DesignDecision[];
   repository: string;
   branch: string | null;
   pr: number | null;
@@ -163,6 +169,92 @@ export const latestTriageBrief = (comments: IssueComment[]): string | null => {
     .filter(({ body }) => body.trimStart().startsWith(TRIAGE_BRIEF_HEADING))
     .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   return briefs[0] ? capped(briefs[0].body.trim()) : null;
+};
+
+const MAX_CRITERIA = 30;
+const MAX_BOARD = 120;
+const MAX_WHY_NOT = 300;
+
+// A checkbox line in the issue's description, as Linear writes an acceptance criterion: `- [ ] …` or `* [x] …`.
+const CRITERION_LINE = /^\s*[-*]\s+\[[ xX]\]\s+(.+?)\s*$/;
+
+// The issue's acceptance criteria, in order: on express they're the design's contract, with no spec to turn them into
+// behaviours.
+export const acceptanceCriteria = (issueText: string | null): string[] =>
+  (issueText ?? '')
+    .split('\n')
+    .flatMap((line) => {
+      const criterion = CRITERION_LINE.exec(line)?.[1];
+      return criterion ? [criterion] : [];
+    })
+    .slice(0, MAX_CRITERIA);
+
+// A product call the boards make that the issue, triage's brief or the spec left open. The design asks it as a
+// question before Design Review, with what it drew as the suggestion; the answer, or the suggestion for a question
+// closed unanswered, is settled for the hand-off and for implement.
+export type DesignDecision = { question: string; answer: string };
+
+// A design question as the console recorded it: the suggested option first.
+export type AskedDesignQuestion = { prompt: string; options: string[]; answer: string | null };
+
+const sameQuestion = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+// The decisions the design rounds' questions settled, oldest round first in, so a later round's answer to the same
+// question wins.
+export const designDecisions = (askedOldestFirst: AskedDesignQuestion[]): DesignDecision[] =>
+  askedOldestFirst
+    .flatMap(({ prompt, options, answer }) => {
+      const settled = answer?.trim() || options[0];
+      return settled ? [{ question: prompt.trim(), answer: settled.trim() }] : [];
+    })
+    .filter(
+      (decision, index, all) => !all.slice(index + 1).some(({ question }) => sameQuestion(question, decision.question))
+    );
+
+// Which board shows an acceptance criterion (numbered from 1, as in the brief), or why none does.
+export type CriterionCoverage = { criterion: number; board: string | null; why: string | null };
+
+const coverageSchema = z.object({
+  criterion: z.number().int().min(1).max(MAX_CRITERIA),
+  board: z.string().trim().min(1).max(MAX_BOARD).nullish(),
+  why: z.string().trim().min(1).max(MAX_WHY_NOT).nullish()
+});
+
+const reportCoverageSchema = z.looseObject({ coverage: z.array(z.unknown()).nullish() });
+
+export const readDesignCoverage = (report: unknown): CriterionCoverage[] =>
+  (reportCoverageSchema.safeParse(report).data?.coverage ?? []).flatMap((entry) => {
+    const read = coverageSchema.safeParse(entry);
+    return read.success
+      ? [{ criterion: read.data.criterion, board: read.data.board ?? null, why: read.data.why ?? null }]
+      : [];
+  });
+
+// The acceptance criteria the design neither drew nor said why it didn't. The console's own finding, not the design's
+// word, so a missed criterion can't pass unnoticed at Design Review.
+export const uncoveredCriteria = (criteria: string[], report: unknown): string[] => {
+  const coverage = readDesignCoverage(report);
+  return criteria.filter((_, index) => {
+    const entry = coverage.find(({ criterion }) => criterion === index + 1);
+    return !entry?.board && !entry?.why;
+  });
+};
+
+// A design ready for review, with any uncovered criterion added to the summary that Linear and the Slack thread show.
+// A hand-off, a failed or blocked run, or one that covers everything is left as it was.
+export const withDesignReviewNotes = (summary: RunSummary, criteria: string[]): RunSummary => {
+  const missing = summary.outcome === 'needs_input' ? uncoveredCriteria(criteria, summary.report) : [];
+  return missing.length > 0
+    ? {
+        ...summary,
+        summary: [
+          summary.summary,
+          '',
+          'No board shows these acceptance criteria, and the design gave no reason:',
+          ...missing.map((criterion) => `• ${criterion}`)
+        ].join('\n')
+      }
+    : summary;
 };
 
 export const designFireText = (brief: DesignBrief): string =>

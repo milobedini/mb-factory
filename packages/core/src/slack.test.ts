@@ -5,6 +5,8 @@ import type { ReadyIssue } from './ready';
 import type { SlackBlock } from './slack';
 import {
   delegateFailedText,
+  designAskingText,
+  designKeptText,
   emptyMentionText,
   isAllowedSlackUser,
   isBackToSpec,
@@ -800,5 +802,26 @@ describe('mentioning', () => {
   it('mentions in plain text, and leaves a message alone with nobody to mention', () => {
     expect(mentioning('Ready to merge.', '<@U1>')).toBe('<@U1> Ready to merge.');
     expect(mentioning('Ready to merge.', undefined)).toBe('Ready to merge.');
+  });
+});
+
+describe('design questions before Design Review', () => {
+  it('says where the boards are while its questions are answered', () => {
+    expect(designAskingText('https://claude.ai/artifact/abc', 'slack')).toBe(
+      'I’ve drawn the design on <https://claude.ai/artifact/abc|the canvas>. Its questions are below; once they’re answered, Design Review opens.'
+    );
+    expect(designAskingText('https://claude.ai/artifact/abc', 'markdown')).toContain(
+      '[the canvas](https://claude.ai/artifact/abc)'
+    );
+    expect(designAskingText(null, 'slack')).toContain('on the canvas.');
+  });
+
+  it('opens Design Review under the design’s summary, escaped for Slack', () => {
+    expect(designKeptText('Design ready: <url> & more.', 'slack')).toBe(
+      'Your answers match the design as drawn.\n\nDesign ready: &lt;url&gt; &amp; more.'
+    );
+    expect(designKeptText('Design ready: <url>.', 'markdown')).toBe(
+      'Your answers match the design as drawn.\n\nDesign ready: <url>.'
+    );
   });
 });

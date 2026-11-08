@@ -277,6 +277,22 @@ describe('afterAnswers', () => {
     );
   });
 
+  it('keeps a design whose answers all match what it drew, and redraws it for any other answer', () => {
+    const kept = [
+      asked(1, { answer: 'Yes 1', answerSource: 'default' }),
+      asked(2, { answer: 'No 2', answerSource: 'option' })
+    ];
+    expect(afterAnswers('design', kept, reported)).toEqual({ kind: 'keep' });
+    const changed = [
+      asked(1, { answer: 'No 1', answerSource: 'option' }),
+      asked(2, { answer: 'No 2', answerSource: 'option' })
+    ];
+    expect(afterAnswers('design', changed, reported)).toEqual({
+      kind: 'run',
+      request: answeredRequest('design', changed)
+    });
+  });
+
   it('sends any answer that changes the PR to implement, with every answer', () => {
     const round = [
       asked(1, { answer: 'Yes 1', answerSource: 'option' }),

@@ -1,5 +1,6 @@
 import type {
   AgentRole,
+  AskedDesignQuestion,
   AskedQuestion,
   ChangedFile,
   DependencyPr,
@@ -30,6 +31,7 @@ import type {
 } from '@mb-factory/core';
 import {
   ASK_TICKET_GONE,
+  acceptanceCriteria,
   afterAnswers,
   afterSpecApproval,
   alreadyStartedText,
@@ -70,8 +72,11 @@ import {
   dependencyIssue,
   dependencyTakenText,
   deployStateOf,
+  designAskingText,
+  designDecisions,
   designFireText,
   designIssueText,
+  designKeptText,
   designRunLapsesAt,
   designStageOn,
   dinoIssue,
@@ -1186,6 +1191,43 @@ const failDispatch = async (
   });
 };
 
+// Opens Design Review: the gate in the Slack thread, remembered so its buttons can be settled later.
+const openDesignGate = async (project: FactoryConfig, workItem: WorkItem, report: unknown): Promise<void> => {
+  const gate = slackDesignGateMessage(workItem.id, {
+    canvasUrl: readCanvas(report),
+    issueUrl: workItem.issueUrl,
+    variants: readDesignVariants(report)
+  });
+  const ts = await replyInThread(project, workItem, askingFor(project, workItem)(gate));
+  await getDb()
+    .update(workItems)
+    .set({ gateSlackTs: ts ?? null })
+    .where(eq(workItems.id, workItem.id));
+};
+
+// The product calls the design rounds asked at Design Review, oldest first, with their answers: the hand-off writes
+// them into its notes as settled.
+const askedDesignQuestions = async (workItem: WorkItem): Promise<AskedDesignQuestion[]> =>
+  getDb()
+    .select({ prompt: questions.prompt, options: questions.options, answer: questions.answer })
+    .from(questions)
+    .innerJoin(runs, eq(runs.id, questions.runId))
+    .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'design')))
+    .orderBy(runs.createdAt, questions.position);
+
+// An express design's acceptance criteria, read again when it reports, for the console's own check that a board shows
+// each one. Empty on careful, or when Linear can't be read: the design is then reviewed without the check.
+export const designCriteria = async (workItem: WorkItem): Promise<string[]> => {
+  if ((workItem.track ?? findProject(workItem.project)?.track) !== 'express') {
+    return [];
+  }
+  const issue = await issueForDesign(workItem.linearOrganizationId, workItem.linearIssueId).catch((error: unknown) => {
+    log('warn', 'design criteria read failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+    return null;
+  });
+  return issue ? acceptanceCriteria(issue.description) : [];
+};
+
 // Long enough to outlast the design run's limit.
 const DESIGN_PASS_VALIDITY_MS = 2 * 60 * 60 * 1000;
 
@@ -1202,7 +1244,7 @@ const startDesignRun = async (project: FactoryConfig, found: RunWithWorkItem, no
   }
   const db = getDb();
   const track = workItem.track ?? project.track;
-  const [, specs, designs, triages, issue] = await Promise.all([
+  const [, specs, designs, triages, asked, issue] = await Promise.all([
     db
       .update(queue)
       .set({ releasedAt: now })
@@ -1210,6 +1252,7 @@ const startDesignRun = async (project: FactoryConfig, found: RunWithWorkItem, no
     finishedReports(workItem, 'spec'),
     finishedReports(workItem, 'design'),
     finishedReports(workItem, 'triage'),
+    askedDesignQuestions(workItem),
     // On express there's no spec: the issue and triage's brief are the contract, and the session can't read Linear.
     // A failed read still starts the run, which says what it assumed.
     track === 'express'
@@ -1226,6 +1269,8 @@ const startDesignRun = async (project: FactoryConfig, found: RunWithWorkItem, no
     issue: { identifier: workItem.issueIdentifier, url: workItem.issueUrl, title: workItem.title },
     issueText: issue ? designIssueText(issue.description) : null,
     triageBrief: issue ? latestTriageBrief(issue.comments) : null,
+    criteria: issue ? acceptanceCriteria(issue.description) : [],
+    decisions: designDecisions(asked),
     repository: workItem.repository,
     branch: workItem.branch,
     pr: workItem.prNumber,
@@ -1884,7 +1929,11 @@ const answerQuestion = async (
   log('info', 'questions answered', { issue: workItem.issueIdentifier, runId: open.runId, count: answered.length });
   await refreshQuestionCard(project, workItem, open.runId);
   // A review's questions say which answer keeps the PR as it is, in the review's own report.
-  const [asking] = await getDb().select({ report: runs.report }).from(runs).where(eq(runs.id, open.runId)).limit(1);
+  const [asking] = await getDb()
+    .select({ report: runs.report, summary: runs.summary })
+    .from(runs)
+    .where(eq(runs.id, open.runId))
+    .limit(1);
   const after = afterAnswers(open.agent, answered, readQuestions(asking?.report));
   // The round's fixable findings were held back while its questions were open.
   const findings = open.agent === 'review' ? readFixableFindings(asking?.report) : [];
@@ -1896,6 +1945,16 @@ const answerQuestion = async (
       replyInThread(project, workItem, filedFollowUpsText(filed)),
       postActivity(workItem, { type: 'thought', body: filedFollowUpsText(filed, 'markdown') })
     ]);
+  }
+  if (after.kind === 'keep' && open.agent === 'design') {
+    // The answers match what's drawn: nothing to redraw, so Design Review opens now, under the design's summary.
+    const summary = asking?.summary ?? 'The design is ready for review.';
+    await Promise.all([
+      replyInThread(project, workItem, designKeptText(summary, 'slack')),
+      postActivity(workItem, { type: 'elicitation', body: designKeptText(summary, 'markdown') })
+    ]);
+    await openDesignGate(project, workItem, asking?.report);
+    return true;
   }
   if (after.kind === 'keep') {
     await keepReviewedPr(project, workItem, answered, from, {
@@ -3839,6 +3898,14 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       mergeByItself(project, { ...workItem, stage: 'awaiting_merge' })
     );
   }
+  if (next.stage === 'design_review' && next.questions) {
+    // Questions first, as with a spec: Design Review opens once they're answered. Meanwhile, where the boards are.
+    const canvas = readCanvas(run.report);
+    await Promise.all([
+      replyInThread(project, workItem, designAskingText(canvas, 'slack')),
+      postActivity(workItem, { type: 'thought', body: designAskingText(canvas, 'markdown') })
+    ]);
+  }
   if (next.questions) {
     await startQuestions(project, workItem, run, next.questions);
   }
@@ -3857,17 +3924,8 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
   if (run.agent === 'design' && run.trigger === 'design_approved' && run.outcome === 'done' && !next.request) {
     await waitOnDino(project, workItem, run.report);
   }
-  if (next.stage === 'design_review') {
-    const gate = slackDesignGateMessage(workItem.id, {
-      canvasUrl: readCanvas(run.report),
-      issueUrl: workItem.issueUrl,
-      variants: readDesignVariants(run.report)
-    });
-    const ts = await replyInThread(project, workItem, asking(gate));
-    await getDb()
-      .update(workItems)
-      .set({ gateSlackTs: ts ?? null })
-      .where(eq(workItems.id, workItem.id));
+  if (next.stage === 'design_review' && !next.questions) {
+    await openDesignGate(project, workItem, run.report);
   }
   if (next.gate) {
     const ts = await replyInThread(

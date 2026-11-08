@@ -17,7 +17,7 @@ Make the change the issue asks for, prove it with tests and the repo's checks, a
 
 ## Done looks like
 
-**Asking first, on `track: express`.** With no spec, a `delegated` or `design_approved` run asks before any code what a spec would have asked: product calls and the technical approach, in `questions` with `needs_input` (`linear-reporting`), each with your suggestion first, then stops. Ask only what the issue, triage's brief and the approved boards leave open; when they decide everything, build. Don't ask about infrastructure or CI (tooling, workflows, deploys, how a dependency is set up): take your suggestion, and say in the session what you chose and why, so a reply can change it as a follow-up. With `trigger: answered`, the answers are the plan; record them in the PR's Decisions as `(asked during the build)`.
+**Asking first, on `track: express`.** With no spec, a `delegated` or `design_approved` run asks before any code what a spec would have asked: product calls and the technical approach, in `questions` with `needs_input` (`linear-reporting`), each with your suggestion first, then stops. Ask only what the issue, triage's brief and the approved boards leave open; when they decide everything, build. The calls under `## Decided at Design Review` in `specs/<ISSUE-ID>/design/notes.md` were confirmed with the design: they're settled, so never ask them again. Don't ask about infrastructure or CI (tooling, workflows, deploys, how a dependency is set up): take your suggestion, and say in the session what you chose and why, so a reply can change it as a follow-up. With `trigger: answered`, the answers are the plan; record them in the PR's Decisions as `(asked during the build)`.
 
 **Delivering:**
 

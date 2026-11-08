@@ -346,6 +346,20 @@ export const slackDesignGateMessage = (
   ]
 });
 
+type TextFormat = 'slack' | 'markdown';
+
+// A design with questions asks them before Design Review opens, one thing at a time as with a spec: meanwhile the thread
+// says where its boards are.
+export const designAskingText = (canvasUrl: string | null, format: TextFormat): string => {
+  const canvas =
+    format === 'slack' ? canvasLink(canvasUrl, 'the canvas') : canvasUrl ? `[the canvas](${canvasUrl})` : 'the canvas';
+  return `I’ve drawn the design on ${canvas}. Its questions are below; once they’re answered, Design Review opens.`;
+};
+
+// Answers that all keep what's drawn open Design Review with no redraw, under the design's own summary.
+export const designKeptText = (summary: string, format: TextFormat): string =>
+  ['Your answers match the design as drawn.', '', format === 'slack' ? escapeSlack(summary) : summary].join('\n');
+
 export const slackDesignGateSettled = (
   outcome: 'approved' | 'changes' | 'back_to_spec',
   by: string,
