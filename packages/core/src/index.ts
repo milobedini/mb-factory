@@ -351,6 +351,8 @@ export {
   formatReleaseAt,
   governDispatch,
   linearStatusFor,
+  lostRunCause,
+  lostRunSummary,
   MAX_BASE_MERGES,
   MAX_CI_FIXES,
   MAX_CONFLICT_FIXES,

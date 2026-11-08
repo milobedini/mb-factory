@@ -106,6 +106,7 @@ import {
   latestTriageBrief,
   linearSlackReplyText,
   linearStatusFor,
+  lostRunSummary,
   MAX_READY_ROWS,
   MERGE_WATCH_END_EVENT,
   MERGE_WATCH_EVENT,
@@ -3759,14 +3760,24 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
           outcome: runs.outcome,
           report: runs.report,
           costUsd: runs.costUsd,
-          durationMs: runs.durationMs
+          durationMs: runs.durationMs,
+          startedAt: runs.startedAt,
+          finishedAt: runs.finishedAt
         })
         .from(runs)
         .where(eq(runs.id, run.parentRunId))
         .limit(1)
     : [];
-  // A run whose agent never started is tried once more by itself; nobody need be watching.
+  // A run lost before it could report (its agent never started, or its runner went away) is tried once more by itself;
+  // nobody need be watching. A retry lost the same way says what happened, not that its report was missing.
   const retrying = shouldRetry(run, parent);
+  const lostAgain = retrying ? null : lostRunSummary(run);
+  const shown = lostAgain ? { ...run, summary: lostAgain } : run;
+  if (lostAgain) {
+    // Saved too, so the card and the Runs page say the same.
+    await getDb().update(runs).set({ summary: lostAgain }).where(eq(runs.id, run.id));
+    touchCard(workItem.id);
+  }
   const next = nextStepAfterRun(run, {
     hasPr: workItem.prNumber !== null,
     lockfileOnlyMerge: await lockfileOnlyMerge(run, workItem),
@@ -3791,12 +3802,12 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       ? undefined
       : next.gate
         ? ({ type: 'elicitation', body: next.gate.body } as const)
-        : closingActivity(run, { agentClosed, resuming });
+        : closingActivity(shown, { agentClosed, resuming });
   const prUrl = workItem.prNumber ? `https://github.com/${workItem.repository}/pull/${workItem.prNumber}` : null;
   const skippedReview = run.agent === 'implement' && next.stage === 'awaiting_merge';
   const finishedText = [
     slackFinishedText(
-      { ...run, prUrl, actionsRunUrl: run.actionsRunUrl },
+      { ...shown, prUrl, actionsRunUrl: run.actionsRunUrl },
       { questions: next.questions?.length, specReview: next.stage === 'spec_review', gate: next.gate !== undefined }
     ),
     ...(skippedReview ? [LOCKFILE_GATE_TEXT] : [])
@@ -3847,7 +3858,7 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
         ])
       : [undefined, undefined];
   const reply = retrying
-    ? retryText(run.agent, run.actionsRunUrl)
+    ? retryText(run, run.actionsRunUrl)
     : rerunnable
       ? mentionIf(withRerunButton(finishedText, run.id))
       : readyToMerge && prUrl

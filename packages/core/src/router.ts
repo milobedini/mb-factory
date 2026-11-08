@@ -201,29 +201,65 @@ type RunEnd = {
   report: unknown;
   costUsd: number | null;
   durationMs: number | null;
+  // When the run called the console from its job, before setup, and when it finished.
+  startedAt?: Date | null;
+  finishedAt?: Date | null;
 };
 
 // Setting up the agent takes a minute or two; a stage step that ran longer than this had the agent working.
 const SETUP_MS = 10 * 60 * 1000;
 
-// A run whose agent never started: a setup step failed (a download, the runner) before Claude ran, so there's no
-// report and no usage, and the step ended soon. Nothing about the work caused it. One stopped at its time limit has
-// no report or usage either, but the agent worked all along.
-export const neverStarted = ({ status, outcome, report, costUsd, durationMs }: RunEnd): boolean =>
-  status === 'finished' &&
-  outcome === 'failed' &&
-  report === null &&
-  costUsd === null &&
-  (durationMs === null || durationMs < SETUP_MS);
+// Why a run left no report and no usage, when nothing about the work caused it:
+// - `setup`: a setup step failed (a download, the runner) before Claude ran, and the job still reported its short stage.
+// - `cut_off`: its runner went away mid-run (GitHub reclaimed it, or it ran out of memory or disk), so not even the
+//   report step ran: no stage time, though the run lasted well past setup.
+// One stopped at its time limit has no report or usage either, but the job reports its long stage time: the agent
+// worked all along, so it's neither.
+export type LostRunCause = 'setup' | 'cut_off';
 
-// Such a run is tried once more by itself; a retry that fails the same way waits for a person.
+const elapsedMs = ({ startedAt, finishedAt }: RunEnd): number | null =>
+  startedAt && finishedAt ? finishedAt.getTime() - startedAt.getTime() : null;
+
+export const lostRunCause = (run: RunEnd): LostRunCause | null => {
+  if (run.status !== 'finished' || run.outcome !== 'failed' || run.report !== null || run.costUsd !== null) {
+    return null;
+  }
+  if (run.durationMs !== null) {
+    return run.durationMs < SETUP_MS ? 'setup' : null;
+  }
+  const elapsed = elapsedMs(run);
+  return elapsed !== null && elapsed >= SETUP_MS ? 'cut_off' : 'setup';
+};
+
+export const neverStarted = (run: RunEnd): boolean => lostRunCause(run) === 'setup';
+
+// Such a run is tried once more by itself; a retry that's lost the same way waits for a person.
 export const shouldRetry = (run: RunEnd, parent: RunEnd | undefined): boolean =>
-  neverStarted(run) && !(parent && parent.agent === run.agent && neverStarted(parent));
+  lostRunCause(run) !== null && !(parent && parent.agent === run.agent && lostRunCause(parent) !== null);
 
-export const retryText = (agent: AgentRole, actionsRunUrl: string | null): string =>
-  `The ${agent} run didn’t start: a setup step failed before the agent ran${
+const lostRunText = (run: RunEnd, again: boolean): string | null => {
+  const cause = lostRunCause(run);
+  const repeated = again ? ' again' : '';
+  if (cause === 'cut_off') {
+    const minutes = Math.round((elapsedMs(run) ?? 0) / 60_000);
+    return `The ${run.agent} run stopped${repeated} after ${minutes} min: its runner shut down before it could report`;
+  }
+  return cause === 'setup'
+    ? `The ${run.agent} run didn’t start${repeated}: a setup step failed before the agent ran`
+    : null;
+};
+
+export const retryText = (run: RunEnd, actionsRunUrl: string | null): string =>
+  `${lostRunText(run, false) ?? `The ${run.agent} run didn’t finish`}${
     actionsRunUrl ? ` (${slackLink(actionsRunUrl, 'run log')})` : ''
   }. Trying again.`;
+
+// What a lost run that isn't retried says in place of its summary ("The stage ended without a valid report"): it's
+// only not retried when its own retry was lost the same way. Null for any other run.
+export const lostRunSummary = (run: RunEnd): string | null => {
+  const text = lostRunText(run, true);
+  return text ? `${text}.` : null;
+};
 
 // The outcomes that leave a work item waiting on a person, shown in Linear as the Blocked label.
 export const BLOCKING_OUTCOMES: (RunOutcome | null)[] = ['blocked', 'failed'];

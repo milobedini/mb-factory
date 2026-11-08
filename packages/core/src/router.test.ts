@@ -20,6 +20,8 @@ import {
   formatReleaseAt,
   governDispatch,
   linearStatusFor,
+  lostRunCause,
+  lostRunSummary,
   madeOnlyBy,
   modelFor,
   neverStarted,
@@ -833,6 +835,9 @@ describe('retrying a run that never started', () => {
     costUsd: null,
     durationMs: null
   };
+  const at = (minutes: number) => new Date(Date.UTC(2026, 10, 8, 12, minutes));
+  // TAS-124's implement on 8 Nov: 17 minutes in, its runner shut down, so neither a report nor a stage time came back.
+  const cutOff = { ...ended, agent: 'implement' as const, startedAt: at(9), finishedAt: at(26) };
 
   it('knows a run whose agent never started from one that failed while working', () => {
     expect(neverStarted(ended)).toBe(true);
@@ -843,17 +848,39 @@ describe('retrying a run that never started', () => {
     expect(neverStarted({ ...ended, outcome: 'blocked' })).toBe(false);
   });
 
-  it('retries once, and not a retry that failed the same way', () => {
+  it('tells a setup failure from a run cut off mid-way by its runner', () => {
+    expect(lostRunCause({ ...ended, startedAt: at(9), finishedAt: at(11) })).toBe('setup');
+    expect(lostRunCause({ ...ended, durationMs: 25_000, startedAt: at(9), finishedAt: at(26) })).toBe('setup');
+    expect(lostRunCause(cutOff)).toBe('cut_off');
+    expect(neverStarted(cutOff)).toBe(false);
+    // Stopped at its time limit: the job still reported a long stage time.
+    expect(lostRunCause({ ...cutOff, durationMs: 100 * 60_000 })).toBeNull();
+  });
+
+  it('retries once, and not a retry that was lost the same way', () => {
     expect(shouldRetry(ended, undefined)).toBe(true);
     expect(shouldRetry(ended, { ...ended, outcome: 'done', report: {}, costUsd: 0.6, agent: 'implement' })).toBe(true);
     expect(shouldRetry(ended, ended)).toBe(false);
     expect(shouldRetry({ ...ended, costUsd: 1 }, undefined)).toBe(false);
+    expect(shouldRetry(cutOff, undefined)).toBe(true);
+    expect(shouldRetry(cutOff, cutOff)).toBe(false);
   });
 
-  it('says it is trying again, with the run log', () => {
-    expect(retryText('review', 'https://github.com/o/r/actions/runs/1')).toBe(
+  it('says it is trying again, with why and the run log', () => {
+    expect(retryText(ended, 'https://github.com/o/r/actions/runs/1')).toBe(
       'The review run didn’t start: a setup step failed before the agent ran (<https://github.com/o/r/actions/runs/1|run log>). Trying again.'
     );
+    expect(retryText(cutOff, null)).toBe(
+      'The implement run stopped after 17 min: its runner shut down before it could report. Trying again.'
+    );
+  });
+
+  it('says what happened again when the retry was lost too, instead of a missing report', () => {
+    expect(lostRunSummary(ended)).toBe('The review run didn’t start again: a setup step failed before the agent ran.');
+    expect(lostRunSummary(cutOff)).toBe(
+      'The implement run stopped again after 17 min: its runner shut down before it could report.'
+    );
+    expect(lostRunSummary({ ...ended, costUsd: 1 })).toBeNull();
   });
 });
 
