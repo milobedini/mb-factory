@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests for visual.sh: a collage, a video and its poster, and the manifests it must refuse. Needs ImageMagick and ffmpeg,
+# Tests for visual.sh: a collage, the screens it leaves out past four pictures, a video and its poster, and the
+# manifests it must refuse. Needs ImageMagick and ffmpeg,
 # as the evidence job installs them; skips without them.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -42,6 +43,38 @@ else
   fail "new screens: $(dims "$work/out/visual.png" 2> /dev/null) $(cat "$work/err")"
 fi
 
+# Past four pictures, a before counting as one, the screens from the first that doesn't fit are left out, and the
+# warning names them; the collage is the one the screens that fit would make.
+trimmed() {
+  local name="$1" all="$2" fits="$3" left_out="$4"
+  rm -rf "$work/out" "$work/fits"
+  printf '%s' "$fits" > "$rec/visual.json"
+  bash "$here/visual.sh" "$rec" "$work/fits" > /dev/null 2>&1
+  printf '%s' "$all" > "$rec/visual.json"
+  if build > /dev/null && [[ $(dims "$work/out/visual.png") == $(dims "$work/fits/visual.png") ]] \
+    && grep -qF "::warning::A collage holds at most 4 pictures, a before counting as one: it leaves out $left_out" "$work/err"; then
+    pass "leaves out $name ($(dims "$work/out/visual.png"))"
+  else
+    fail "should leave out $name: $(dims "$work/out/visual.png" 2> /dev/null) $(cat "$work/err")"
+  fi
+}
+trimmed 'the last of three new screens after a pair' \
+  '{"title": "T", "screens": [{"caption": "Lists", "before": "1-before.png", "after": "1-after.png"}, {"caption": "New list", "after": "2-after.png"}, {"caption": "A household list", "after": "3-after.png"}, {"caption": "Rename list", "after": "4-after.png"}]}' \
+  '{"title": "T", "screens": [{"caption": "Lists", "before": "1-before.png", "after": "1-after.png"}, {"caption": "New list", "after": "2-after.png"}, {"caption": "A household list", "after": "3-after.png"}]}' \
+  '"Rename list"'
+trimmed 'a pair that would make five, and everything after it' \
+  '{"title": "T", "screens": [{"caption": "A", "before": "1-before.png", "after": "1-after.png"}, {"caption": "B", "after": "2-after.png"}, {"caption": "C", "before": "1-before.png", "after": "3-after.png"}, {"caption": "D", "after": "4-after.png"}]}' \
+  '{"title": "T", "screens": [{"caption": "A", "before": "1-before.png", "after": "1-after.png"}, {"caption": "B", "after": "2-after.png"}]}' \
+  '"C", "D"'
+
+rm -rf "$work/out"
+jq -n '{title: "T", screens: [{caption: "A", before: "1-before.png", after: "1-after.png"}, {caption: "B", before: "1-before.png", after: "2-after.png"}]}' > "$rec/visual.json"
+if build > /dev/null && ! grep -q 'leaves out' "$work/err"; then
+  pass 'two pairs fill the collage and leave nothing out'
+else
+  fail "two pairs: $(cat "$work/err")"
+fi
+
 rm -rf "$work/out"
 jq -n '{title: "Walkthrough: adding an ingredient", video: "walkthrough.webm"}' > "$rec/visual.json"
 if made=$(build) && [[ $(jq -c '[.image, .video, .seconds]' <<< "$made") == '["poster.png","walkthrough.mp4",6]' ]] \
@@ -72,7 +105,6 @@ refused 'no title' '{"screens": [{"caption": "One", "after": "2-after.png"}]}'
 refused 'neither screens nor a video' '{"title": "Nothing"}'
 refused 'a path outside the folder' '{"title": "T", "screens": [{"caption": "One", "after": "../2-after.png"}]}'
 refused 'a missing file' '{"title": "T", "screens": [{"caption": "One", "after": "9-after.png"}]}'
-refused 'more than four screens' '{"title": "T", "screens": [{"caption": "A", "before": "1-before.png", "after": "1-after.png"}, {"caption": "B", "before": "1-before.png", "after": "2-after.png"}, {"caption": "C", "after": "3-after.png"}]}'
 refused 'a video that is not webm' '{"title": "T", "video": "2-after.png"}'
 ln -s "$rec/2-after.png" "$rec/5-after.png"
 refused 'a symlink' '{"title": "T", "screens": [{"caption": "One", "after": "5-after.png"}]}'

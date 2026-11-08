@@ -9,9 +9,9 @@
 #                                            { "caption": "The saved recipe", "after": "2-after.png" }] }
 #   { "title": "Walkthrough: …", "video": "walkthrough.webm" }
 #
-# Screens become one collage (`visual.png`): each at phone width with its caption, a changed screen's before beside
-# its after. A video becomes `walkthrough.mp4`, which plays on a phone, and `poster.png`: three of its frames with a
-# play badge and its length. Prints what it made as JSON: { "title", "image", "video"?, "seconds"? }.
+# Screens become one collage (`visual.png`) of at most four pictures: each at phone width with its caption, a changed
+# screen's before beside its after. A video becomes `walkthrough.mp4`, which plays on a phone, and `poster.png`: three
+# of its frames with a play badge and its length. Prints what it made as JSON: { "title", "image", "video"?, "seconds"? }.
 #
 # Everything in visual.json is checked before use: the agent wrote it.
 set -euo pipefail
@@ -104,13 +104,26 @@ collage() {
   local count
   count=$(jq '.screens | if type == "array" then length else -1 end' "$manifest")
   (( count >= 1 )) || fail 'visual.json has neither screens nor a video'
-  local images
-  images=$(jq '[.screens[] | (if .before then 2 else 1 end)] | add' "$manifest")
-  (( images <= 4 )) || fail "the collage would hold $images screens; at most 4 stay legible in Slack"
-  local pairs
-  pairs=$(jq '[.screens[] | select(.before)] | length' "$manifest")
-  local groups=()
   local index
+  # At most four pictures stay legible in Slack, a before counting as one. Past four, the screens from the first that
+  # doesn't fit are left out, rather than the whole visual: implement puts the ones that matter most first. The first
+  # screen always fits.
+  local kept
+  kept=$(jq '[.screens[] | if (.before // "") != "" then 2 else 1 end]
+    | reduce .[] as $pictures ({total: 0, kept: 0, full: false};
+        if .full or .total + $pictures > 4 then .full = true else .total += $pictures | .kept += 1 end)
+    | .kept' "$manifest")
+  if (( kept < count )); then
+    local left_out=''
+    for ((index = kept; index < count; index++)); do
+      left_out+=", \"$(tidy_caption "$(jq -r ".screens[$index].caption // empty" "$manifest")" "$((index + 1))")\""
+    done
+    echo "::warning::A collage holds at most 4 pictures, a before counting as one: it leaves out ${left_out#, }" >&2
+    count=$kept
+  fi
+  local pairs
+  pairs=$(jq --argjson kept "$kept" '[.screens[:$kept][] | select((.before // "") != "")] | length' "$manifest")
+  local groups=()
   for ((index = 0; index < count; index++)); do
     local caption after before
     caption=$(tidy_caption "$(jq -r ".screens[$index].caption // empty" "$manifest")" "$((index + 1))")
