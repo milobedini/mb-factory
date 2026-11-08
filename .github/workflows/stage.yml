@@ -280,6 +280,67 @@ jobs:
           echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
           echo "limit=$([[ "$AGENT" == implement ]] && echo 100 || echo 50)" >> "$GITHUB_OUTPUT"
 
+      # The action downloads Bun from github.com's release downloads on every run, and those answered 504 for over an
+      # hour on 8 Nov while the API and the rest of GitHub worked. So the stage keeps the action's own Bun version in the
+      # Actions cache, fetched through the API when missing and checked against Bun's checksums on every run, and hands
+      # it to the action. If any of these steps fails, the action installs Bun itself as before.
+      - name: Find the action's Bun version
+        id: bun
+        if: steps.merge.outputs.merged != 'true'
+        continue-on-error: true
+        run: |
+          # The runner downloads each action the job uses before the first step, so this job's one copy is already here.
+          shopt -s nullglob
+          files=("$(dirname "$RUNNER_WORKSPACE")"/_actions/anthropics/claude-code-action/*/action.yml)
+          [[ ${#files[@]} -eq 1 ]] || { echo "::warning::Found ${#files[@]} copies of claude-code-action: it installs its own Bun"; exit 1; }
+          version=$(sed -n 's/^ *bun-version: *\([0-9.]*\).*$/\1/p' "${files[0]}" | head -1)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::warning::No Bun version in claude-code-action: it installs its own"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Bun from the cache
+        id: bun-cache
+        if: steps.bun.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bun-cache
+          key: bun-${{ steps.bun.outputs.version }}-linux-x64
+
+      - name: Unpack Bun
+        id: bun-unpack
+        if: steps.bun.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bun.outputs.version }}
+        run: |
+          cache="$RUNNER_TEMP/bun-cache"
+          mkdir -p "$cache"
+          asset() {
+            id=$(gh api "repos/oven-sh/bun/releases/tags/bun-v$VERSION" --jq ".assets[] | select(.name == \"$1\") | .id")
+            [[ "$id" =~ ^[0-9]+$ ]] || return 1
+            gh api -H 'Accept: application/octet-stream' "repos/oven-sh/bun/releases/assets/$id" > "$cache/$1"
+          }
+          asset SHASUMS256.txt
+          check() { (cd "$cache" && grep ' bun-linux-x64.zip$' SHASUMS256.txt | sha256sum --check --status); }
+          if ! check; then
+            echo "Fetching Bun $VERSION through the API"
+            asset bun-linux-x64.zip
+            check || { echo "::warning::Bun $VERSION doesn't match its checksum: the action installs its own"; exit 1; }
+            echo "fetched=true" >> "$GITHUB_OUTPUT"
+          fi
+          unzip -q -o -j "$cache/bun-linux-x64.zip" bun-linux-x64/bun -d "$RUNNER_TEMP/bun"
+          [[ "$("$RUNNER_TEMP/bun/bun" --version)" == "$VERSION" ]] || { echo "::warning::The unpacked Bun isn't $VERSION"; exit 1; }
+          echo "path=$RUNNER_TEMP/bun/bun" >> "$GITHUB_OUTPUT"
+
+      - name: Keep Bun in the cache
+        if: steps.bun-unpack.outputs.fetched == 'true' && steps.bun-unpack.outputs.path != ''
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bun-cache
+          key: bun-${{ steps.bun.outputs.version }}-linux-x64
+
       - name: Run the stage
         id: claude
         if: steps.merge.outputs.merged != 'true'
@@ -292,6 +353,8 @@ jobs:
           # The action's own defaults when there's no factory app.
           bot_id: ${{ steps.bot.outputs.id || '41898282' }}
           bot_name: ${{ steps.bot.outputs.name || 'claude[bot]' }}
+          # Empty when the cached Bun couldn't be made ready, which leaves the action to download its own.
+          path_to_bun_executable: ${{ steps.bun-unpack.outputs.path }}
           prompt: ${{ inputs.prompt }}
           claude_args: |
             --model ${{ inputs.model }}
