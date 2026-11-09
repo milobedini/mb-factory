@@ -138,13 +138,11 @@ jobs:
             } >> "$GITHUB_ENV"
           fi
           # An implement run's pass for a fresh app token once its first nears GitHub's hour (plugin/bin/factory-github-token).
+          # A step output, not the environment, so the project's setup (its install scripts) never sees it.
           github_pass=$(jq -r '.githubPass // empty' <<< "$response")
-          if [[ -n "$github_pass" ]]; then
+          if [[ "$github_pass" =~ ^[0-9]+\.[0-9a-f]+$ ]]; then
             echo "::add-mask::$github_pass"
-            {
-              echo "FACTORY_GITHUB_TOKEN_URL=$CONSOLE_URL/api/runs/$RUN_ID/github-token"
-              echo "FACTORY_GITHUB_PASS=$github_pass"
-            } >> "$GITHUB_ENV"
+            echo "github_pass=$github_pass" >> "$GITHUB_OUTPUT"
           fi
           linear_pass=$(jq -r '.linearPass // empty' <<< "$response")
           if [[ -n "$linear_pass" ]]; then
@@ -181,12 +179,18 @@ jobs:
       - name: Keep the app's token fresh
         # GitHub caps the app's token at an hour and an implement run may take 100 minutes (TAS-206), so the agent's gh
         # and git go through plugin/bin, which swaps in a fresh token from the console when this one nears its hour.
-        if: steps.app-token.outcome == 'success' && env.FACTORY_GITHUB_PASS != ''
+        # It comes after the project's setup, so only the agent and the steps after it hold the pass.
+        if: steps.app-token.outcome == 'success' && steps.start.outputs.github_pass != ''
         env:
           TOKEN: ${{ steps.app-token.outputs.token }}
+          PASS: ${{ steps.start.outputs.github_pass }}
         run: |
           # Made a moment ago; counted as 50 minutes so the swap comes well before GitHub refuses it.
           (umask 077 && printf '%s\n%s\n' "$TOKEN" "$(( $(date +%s) + 3000 ))" > "$RUNNER_TEMP/factory-github-token")
+          {
+            echo "FACTORY_GITHUB_TOKEN_URL=$CONSOLE_URL/api/runs/$RUN_ID/github-token"
+            echo "FACTORY_GITHUB_PASS=$PASS"
+          } >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/mb-factory/plugin/bin" >> "$GITHUB_PATH"
 
       - name: Prepare the evidence folder
@@ -429,6 +433,19 @@ jobs:
             ${{ runner.temp }}/run-report.json
             ${{ runner.temp }}/evidence/
           retention-days: 1
+
+      - name: Revoke the app's tokens
+        # The first token and the latest fresh one would otherwise work for up to an hour after the run.
+        if: always() && steps.app-token.outcome == 'success'
+        continue-on-error: true
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          latest=$(head -1 "$RUNNER_TEMP/factory-github-token" 2> /dev/null || true)
+          for token in $(printf '%s\n%s\n' "$TOKEN" "$latest" | grep -E '^[A-Za-z0-9_]+$' | sort -u); do
+            curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE -H "Authorization: Bearer $token" \
+              -H 'Accept: application/vnd.github+json' https://api.github.com/installation/token
+          done
 
   # Builds an implement run's visual from what it recorded, on a runner holding no secret: ImageMagick and ffmpeg read
   # files the agent made, so whatever they might be made to do can reach nothing. Hands on only the finished files.

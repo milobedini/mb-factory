@@ -13,8 +13,8 @@ import { findAnyRun, markRunStarted, runRepository } from '@/lib/runs';
 
 // Long enough to outlast the stage workflow's 60-minute timeout.
 const RUN_TOKEN_VALIDITY_MS = 90 * 60 * 1000;
-// Outlasts an implement run's 100-minute limit and its setup; `/github-token` also refuses a run no longer running.
-const GITHUB_PASS_VALIDITY_MS = 3 * 60 * 60 * 1000;
+// Outlasts an implement run's setup and 100-minute limit; `/github-token` also refuses a run no longer running.
+const GITHUB_PASS_VALIDITY_MS = 130 * 60 * 1000;
 
 export const POST = async (request: Request, context: RouteContext<'/api/runs/[id]/start'>) => {
   const { id } = await context.params;

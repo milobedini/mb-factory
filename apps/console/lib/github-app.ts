@@ -98,9 +98,19 @@ const IMPLEMENT_PERMISSIONS = {
 } as const;
 
 // A fresh token for an implement run that has outlasted its first: GitHub caps an app's token at an hour, and an
-// implement run may take 100 minutes.
-export const implementToken = (repository: string): Promise<Minted> =>
-  installationToken(repository, `${repository} implement`, IMPLEMENT_PERMISSIONS);
+// implement run may take 100 minutes. Never shared or kept, so the run can revoke it when it ends without breaking
+// another run's.
+export const implementToken = async (repository: string): Promise<Minted> => {
+  const [, name] = repository.split('/');
+  const { id } = await asApp<{ id: number }>('GET', `/repos/${repository}/installation`, 'app installation');
+  const created = await asApp<{ token: string; expires_at: string }>(
+    'POST',
+    `/app/installations/${id}/access_tokens`,
+    'app token',
+    { repositories: [name], permissions: IMPLEMENT_PERMISSIONS }
+  );
+  return { token: created.token, expiresAt: Date.parse(created.expires_at) };
+};
 
 // After the App couldn't give a read token for a repository (not installed there, or missing a read permission), the
 // console's own token reads it for this long before the App is asked again.
