@@ -34,6 +34,7 @@ import {
   acceptanceCriteria,
   afterAnswers,
   afterSpecApproval,
+  alreadyComing,
   alreadyStartedText,
   applyAnswer,
   approveRefusedText,
@@ -147,7 +148,6 @@ import {
   prClosedText,
   QUESTION_GONE,
   questionElicitation,
-  queuedAlready,
   queuedThought,
   READY_HEADING,
   READY_UNREADABLE,
@@ -1340,11 +1340,12 @@ const settleMovedOn = async (project: FactoryConfig, workItem: WorkItem, agent: 
   }
 };
 
-const queuedRuns = (workItem: WorkItem) =>
+// The work item's queued and active runs other than the one finishing.
+const otherOpenRuns = (workItem: WorkItem, runId: string) =>
   getDb()
     .select({ agent: runs.agent })
     .from(runs)
-    .where(and(eq(runs.workItemId, workItem.id), eq(runs.status, 'queued')));
+    .where(and(eq(runs.workItemId, workItem.id), inArray(runs.status, OPEN_STATUSES), ne(runs.id, runId)));
 
 type StartResult = 'started' | 'not_claimed' | 'skipped';
 
@@ -3969,8 +3970,8 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
       await getDb().update(workItems).set({ mergeSlackTs: findingsTs }).where(eq(workItems.id, workItem.id));
     }
   }
-  if (next.request && queuedAlready(next.request, await queuedRuns(workItem))) {
-    log('info', 'next run already queued', { runId, issue: workItem.issueIdentifier, agent: next.request.agent });
+  if (next.request && alreadyComing(next.request, await otherOpenRuns(workItem, run.id))) {
+    log('info', 'next run already coming', { runId, issue: workItem.issueIdentifier, agent: next.request.agent });
   } else if (next.request) {
     await dispatchRun(project, await createRun(project, workItem, next.request, run.id));
   }

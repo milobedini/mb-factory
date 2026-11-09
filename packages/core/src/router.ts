@@ -556,9 +556,11 @@ export const madeOnlyBy = async (
 
 // Two runs that finish close together (a conflict fix and an answer's revision) can each hand on to the same stage. A
 // review already queued works on the PR's head when it starts, so a second would only repeat it; and with an
-// implement run queued, that run hands on once it's done, so one review sees both changes.
-export const queuedAlready = (request: RunRequest, queued: { agent: AgentRole }[]): boolean =>
-  request.trigger === 'delivered' && queued.some(({ agent }) => agent === request.agent || agent === 'implement');
+// implement run queued, that run hands on once it's done, so one review sees both changes. `open` is the work item's
+// other queued or active runs: activity arriving as a run finishes (a webhook) can release the next queued run before
+// the hand-on is decided (TAS-132), and only one run goes at a time, so an active one started after this run's push.
+export const alreadyComing = (request: RunRequest, open: { agent: AgentRole }[]): boolean =>
+  request.trigger === 'delivered' && open.some(({ agent }) => agent === request.agent || agent === 'implement');
 
 export type ReviewThread = { id: string; isResolved: boolean; author: string | null };
 

@@ -329,6 +329,7 @@ export type {
 } from './router';
 export {
   afterSpecApproval,
+  alreadyComing,
   BLOCKING_OUTCOMES,
   blockedThought,
   briefRound,
@@ -364,7 +365,6 @@ export {
   onlyLockfilesChanged,
   orderQueue,
   parseSessionEvent,
-  queuedAlready,
   queuedThought,
   REVIEW_VERDICTS,
   readFixableFindings,

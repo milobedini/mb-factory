@@ -4,6 +4,7 @@ import type { SpecDesign } from './design';
 import type { UsageReading } from './governor';
 import {
   afterSpecApproval,
+  alreadyComing,
   blockedThought,
   briefRound,
   canRerun,
@@ -30,7 +31,6 @@ import {
   onlyLockfilesChanged,
   orderQueue,
   parseSessionEvent,
-  queuedAlready,
   queuedThought,
   readSpecReply,
   retryText,
@@ -1253,28 +1253,28 @@ describe('failedChecks', () => {
   });
 });
 
-describe('queuedAlready', () => {
+describe('alreadyComing', () => {
   const review = { agent: 'review', trigger: 'delivered', priority: 'in_flight', prompt: null } as const;
 
   // TAS-40, 27 Oct: a conflict fix and an answer's revision each handed on, so two review rounds ran on the same commit.
   it('drops a review when one is already queued for the work item', () => {
-    expect(queuedAlready(review, [{ agent: 'review' }])).toBe(true);
+    expect(alreadyComing(review, [{ agent: 'review' }])).toBe(true);
   });
 
   it('keeps it when only other stages are queued', () => {
-    expect(queuedAlready(review, [])).toBe(false);
-    expect(queuedAlready(review, [{ agent: 'triage' }])).toBe(false);
+    expect(alreadyComing(review, [])).toBe(false);
+    expect(alreadyComing(review, [{ agent: 'triage' }])).toBe(false);
   });
 
   // TAS-43, 27 Oct: a review round's answers and its Fix box could each start a revision; the first to finish would
   // have sent half the changes to review.
   it('leaves the hand-on to an implement run still queued, so one review sees both changes', () => {
-    expect(queuedAlready(review, [{ agent: 'implement' }])).toBe(true);
+    expect(alreadyComing(review, [{ agent: 'implement' }])).toBe(true);
   });
 
   it('keeps any other kind of run, which carries its own request', () => {
     expect(
-      queuedAlready({ agent: 'implement', trigger: 'review_findings', priority: 'in_flight', prompt: 'Fix' }, [
+      alreadyComing({ agent: 'implement', trigger: 'review_findings', priority: 'in_flight', prompt: 'Fix' }, [
         { agent: 'implement' }
       ])
     ).toBe(false);
