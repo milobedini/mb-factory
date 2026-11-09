@@ -34,20 +34,23 @@ export const readingsFromStatusLine = (body: unknown, now: Date): RunUsageReadin
 };
 
 // Usage only grows within a window, so a probe can't release a hold early; it only matters before releasing something:
-// held work, or a scheduled job about to start (`jobSoon`) while nobody's status line is reporting.
+// held work, or a scheduled job about to start at `jobAt` while nobody's status line is reporting. The job's readings
+// are judged as they'll be at its slot, since one fresh now can be stale by then.
 export const needsProbe = ({
   readings,
   waiting,
-  jobSoon = false,
+  jobAt,
   staleAfterMinutes,
   now
 }: {
   readings: Partial<Record<UsageWindow, UsageReading>>;
   waiting: number;
-  jobSoon?: boolean;
+  jobAt?: Date;
   staleAfterMinutes: number;
   now: Date;
-}): boolean => (waiting > 0 || jobSoon) && staleWindows(readings, now, staleAfterMinutes).length > 0;
+}): boolean =>
+  (waiting > 0 && staleWindows(readings, now, staleAfterMinutes).length > 0) ||
+  (jobAt !== undefined && staleWindows(readings, jobAt, staleAfterMinutes).length > 0);
 
 export type WindowSummary = {
   window: UsageWindow;

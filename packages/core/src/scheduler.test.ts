@@ -60,9 +60,9 @@ describe('probing before a job', () => {
 
   // The 06:00 and 06:30 checks, 28 Oct, dispatched on readings from the night before.
   it('counts a slot as soon from its probe wake-up until it comes', () => {
-    expect(jobSlotSoon([slot], new Date('2026-10-28T05:52:30Z'))).toBe(true);
-    expect(jobSlotSoon([slot], new Date('2026-10-28T05:50:00Z'))).toBe(false);
-    expect(jobSlotSoon([slot], new Date('2026-10-28T06:00:30Z'))).toBe(false);
+    expect(jobSlotSoon([slot], new Date('2026-10-28T05:52:30Z'))).toEqual(slot);
+    expect(jobSlotSoon([slot], new Date('2026-10-28T05:50:00Z'))).toBeUndefined();
+    expect(jobSlotSoon([slot], new Date('2026-10-28T06:00:30Z'))).toBeUndefined();
   });
 });
 

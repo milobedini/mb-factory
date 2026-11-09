@@ -29,7 +29,7 @@ export const wake = async (cause: string): Promise<WakeResult> => {
     needsProbe({
       readings,
       waiting,
-      jobSoon: jobSlotSoon(nextJobSlots(new Date()), new Date()),
+      jobAt: jobSlotSoon(nextJobSlots(new Date()), new Date()),
       staleAfterMinutes: staleAfterMinutes(),
       now: new Date()
     });

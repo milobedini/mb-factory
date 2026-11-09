@@ -51,11 +51,21 @@ describe('needsProbe', () => {
   });
   const fresh = { sevenDay: reading(1) };
 
+  const inMinutes = (minutes: number) => new Date(now.getTime() + minutes * 60_000);
+
   it('probes before a scheduled job on stale readings, with nothing held', () => {
     const stale = { sevenDay: reading(600) };
-    expect(needsProbe({ readings: stale, waiting: 0, jobSoon: true, staleAfterMinutes: 20, now })).toBe(true);
-    expect(needsProbe({ readings: fresh, waiting: 0, jobSoon: true, staleAfterMinutes: 20, now })).toBe(false);
+    expect(needsProbe({ readings: stale, waiting: 0, jobAt: inMinutes(8), staleAfterMinutes: 20, now })).toBe(true);
+    expect(needsProbe({ readings: fresh, waiting: 0, jobAt: inMinutes(8), staleAfterMinutes: 20, now })).toBe(false);
     expect(needsProbe({ readings: stale, waiting: 0, staleAfterMinutes: 20, now })).toBe(false);
+  });
+
+  // 9 Nov: a reading taken at 05:33 was 19 minutes old at the 05:52 wake-up, so nothing probed, and the 06:00 security
+  // check dispatched on it at 27 minutes.
+  it('probes before a scheduled job when the readings will be stale by its slot', () => {
+    const readings = { sevenDay: reading(19) };
+    expect(needsProbe({ readings, waiting: 0, jobAt: inMinutes(8), staleAfterMinutes: 20, now })).toBe(true);
+    expect(needsProbe({ readings, waiting: 0, staleAfterMinutes: 20, now })).toBe(false);
   });
 
   it('probes before releasing held work on stale readings', () => {

@@ -1647,9 +1647,13 @@ export const dispatchRun = withCards(async (project: FactoryConfig, runId: strin
     allowUsage: run.usageOverrideBy !== null
   });
   if (staleWindows.length > 0) {
-    // The console can't probe inline, so it decides on the readings there are and says so; scheduled jobs are probed
-    // ahead of their slot.
-    log('warn', 'governor decided on stale usage readings', { runId, staleWindows, decision: decision.kind });
+    // The console can't probe inline, so it decides on the readings there are and says so. That's expected for the
+    // first run after a quiet spell; scheduled jobs are probed ahead of their slot, so for one it's worth a look.
+    log(run.priority === 'scheduled' ? 'warn' : 'info', 'governor decided on stale usage readings', {
+      runId,
+      staleWindows,
+      decision: decision.kind
+    });
   }
   const hold = (held: Extract<GovernedDecision, { kind: 'hold' }>) => {
     const text = queuedThought(held, now, project.timeZone);

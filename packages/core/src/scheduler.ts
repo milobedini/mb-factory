@@ -25,9 +25,11 @@ const PROBE_LEAD_MS = 8 * 60 * 1000;
 // The wake-ups that probe before each job's slot.
 export const probeMoments = (slots: Date[]): Date[] => slots.map((slot) => new Date(slot.getTime() - PROBE_LEAD_MS));
 
-// Whether a job's slot comes within the lead, so a wake-up then probes stale readings before the job dispatches.
-export const jobSlotSoon = (slots: Date[], now: Date): boolean =>
-  slots.some((slot) => slot > now && slot.getTime() - now.getTime() <= PROBE_LEAD_MS);
+// The job slot that comes within the lead, if any, so a wake-up then probes readings that will be stale by that slot.
+export const jobSlotSoon = (slots: Date[], now: Date): Date | undefined =>
+  slots
+    .filter((slot) => slot > now && slot.getTime() - now.getTime() <= PROBE_LEAD_MS)
+    .reduce<Date | undefined>((soonest, slot) => (soonest === undefined || slot < soonest ? slot : soonest), undefined);
 
 export type WakeBooking = { delaySeconds: number; retentionSeconds: number; idempotencyKey: string };
 
