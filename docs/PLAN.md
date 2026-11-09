@@ -391,6 +391,7 @@ Built but not yet seen working; delete each line once seen. Swept 3 Nov evening:
 - **Runs:** a stopped card reading Stopped with Re-run; a stale Re-run button re-running the latest run.
 - **Work items:** an undelegated item reading Not delegated and leaving the Inbox (TAS-58's card, undelegated 28 Oct, still says Waiting on you).
 - **Specs and splits:** approval after a revision whose report has no parts still filing them; a part with `blockedBy` outside its split.
+- **One review per push** (`0b6eed4`, 9 Nov): the next issue that gets a thread reply while its implement run is going shows `next run already coming` when the first implement finishes, and one review round after the second, not two on the same commit (TAS-132's review round 2 failed with no report).
 - **Review and merge:** a PR whose base, merged in by someone other than the console, changed its lockfile goes back to review.
 - **Slack:** `/tastebook` pause, resume and unknown words.
 
