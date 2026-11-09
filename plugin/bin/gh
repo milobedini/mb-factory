@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# gh with an implement run's current token (factory-github-token), so a run past the hour can still write to GitHub.
+bin=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if token=$("$bin/factory-github-token") && [[ -n "$token" ]]; then
+  export GH_TOKEN=$token
+fi
+PATH=$(tr ':' '\n' <<< "$PATH" | grep -vxF "$bin" | paste -sd: -)
+exec gh "$@"

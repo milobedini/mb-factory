@@ -4,6 +4,7 @@ import { after } from 'next/server';
 import { findAskByRun, refreshAskCard } from '@/lib/ask-runs';
 import { defaultBranch } from '@/lib/github-api';
 import { verifyGitHubOidc } from '@/lib/github-oidc';
+import { githubPass } from '@/lib/github-pass';
 import { getLinearAccessToken } from '@/lib/linear-api';
 import { linearPass } from '@/lib/linear-pass';
 import { log } from '@/lib/log';
@@ -12,6 +13,8 @@ import { findAnyRun, markRunStarted, runRepository } from '@/lib/runs';
 
 // Long enough to outlast the stage workflow's 60-minute timeout.
 const RUN_TOKEN_VALIDITY_MS = 90 * 60 * 1000;
+// Outlasts an implement run's 100-minute limit and its setup; `/github-token` also refuses a run no longer running.
+const GITHUB_PASS_VALIDITY_MS = 3 * 60 * 60 * 1000;
 
 export const POST = async (request: Request, context: RouteContext<'/api/runs/[id]/start'>) => {
   const { id } = await context.params;
@@ -89,6 +92,8 @@ export const POST = async (request: Request, context: RouteContext<'/api/runs/[i
     linearAccessToken,
     agentSessionId: workItem.agentSessionId,
     merge: merge?.base ? merge : null,
+    // GitHub caps the app's token at an hour, so an implement run asks `/github-token` for another as it nears that.
+    githubPass: found.run.agent === 'implement' ? githubPass(id, new Date(Date.now() + GITHUB_PASS_VALIDITY_MS)) : null,
     // The project's fast checks, which the plugin's hooks run on the agent's edits and before it finishes.
     checks: project?.checks?.fast ?? null
   });

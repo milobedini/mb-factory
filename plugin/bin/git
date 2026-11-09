@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# git with an implement run's current token in origin's URL (factory-github-token), so a run past the hour can push.
+bin=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+"$bin/factory-github-token" > /dev/null || true
+PATH=$(tr ':' '\n' <<< "$PATH" | grep -vxF "$bin" | paste -sd: -)
+exec git "$@"

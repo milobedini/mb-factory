@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Prints an implement run's GitHub token, swapped for a fresh one from the console once it has under 10 minutes left:
+# GitHub caps an app's token at an hour, and an implement run may take 100 minutes (TAS-206). A fresh token also
+# replaces the one claude-code-action put in origin's URL. The `gh` and `git` beside this script call it first, so the
+# agent never sees a token lapse. When it can't refresh (outside a run, or the console refuses), it prints the token it
+# has, so nothing that worked before stops working.
+set -uo pipefail
+umask 077
+bin=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# The real git, not the one beside this script.
+PATH=$(tr ':' '\n' <<< "$PATH" | grep -vxF "$bin" | paste -sd: -)
+cache=${FACTORY_GITHUB_TOKEN_FILE:-${RUNNER_TEMP:-/tmp}/factory-github-token}
+margin=${FACTORY_GITHUB_TOKEN_MARGIN:-600}
+now=$(date +%s)
+
+token=${GH_TOKEN:-}
+expires=0
+if [[ -f "$cache" ]]; then
+  { IFS= read -r token; IFS= read -r expires; } < "$cache"
+fi
+if [[ -n "$token" && "$expires" =~ ^[0-9]+$ ]] && ((expires - margin > now)); then
+  printf '%s\n' "$token"
+  exit 0
+fi
+
+refresh() {
+  [[ -n "${FACTORY_GITHUB_TOKEN_URL:-}" && -n "${FACTORY_GITHUB_PASS:-}" ]] || return 1
+  local response
+  if ! response=$(curl -sS --fail-with-body --max-time 20 --retry 2 -X POST \
+    -H "Authorization: Bearer $FACTORY_GITHUB_PASS" "$FACTORY_GITHUB_TOKEN_URL" 2>&1); then
+    echo "factory-github-token: the console gave no fresh token: ${response:0:200}" >&2
+    return 1
+  fi
+  fresh=$(jq -r '.token // empty' <<< "$response" 2> /dev/null)
+  fresh_expires=$(jq -r '.expiresAt // empty' <<< "$response" 2> /dev/null)
+  if [[ ! "$fresh" =~ ^[A-Za-z0-9_]+$ || ! "$fresh_expires" =~ ^[0-9]+$ ]]; then
+    echo "factory-github-token: the console's answer held no token" >&2
+    return 1
+  fi
+}
+
+if refresh; then
+  printf '%s\n%s\n' "$fresh" "$fresh_expires" > "$cache.$$" && mv -f "$cache.$$" "$cache"
+  workspace=${GITHUB_WORKSPACE:-.}
+  url=$(git -C "$workspace" config --get remote.origin.url 2> /dev/null)
+  if [[ "$url" =~ ^https://x-access-token:[^@]+@(github\.com/.+)$ ]]; then
+    git -C "$workspace" remote set-url origin "https://x-access-token:${fresh}@${BASH_REMATCH[1]}"
+  fi
+  printf '%s\n' "$fresh"
+  exit 0
+fi
+printf '%s\n' "$token"
+[[ -n "$token" ]]

@@ -364,6 +364,8 @@ Learnt the hard way; each would bite again.
 
 Built but not yet seen working; delete each line once seen. Swept 3 Nov evening: everything not listed here was seen.
 
+- **Fresh tokens past the hour** (TAS-206, 9 Nov): the first implement run longer than about 40 minutes logs `github token given` in the console, and pushes and edits its PR after the hour with no 401. A `github token refused` or `failed` line means the swap didn't happen (`plugin/bin/factory-github-token`).
+
 - **One scheduler:** forwarding and queued wake-ups were seen working on 4 Nov (06:48: `wake forwarded` from the old deployment, then `woke` with cause `queued wake-up` from the new one). Still to see: one governor probe per probe moment, and a `morning ready list` line beside every Ready message.
 - **Stage-run hooks** (4 Nov): on the next implement run, a `check-edit` failure handed back and fixed in the transcript, and a run that ends only once the stop checks pass (or after three refusals); no guard refusal of an ordinary push or commit.
 - **Express track** (4 Nov, step 2): seen on TAS-135 and TAS-120 (4 Nov): triage → implement with no spec, review asking nothing, the card showing Express with no Spec step, and triage's `careful` sending TAS-120 through the spec. Still to see: implement asking before any code (TAS-135's questions came from triage), nothing about infrastructure, Should fix findings filed in Triage, and an express design's hand-off starting the branch.

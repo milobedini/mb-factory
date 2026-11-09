@@ -20,7 +20,7 @@ Your prompt is the brief:
 - `pr`, `branch` and `round` (the review round, 1 or 2), once they exist.
 - `co-author`: `Name <email>` of the person the issue is assigned to, credited on every commit per `git-text`.
 
-The environment holds `LINEAR_ACCESS_TOKEN`, `GH_TOKEN` and `FACTORY_REPORT_PATH`. Never print a token.
+The environment holds `LINEAR_ACCESS_TOKEN`, `GH_TOKEN` and `FACTORY_REPORT_PATH`. Never print a token. In an implement run, `GH_TOKEN` lapses after an hour; `gh` and `git` swap in a fresh one themselves, and anything else that calls GitHub should use `$(factory-github-token)` rather than `$GH_TOKEN`.
 
 ## Context
 

@@ -46,28 +46,61 @@ const asApp = async <T>(method: 'GET' | 'POST', path: string, action: string, bo
   return response.json() as Promise<T>;
 };
 
-const tokens = new Map<string, { token: string; expiresAt: number }>();
+type Minted = { token: string; expiresAt: number };
 
-// An installation token for one repository, kept while it has time left. `workflows` adds write access to workflow
-// files, asked for only by the merges that may need it, so an installation without it fails those alone.
-export const appToken = async (repository: string, { workflows = false } = {}): Promise<string> => {
-  const key = `${repository}${workflows ? ' workflows' : ''}`;
+const tokens = new Map<string, Minted>();
+
+// An installation token for one repository with these permissions, kept under `key` while it has time left.
+const installationToken = async (
+  repository: string,
+  key: string,
+  permissions: Record<string, 'read' | 'write'>
+): Promise<Minted> => {
   const kept = tokens.get(key);
   if (kept && kept.expiresAt - MARGIN_MS > Date.now()) {
-    return kept.token;
+    return kept;
   }
   const [, name] = repository.split('/');
   const { id } = await asApp<{ id: number }>('GET', `/repos/${repository}/installation`, 'app installation');
-  const permissions = { contents: 'write', pull_requests: 'write', ...(workflows ? { workflows: 'write' } : {}) };
   const created = await asApp<{ token: string; expires_at: string }>(
     'POST',
     `/app/installations/${id}/access_tokens`,
     'app token',
     { repositories: [name], permissions }
   );
-  tokens.set(key, { token: created.token, expiresAt: Date.parse(created.expires_at) });
-  return created.token;
+  const minted = { token: created.token, expiresAt: Date.parse(created.expires_at) };
+  tokens.set(key, minted);
+  return minted;
 };
+
+// An installation token for one repository, kept while it has time left. `workflows` adds write access to workflow
+// files, asked for only by the merges that may need it, so an installation without it fails those alone.
+export const appToken = async (repository: string, { workflows = false } = {}): Promise<string> => {
+  const permissions: Record<string, 'read' | 'write'> = {
+    contents: 'write',
+    pull_requests: 'write',
+    ...(workflows ? { workflows: 'write' } : {})
+  };
+  const { token } = await installationToken(repository, `${repository}${workflows ? ' workflows' : ''}`, permissions);
+  return token;
+};
+
+// What the stage workflow's "Get the factory app's token" step asks for, so a token given part-way through an
+// implement run can do no more than the one it started with.
+const IMPLEMENT_PERMISSIONS = {
+  contents: 'write',
+  pull_requests: 'write',
+  issues: 'write',
+  workflows: 'write',
+  actions: 'read',
+  checks: 'read',
+  statuses: 'read'
+} as const;
+
+// A fresh token for an implement run that has outlasted its first: GitHub caps an app's token at an hour, and an
+// implement run may take 100 minutes.
+export const implementToken = (repository: string): Promise<Minted> =>
+  installationToken(repository, `${repository} implement`, IMPLEMENT_PERMISSIONS);
 
 // After the App couldn't give a read token for a repository (not installed there, or missing a read permission), the
 // console's own token reads it for this long before the App is asked again.

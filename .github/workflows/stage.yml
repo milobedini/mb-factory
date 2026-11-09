@@ -137,6 +137,15 @@ jobs:
               echo "LINEAR_AGENT_SESSION_ID=$(jq -r '.agentSessionId // empty' <<< "$response")"
             } >> "$GITHUB_ENV"
           fi
+          # An implement run's pass for a fresh app token once its first nears GitHub's hour (plugin/bin/factory-github-token).
+          github_pass=$(jq -r '.githubPass // empty' <<< "$response")
+          if [[ -n "$github_pass" ]]; then
+            echo "::add-mask::$github_pass"
+            {
+              echo "FACTORY_GITHUB_TOKEN_URL=$CONSOLE_URL/api/runs/$RUN_ID/github-token"
+              echo "FACTORY_GITHUB_PASS=$github_pass"
+            } >> "$GITHUB_ENV"
+          fi
           linear_pass=$(jq -r '.linearPass // empty' <<< "$response")
           if [[ -n "$linear_pass" ]]; then
             echo "::add-mask::$linear_pass"
@@ -168,6 +177,17 @@ jobs:
           permission-actions: read
           permission-checks: read
           permission-statuses: read
+
+      - name: Keep the app's token fresh
+        # GitHub caps the app's token at an hour and an implement run may take 100 minutes (TAS-206), so the agent's gh
+        # and git go through plugin/bin, which swaps in a fresh token from the console when this one nears its hour.
+        if: steps.app-token.outcome == 'success' && env.FACTORY_GITHUB_PASS != ''
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Made a moment ago; counted as 50 minutes so the swap comes well before GitHub refuses it.
+          (umask 077 && printf '%s\n%s\n' "$TOKEN" "$(( $(date +%s) + 3000 ))" > "$RUNNER_TEMP/factory-github-token")
+          echo "$RUNNER_TEMP/mb-factory/plugin/bin" >> "$GITHUB_PATH"
 
       - name: Prepare the evidence folder
         # Implement records a PR's screens or walkthrough here and writes the visual's URL into the PR; the evidence job

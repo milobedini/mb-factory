@@ -10,7 +10,7 @@
     "dev": "pnpm --filter @mb-factory/console dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test && pnpm test:hooks && pnpm test:visual",
-    "test:hooks": "bash plugin/hooks/test.sh",
+    "test:hooks": "bash plugin/hooks/test.sh && bash plugin/bin/test.sh",
     "test:visual": "bash .github/scripts/visual.test.sh",
     "type-check": "pnpm -r type-check",
     "lint:biome": "biome check .",
