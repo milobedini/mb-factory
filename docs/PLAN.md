@@ -14,7 +14,7 @@ This plan holds direction, decisions and what was learnt. It doesn't track work:
 
 **Phase:** 5 (Express, [docs/express.md](express.md)); Phase 4 closed on 3 Nov 2026 with its baseline frozen early (25 Oct–3 Nov) so Express could start at once. Exit: two weeks of express against that baseline, with cycle time and the person's taps per PR down, and fixes or reverts within 7 days and new Sentry issues tied to a PR no worse.
 
-**Next:** check Tastebook's Mutation testing run 42617742020 on `main` (the first since TAS-203 merged) uploaded both sides' summaries, with a side that hit its time limit saying `"complete": false`, then on Mon 16 Nov check that the 04:30 UTC mutation run's summaries reach the clean-up and that no scheduled job dispatches on stale readings (the probe now judges readings as they'll be at the slot); as runs come, check Lost runs' wording and a design answer that forces a redraw (To see live).
+**Next:** on Mon 16 Nov check that the 04:30 UTC mutation run's summaries reach the clean-up and that no scheduled job dispatches on stale readings (the probe now judges readings as they'll be at the slot); as runs come, check Lost runs' wording and a design answer that forces a redraw (To see live).
 
 **Direction, in order:** Express (Phase 5) in its four steps, each the base for later factory changes, while Tastebook's Dino project and Accounts and households' slices (sliced 29 Oct; those that need design go through the design stage) keep running through the factory as the steps land; onboard `mb-factory` as a project (agreed 3 Nov: self-improvement PRs then go through the factory's own stages, and health findings arrive as triaged issues); then Phase 6. The [factory backlog](#factory-backlog) holds smaller factory work to pick from.
 
