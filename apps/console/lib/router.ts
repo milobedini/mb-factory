@@ -448,26 +448,49 @@ const landPull = (
 // merged as its App, with a merge commit (or added to the merge queue as the App). Tried once per head; a refusal is
 // said in the thread, and Approve and merge stays for the person. The PR's merge webhook does the rest (the card, the
 // message, Linear).
+const latestReview = async (workItem: WorkItem) => {
+  const [review] = await getDb()
+    .select({ report: runs.report })
+    .from(runs)
+    .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'review'), eq(runs.status, 'finished')))
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  return review;
+};
+
+// The stored track settles most check events without asking GitHub; the route reads the labels afresh.
+const mayMergeItself = (project: FactoryConfig, workItem: WorkItem) =>
+  Boolean(project.express?.merge.auto) &&
+  workItem.stage === 'awaiting_merge' &&
+  workItem.prNumber !== null &&
+  (workItem.track ?? project.track) === 'express';
+
+const routesToFactory = async (project: FactoryConfig, workItem: WorkItem, report: unknown, head: string) =>
+  (await expressMergeRoute(project, workItem, { report, findingsLeft: readFixableFindings(report).length, head }))
+    ?.route === 'auto';
+
+// Whether the PR's head, once its checks pass, is express's to merge, so nobody needs telling it's ready.
+const mergesItself = async (project: FactoryConfig, workItem: WorkItem, head: string): Promise<boolean> => {
+  if (!mayMergeItself(project, workItem)) {
+    return false;
+  }
+  const review = await latestReview(workItem);
+  return (
+    review !== undefined &&
+    reviewVerdict(review.report) === 'accepted' &&
+    routesToFactory(project, workItem, review.report, head)
+  );
+};
+
 const mergeByItself = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
   const { prNumber, repository, issueIdentifier: issue } = workItem;
-  // The stored track settles most check events without asking GitHub; the route reads the labels afresh.
-  if (
-    !project.express?.merge.auto ||
-    workItem.stage !== 'awaiting_merge' ||
-    !prNumber ||
-    (workItem.track ?? project.track) !== 'express'
-  ) {
+  if (!mayMergeItself(project, workItem) || !prNumber) {
     return;
   }
-  const [pull, accepted, [review]] = await Promise.all([
+  const [pull, accepted, review] = await Promise.all([
     pullForMerge(repository, prNumber),
     acceptedHead(workItem),
-    getDb()
-      .select({ report: runs.report })
-      .from(runs)
-      .where(and(eq(runs.workItemId, workItem.id), eq(runs.agent, 'review'), eq(runs.status, 'finished')))
-      .orderBy(desc(runs.createdAt))
-      .limit(1)
+    latestReview(workItem)
   ]);
   if (!accepted || !review || pull.head !== accepted || reviewVerdict(review.report) !== 'accepted') {
     return;
@@ -476,12 +499,7 @@ const mergeByItself = async (project: FactoryConfig, workItem: WorkItem): Promis
   if (checks.state !== 'passing' || mergeRefusal(prNumber, { pull, acceptedHead: accepted, checks: checks.state })) {
     return;
   }
-  const route = await expressMergeRoute(project, workItem, {
-    report: review.report,
-    findingsLeft: readFixableFindings(review.report).length,
-    head: pull.head
-  });
-  if (route?.route !== 'auto') {
+  if (!(await routesToFactory(project, workItem, review.report, pull.head))) {
     return;
   }
   const first = await recordEvent({
@@ -3931,21 +3949,27 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
             : undefined
         ])
       : [undefined, undefined];
+  // A PR express merges by itself needs nobody: its merge, or a refusal that hands it over, is said when it happens.
+  const mergesOnItsOwn = Boolean(readyToMerge && route?.route.route === 'auto' && route.auto);
+  const accepted =
+    readyToMerge && prUrl
+      ? slackAcceptedMessage(finishedText, {
+          workItemId: workItem.id,
+          prNumber: readyToMerge,
+          prUrl,
+          visual,
+          mergeRoute: route,
+          ...mergeNotes
+        })
+      : undefined;
   const reply = retrying
     ? retryText(run, run.actionsRunUrl)
     : rerunnable
       ? mentionIf(withRerunButton(finishedText, run.id))
-      : readyToMerge && prUrl
-        ? mentionIf(
-            slackAcceptedMessage(finishedText, {
-              workItemId: workItem.id,
-              prNumber: readyToMerge,
-              prUrl,
-              visual,
-              mergeRoute: route,
-              ...mergeNotes
-            })
-          )
+      : accepted
+        ? mergesOnItsOwn
+          ? accepted
+          : mentionIf(accepted)
         : mentionIf(finishedText);
   const [, replyTs] = await Promise.all([
     closing ? postActivity(workItem, closing, next.gate?.options) : undefined,
@@ -3977,7 +4001,7 @@ export const handleRunFinished = withCards(async (runId: string): Promise<void> 
   if (readyToMerge && replyTs && !mergeNotes.findingsLeft) {
     await getDb().update(workItems).set({ mergeSlackTs: replyTs }).where(eq(workItems.id, workItem.id));
   }
-  if (readyToMerge && route?.route.route === 'auto' && route.auto) {
+  if (mergesOnItsOwn) {
     // The checks may have passed before review finished, so no check webhook would set it off.
     await attempt('auto-merge', { issue: workItem.issueIdentifier }, () =>
       mergeByItself(project, { ...workItem, stage: 'awaiting_merge' })
@@ -4155,7 +4179,8 @@ const announceChecksPassed = async (project: FactoryConfig, workItem: WorkItem, 
     return;
   }
   const summary = await headChecks(repository, head);
-  if (summary.state !== 'passing') {
+  // A PR that merges itself says so when it merges, so the person isn't called to a merge that isn't theirs.
+  if (summary.state !== 'passing' || (await mergesItself(project, workItem, head))) {
     return;
   }
   const first = await recordEvent({
