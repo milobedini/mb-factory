@@ -103,6 +103,15 @@ export {
   readBump,
   readGroupedBumps
 } from './dependencies';
+export type { DependencyUpdate, DependencyUpdateStatus } from './dependency-updates';
+export {
+  DEPENDENCY_UPDATE_EVENT,
+  dependencyMentions,
+  dependencyUpdateCard,
+  dependencyUpdateFor,
+  readDependencyUpdate,
+  updatesText
+} from './dependency-updates';
 export type {
   AskedDesignQuestion,
   ComponentChange,

@@ -16,9 +16,10 @@ export const MERGE_WATCH_END_EVENT = 'merge_watch_end';
 export const REVERT_EVENT = 'revert';
 export const REVERT_ACTION = 'revert';
 
-// A watch as recorded when the factory's App merged a PR.
+// A watch as recorded when the factory's App merged a PR. A routine Dependabot update has no work item: its watch
+// replies under its card instead.
 export const mergeWatchSchema = z.object({
-  workItemId: z.uuid(),
+  workItemId: z.uuid().nullable(),
   repository: z.string().min(1),
   prNumber: z.int().positive(),
   sha: z.string().regex(/^[0-9a-f]{40}$/),
@@ -106,25 +107,24 @@ const linkButton = (actionId: string, text: string, url: string): SlackBlock => 
 });
 
 const REVERT_NOTE = 'Revert opens GitHub’s revert PR, which merges itself once its checks pass.';
+// A routine update's message has no Revert button yet.
+const GITHUB_REVERT_NOTE = 'If it’s the cause, revert it from the PR on GitHub.';
+
+const revertNote = (workItemId: string | null): string => (workItemId ? REVERT_NOTE : GITHUB_REVERT_NOTE);
 
 // Said at once when the production deploy of a merge the factory made fails.
 export const slackDeployFailedMessage = (
-  pr: { workItemId: string; prNumber: number },
+  pr: { workItemId: string | null; prNumber: number },
   logUrl: string | null
 ): SlackMessage => {
-  const text = `⚠️ *The production deploy failed* for PR #${pr.prNumber}, which merged itself. ${REVERT_NOTE}`;
+  const text = `⚠️ *The production deploy failed* for PR #${pr.prNumber}, which merged itself. ${revertNote(pr.workItemId)}`;
+  const buttons = [
+    ...(pr.workItemId ? [revertButton(pr.workItemId, pr.prNumber)] : []),
+    ...(logUrl ? [linkButton('deploy_open', 'Open the deploy', logUrl)] : [])
+  ];
   return {
     text,
-    blocks: [
-      section(text),
-      {
-        type: 'actions',
-        elements: [
-          revertButton(pr.workItemId, pr.prNumber),
-          ...(logUrl ? [linkButton('deploy_open', 'Open the deploy', logUrl)] : [])
-        ]
-      }
-    ]
+    blocks: [section(text), ...(buttons.length > 0 ? [{ type: 'actions', elements: buttons }] : [])]
   };
 };
 
@@ -133,7 +133,7 @@ const issueLine = (issue: SentryIssue): string =>
 
 // What the watch found when its 30 minutes end: a short all-clear, or the problems with Revert.
 export const slackWatchEndMessage = (
-  pr: { workItemId: string; prNumber: number; time: string },
+  pr: { workItemId: string | null; prNumber: number; time: string },
   found: WatchFindings
 ): SlackMessage => {
   const deployLine =
@@ -170,13 +170,15 @@ export const slackWatchEndMessage = (
     ...(deployLine ? [deployLine] : []),
     ...issueLines,
     ...sentryUnread,
-    ...(revertable ? [REVERT_NOTE] : [])
+    ...(revertable ? [revertNote(pr.workItemId)] : [])
   ].join('\n');
   return {
     text,
     blocks: [
       section(text),
-      ...(revertable ? [{ type: 'actions', elements: [revertButton(pr.workItemId, pr.prNumber)] }] : [])
+      ...(revertable && pr.workItemId
+        ? [{ type: 'actions', elements: [revertButton(pr.workItemId, pr.prNumber)] }]
+        : [])
     ]
   };
 };

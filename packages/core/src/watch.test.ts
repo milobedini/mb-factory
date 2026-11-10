@@ -116,6 +116,27 @@ describe('slackWatchEndMessage', () => {
   });
 });
 
+describe('a routine update’s watch', () => {
+  const routine = { ...pr, workItemId: null };
+
+  it('records a watch with no work item', () => {
+    const watch = mergeWatch(
+      { workItemId: null, repository: 'o/r', prNumber: 169, sha },
+      new Date('2026-11-10T09:12:00Z')
+    );
+    expect(readMergeWatch(watch)).toEqual(watch);
+  });
+
+  it('offers no Revert button yet, and says to revert on GitHub', () => {
+    const ended = slackWatchEndMessage(routine, found({ issues: [issue('WEB-1')] }));
+    expect(actionIds(ended.blocks)).toEqual([]);
+    expect(ended.text).toContain('revert it from the PR on GitHub');
+    const failed = slackDeployFailedMessage({ workItemId: null, prNumber: 169 }, 'https://vercel.com/d/1');
+    expect(actionIds(failed.blocks)).toEqual(['deploy_open']);
+    expect(failed.text).toContain('revert it from the PR on GitHub');
+  });
+});
+
 describe('slackRevertSettled', () => {
   it('takes the buttons off and says who asked', () => {
     const { blocks } = slackDeployFailedMessage({ workItemId, prNumber: 128 }, null);

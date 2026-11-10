@@ -72,6 +72,7 @@ import {
   delegateFailedText,
   dependencyIssue,
   dependencyMajors,
+  dependencyMentions,
   dependencyTakenText,
   deployStateOf,
   dequeuedText,
@@ -240,6 +241,17 @@ import {
   refreshAskCard,
   runOf
 } from './ask-runs';
+import {
+  checkDependencyUpdate,
+  dependencyUpdateClosed,
+  dependencyUpdateDropped,
+  dependencyUpdateHanded,
+  findDependencyUpdate,
+  openDependencyUpdate,
+  openDependencyUpdates,
+  replyToDependencyUpdate,
+  takenOn
+} from './dependency-updates';
 import { designPass } from './design-pass';
 import { requireEnv } from './env';
 import { recordEvent } from './events';
@@ -555,11 +567,15 @@ const eventRecorded = async (deliveryId: string): Promise<boolean> =>
 const watchId = (repository: string, prNumber: number): string => `merge-watch:${repository}#${prNumber}`;
 
 // A PR the factory's App merged is watched for 30 minutes, ending with a wake-up booked now.
+// Returns the watch, also when it had already started. A routine Dependabot update's has no work item.
 const startMergeWatch = async (
-  workItem: WorkItem,
+  workItem: WorkItem | null,
   { repository, number, mergeCommitSha }: { repository: string; number: number; mergeCommitSha: string }
-): Promise<void> => {
-  const watch = mergeWatch({ workItemId: workItem.id, repository, prNumber: number, sha: mergeCommitSha }, new Date());
+): Promise<MergeWatch> => {
+  const watch = mergeWatch(
+    { workItemId: workItem?.id ?? null, repository, prNumber: number, sha: mergeCommitSha },
+    new Date()
+  );
   const first = await recordEvent({
     source: 'github',
     deliveryId: watchId(repository, number),
@@ -567,9 +583,54 @@ const startMergeWatch = async (
     payload: watch
   });
   if (first) {
-    log('info', 'merge watch started', { issue: workItem.issueIdentifier, pr: number, endsAt: watch.endsAt });
+    log('info', 'merge watch started', { issue: workItem?.issueIdentifier, pr: number, endsAt: watch.endsAt });
     await bookWake(new Date(watch.endsAt), 'merge watch');
   }
+  return watch;
+};
+
+// Where a watch reports: its work item's thread, or a routine update's card. `asking` mentions the person.
+type WatchSubject = {
+  project: FactoryConfig;
+  label: string;
+  say: (message: SlackMessage, asking: boolean) => Promise<unknown>;
+  note: (type: 'thought' | 'error', body: string) => Promise<unknown>;
+  ended: () => Promise<unknown>;
+};
+
+const watchSubject = async (watch: MergeWatch): Promise<WatchSubject | undefined> => {
+  if (watch.workItemId) {
+    const workItem = await findWorkItemById(watch.workItemId);
+    const project = workItem && findProject(workItem.project);
+    return workItem && project
+      ? {
+          project,
+          label: workItem.issueIdentifier,
+          say: (message, asking) =>
+            replyInThread(project, workItem, asking ? askingFor(project, workItem)(message) : message),
+          note: (type, body) => postActivity(workItem, { type, body }),
+          ended: () => Promise.resolve()
+        }
+      : undefined;
+  }
+  const update = await findDependencyUpdate(watch.repository, watch.prNumber);
+  const project = allProjects().find((candidate) => repositoryOf(candidate) === watch.repository);
+  return update && project
+    ? {
+        project,
+        label: `PR #${watch.prNumber}`,
+        say: (message, asking) =>
+          replyToDependencyUpdate(update, asking ? mentioning(message, dependencyMentions(project)) : message),
+        note: () => Promise.resolve(),
+        ended: () =>
+          dependencyUpdateClosed(update, {
+            merged: true,
+            at: new Date(watch.mergedAt),
+            sha: watch.sha,
+            watchingUntil: null
+          })
+      }
+    : undefined;
 };
 
 // A failed production deploy of a watched merge is said at once, with Revert. Said once per commit.
@@ -580,9 +641,8 @@ const handleProductionDeploy = async (event: Extract<GitHubEvent, { kind: 'produ
   const watch = (await recentEvents(MERGE_WATCH_EVENT))
     .map(({ payload }) => readMergeWatch(payload))
     .find((candidate) => candidate?.repository === event.repository && candidate.sha === event.sha);
-  const workItem = watch && (await findWorkItemById(watch.workItemId));
-  const project = workItem && findProject(workItem.project);
-  if (!watch || !workItem || !project) {
+  const subject = watch && (await watchSubject(watch));
+  if (!watch || !subject) {
     return;
   }
   const first = await recordEvent({
@@ -594,14 +654,14 @@ const handleProductionDeploy = async (event: Extract<GitHubEvent, { kind: 'produ
   if (!first) {
     return;
   }
-  log('warn', 'watched deploy failed', { issue: workItem.issueIdentifier, pr: watch.prNumber, sha: event.sha });
-  const message = slackDeployFailedMessage({ workItemId: workItem.id, prNumber: watch.prNumber }, event.url);
+  log('warn', 'watched deploy failed', { issue: subject.label, pr: watch.prNumber, sha: event.sha });
+  const message = slackDeployFailedMessage({ workItemId: watch.workItemId, prNumber: watch.prNumber }, event.url);
   await Promise.all([
-    replyInThread(project, workItem, askingFor(project, workItem)(message)),
-    postActivity(workItem, {
-      type: 'error',
-      body: `The production deploy of PR #${watch.prNumber}, which merged itself, failed. Revert is offered in Slack.`
-    })
+    subject.say(message, true),
+    subject.note(
+      'error',
+      `The production deploy of PR #${watch.prNumber}, which merged itself, failed. Revert is offered in Slack.`
+    )
   ]);
 };
 
@@ -630,20 +690,20 @@ export const endMergeWatches = async (): Promise<void> => {
 };
 
 const endMergeWatch = async (watch: MergeWatch): Promise<void> => {
-  const workItem = await findWorkItemById(watch.workItemId);
-  const project = workItem && findProject(workItem.project);
-  if (!workItem || !project) {
+  const subject = await watchSubject(watch);
+  if (!subject) {
     return;
   }
+  const { project, label } = subject;
   const { repository, sha, prNumber } = watch;
   const [deploy, issues, failureSaid] = await Promise.all([
     productionDeploy(repository, sha).catch((error: unknown) => {
-      log('warn', 'watched deploy unread', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+      log('warn', 'watched deploy unread', { issue: label, error: errorMessage(error) });
       return null;
     }),
     project.sentry
       ? newSentryIssues(project.sentry, new Date(watch.mergedAt)).catch((error: unknown) => {
-          log('warn', 'sentry issues failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+          log('warn', 'sentry issues failed', { issue: label, error: errorMessage(error) });
           return null;
         })
       : null,
@@ -658,25 +718,20 @@ const endMergeWatch = async (watch: MergeWatch): Promise<void> => {
     issues: issues?.filter(({ firstSeen }) => firstSeen <= new Date(watch.endsAt)) ?? null
   };
   const message = slackWatchEndMessage(
-    { workItemId: workItem.id, prNumber, time: clock(new Date(), project.timeZone) },
+    { workItemId: watch.workItemId, prNumber, time: clock(new Date(), project.timeZone) },
     found
   );
   const clear = found.deploy === 'success' && found.issues?.length === 0;
   log(clear ? 'info' : 'warn', 'merge watch ended', {
-    issue: workItem.issueIdentifier,
+    issue: label,
     pr: prNumber,
     deploy: found.deploy,
     sentryIssues: found.issues?.length ?? 'unread'
   });
   await Promise.all([
-    replyInThread(
-      project,
-      workItem,
-      clear || (found.deploy === 'failed' && failureSaid && found.issues?.length === 0)
-        ? message
-        : askingFor(project, workItem)(message)
-    ),
-    postActivity(workItem, { type: clear ? 'thought' : 'error', body: message.text })
+    subject.say(message, !(clear || (found.deploy === 'failed' && failureSaid && found.issues?.length === 0))),
+    subject.note(clear ? 'thought' : 'error', message.text),
+    subject.ended()
   ]);
 };
 
@@ -4408,6 +4463,12 @@ const takeOnDependencyPr = async (pr: DependencyPr, work: DependencyWork): Promi
     return;
   }
   log('info', 'dependency pr taken on', { pr: pr.number, issue: issue.identifier, work: work.kind });
+  const update = work.kind === 'ci_failed' ? await findDependencyUpdate(pr.repository, pr.number) : undefined;
+  if (update) {
+    await attempt('dependency update handed', { pr: pr.number }, () =>
+      dependencyUpdateHanded(update, { identifier: issue.identifier, url: issue.url })
+    );
+  }
   const [workItem] = await getDb()
     .insert(workItems)
     .values({
@@ -4460,7 +4521,30 @@ const handleDependencyPrOpened = async (pr: DependencyPr): Promise<void> => {
   const [first, ...more] = dependencyMajors(pr);
   if (first) {
     await takeOnDependencyPr(pr, { kind: 'major', bumps: [first, ...more] });
+    return;
   }
+  await openDependencyUpdate(pr);
+};
+
+// A check reported on a routine Dependabot update: its card is redrawn, and it merges itself once they all pass.
+const handleDependencyChecks = async (event: Extract<GitHubEvent, { kind: 'checks_changed' }>): Promise<void> => {
+  const open = await openDependencyUpdates(event.repository);
+  if (open.length === 0) {
+    return;
+  }
+  // A commit status, or a check on a deployment, names its commit, not its PR.
+  const prNumbers =
+    event.prNumbers.length > 0
+      ? event.prNumbers
+      : await openPullsWithHead(event.repository, event.sha).catch((error: unknown) => {
+          log('warn', 'pulls for commit failed', { sha: event.sha, error: errorMessage(error) });
+          return [];
+        });
+  await Promise.all(
+    open
+      .filter(({ prNumber }) => prNumbers.includes(prNumber))
+      .map((update) => attempt('dependency checks', { pr: update.prNumber }, () => checkDependencyUpdate(update)))
+  );
 };
 
 // CI failed on a PR the factory isn't working on: if Dependabot opened it, the factory fixes it.
@@ -4530,6 +4614,29 @@ const deletePreviewDatabase = async (event: Extract<GitHubEvent, { kind: 'pr_clo
   }
 };
 
+// A routine Dependabot update merged or closed: its card settles, and a merge the factory made is watched.
+const closeDependencyUpdate = async (event: Extract<GitHubEvent, { kind: 'pr_closed' }>): Promise<void> => {
+  const update = await findDependencyUpdate(event.repository, event.number);
+  if (!update) {
+    return;
+  }
+  // Taken on as a work item, the PR's watch reports in that item's thread instead.
+  const watch =
+    event.merged &&
+    event.mergeCommitSha &&
+    event.mergedBy?.login.endsWith('[bot]') &&
+    !(await takenOn(event.repository, event.number))
+      ? await startMergeWatch(null, { ...event, mergeCommitSha: event.mergeCommitSha })
+      : undefined;
+  log('info', event.merged ? 'dependency update merged' : 'dependency update closed', { pr: event.number });
+  await dependencyUpdateClosed(update, {
+    merged: event.merged,
+    at: new Date(),
+    sha: event.mergeCommitSha,
+    watchingUntil: watch ? new Date(watch.endsAt) : null
+  });
+};
+
 // The merge queue took a PR: its card says so, and who added it, until it merges or is dropped.
 const handlePrEnqueued = async (event: Extract<GitHubEvent, { kind: 'pr_enqueued' }>): Promise<void> => {
   const workItem = await findWorkItemForPr(event);
@@ -4572,6 +4679,20 @@ const handlePrDequeued = async (event: Extract<GitHubEvent, { kind: 'pr_dequeued
   }
   const pull = await pullForMerge(event.repository, event.number, []);
   if (pull.merged || pull.state !== 'open') {
+    return;
+  }
+  const update = await findDependencyUpdate(event.repository, event.number);
+  if (update) {
+    await recordMergeQueue({
+      repository: event.repository,
+      prNumber: event.number,
+      kind: 'dropped',
+      by: null,
+      base: event.base ?? pull.base,
+      reason: event.reason
+    });
+    log('warn', 'pr dequeued', { pr: event.number, reason: event.reason, dependency: true });
+    await dependencyUpdateDropped(update, event.reason, pull.head);
     return;
   }
   const revert = await queuedRevert(event.repository, event.number);
@@ -4618,7 +4739,7 @@ export const handleGitHubEvent = withCards(async (eventName: string, payload: un
     return;
   }
   if (event.kind === 'checks_changed') {
-    await Promise.all([handleChecksChanged(event), mergeRevertsByThemselves(event)]);
+    await Promise.all([handleChecksChanged(event), mergeRevertsByThemselves(event), handleDependencyChecks(event)]);
     return;
   }
   if (event.kind === 'production_deploy') {
@@ -4661,6 +4782,7 @@ export const handleGitHubEvent = withCards(async (eventName: string, payload: un
     await attempt('queued revert', { pr: event.number }, () => announceQueuedRevertMerged(event));
     await attempt('queued cards', { pr: event.number }, () => touchQueuedCards(event.repository));
   }
+  await attempt('dependency update closed', { pr: event.number }, () => closeDependencyUpdate(event));
   const workItem = await findWorkItemForPr(event);
   const project = workItem && findProject(workItem.project);
   if (!workItem || !project) {
