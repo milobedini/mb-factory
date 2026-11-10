@@ -285,6 +285,8 @@ export {
 } from './oidc';
 export type { SpecPart } from './parts';
 export { latestSpecParts, partDescription, partStateId, partsFiledText, readSpecParts } from './parts';
+export type { NeonBranch } from './previews';
+export { previewBranchFor, previewBranchName } from './previews';
 export type {
   AfterAnswers,
   AnswerResult,

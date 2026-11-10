@@ -353,7 +353,7 @@ Learnt the hard way; each would bite again.
 
 **Neon, Drizzle, Next**
 
-- Use the Neon-managed Vercel integration (it deletes preview branches with their Git branch; the free plan allows 10).
+- Use the Neon-managed Vercel integration; the free plan allows 10 branches. It deletes a merged branch's preview database only during the next preview deploy, after making that deploy's branch, so a full project never frees itself: on 10 Nov four merge-queue merges filled it and the next previews built with no `DATABASE_URL` (migrations hit `127.0.0.1`). The console now deletes a closed PR's `preview/<branch>` itself (`neon` in factory.yaml, `NEON_API_KEY`); Neon's cleanup tolerates a branch already gone and still removes its Vercel variables. A redeploy keeps the old deployment's variables, so a preview whose database was just made needs a second redeploy.
 - A documented person's step isn't done until someone checks the provider: Tastebook's `previews-base` setup (TAS-100, 29 Oct) was never carried out, so previews copied production until 2 Nov. The console's New branch ticks **Automatically delete branch after** (1 day) by default; untick it for a lasting branch. Neon's tools can't make a schema-only branch, and the auto mode classifier blocks `DROP SCHEMA`, so both are the person's.
 - `db:migrate` can stall silently on the websocket driver: stop it and run it again.
 - `runs` has a check constraint on what a run belongs to: a new kind of run needs a migration.

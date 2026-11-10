@@ -160,6 +160,10 @@ sentry:
   projects:
     - sentry-gray-fountain
 
+# Previews get their databases here, from the Neon-managed Vercel integration; a closed PR's is deleted.
+neon:
+  project: green-resonance-43539979
+
 jobs:
   - name: security
     agent: security

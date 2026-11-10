@@ -300,6 +300,7 @@ import {
 } from './linear-api';
 import { log } from './log';
 import { recordMergeQueue } from './merge-queue';
+import { deletePreviewBranch } from './neon-api';
 import { currentPause, pauseFactory, resumeFactory } from './pause';
 import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
 import { loadReadyList, postReadyMessage, readyMessage, unfinishedBlockers } from './ready';
@@ -4520,6 +4521,16 @@ const announceQueuedRevertMerged = async (event: Extract<GitHubEvent, { kind: 'p
   }
 };
 
+// Any closed PR's preview database goes, the factory's or not, so a burst of merges can't fill the Neon project's
+// branches and leave the next previews without a database.
+const deletePreviewDatabase = async (event: Extract<GitHubEvent, { kind: 'pr_closed' }>): Promise<void> => {
+  const neon = allProjects().find((project) => repositoryOf(project) === event.repository)?.neon;
+  const deleted = neon && (await deletePreviewBranch(neon, event.branch));
+  if (deleted) {
+    log('info', 'preview database deleted', { pr: event.number, branch: deleted });
+  }
+};
+
 // The merge queue took a PR: its card says so, and who added it, until it merges or is dropped.
 const handlePrEnqueued = async (event: Extract<GitHubEvent, { kind: 'pr_enqueued' }>): Promise<void> => {
   const workItem = await findWorkItemForPr(event);
@@ -4646,6 +4657,7 @@ export const handleGitHubEvent = withCards(async (eventName: string, payload: un
     await handlePrDequeued(event);
     return;
   }
+  await attempt('preview database', { pr: event.number, branch: event.branch }, () => deletePreviewDatabase(event));
   if (event.merged) {
     await attempt('queued revert', { pr: event.number }, () => announceQueuedRevertMerged(event));
     await attempt('queued cards', { pr: event.number }, () => touchQueuedCards(event.repository));

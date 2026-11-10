@@ -148,6 +148,15 @@ describe('health', () => {
   });
 });
 
+describe('neon', () => {
+  it('reads the project previews get their databases in, and has none when it is left out', () => {
+    expect(parseProject(tastebookConfig).neon).toEqual({ project: 'green-resonance-43539979' });
+    expect(
+      parseProject(tastebookConfig.replace(/\nneon:\n {2}project: green-resonance-43539979\n/, '\n')).neon
+    ).toBeUndefined();
+  });
+});
+
 describe('sentry', () => {
   it('reads where the app reports its errors, defaulting to sentry.io', () => {
     expect(parseProject(tastebookConfig).sentry).toEqual({

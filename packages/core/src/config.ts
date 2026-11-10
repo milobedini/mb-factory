@@ -210,7 +210,10 @@ export const factoryConfigSchema = z.object({
       organisation: z.string().min(1),
       projects: z.array(z.string().min(1)).min(1)
     })
-    .optional()
+    .optional(),
+  // The Neon project the Neon-managed Vercel integration makes preview databases in, one `preview/<branch>` branch per
+  // Git branch. The console deletes a branch's database once its PR closes (previews.ts).
+  neon: z.object({ project: z.string().min(1) }).optional()
 });
 
 // What guards the one subscription every project shares: the run cap and the usage policy.
