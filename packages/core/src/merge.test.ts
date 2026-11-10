@@ -7,12 +7,15 @@ import {
   checksAllowMerge,
   closedLine,
   connectGitHubMessage,
+  dequeuedText,
   mergeButton,
   mergedLine,
   mergeHeldLine,
   mergeRefusal,
   mergeRefusedText,
   movedOnLine,
+  queuedText,
+  queueRefusedText,
   readBeforeMerging,
   slackAcceptedMessage,
   slackMergeGated,
@@ -231,6 +234,22 @@ describe('mergeRefusal', () => {
     expect(mergeRefusedText(39, 'Base <branch> was\nmodified')).toBe(
       'I approved PR #39 as you, but GitHub refused the merge: “Base &lt;branch&gt; was modified”. Tap again, or merge it on GitHub.'
     );
+  });
+
+  it('says a tap added the PR to the merge queue, or quotes GitHub’s refusal safely', () => {
+    expect(queuedText(201)).toBe(
+      'Approved PR #201 as you and added it to the merge queue: it merges once its checks pass on top of main and the PRs ahead of it.'
+    );
+    expect(queueRefusedText(201, 'Pull request <x> is\nnot mergeable')).toBe(
+      'I approved PR #201 as you, but GitHub didn’t add it to the merge queue: “Pull request &lt;x&gt; is not mergeable”. Tap again, or add it on GitHub.'
+    );
+  });
+
+  it('says why the merge queue dropped a PR, in words', () => {
+    expect(dequeuedText(202, 'CI_FAILURE')).toBe(
+      'PR #202 left the merge queue without merging (GitHub said: ci failure). It’s back with you: Approve and merge adds it to the queue again, or reply here to have it fixed.'
+    );
+    expect(dequeuedText(202, null)).toMatch(/\(GitHub said: no reason given\)/);
   });
 
   it('says a PR behind its base needs updating, rather than GitHub’s “checks are expected”', () => {

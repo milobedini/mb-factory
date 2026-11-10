@@ -6,6 +6,7 @@ import {
   deployStateOf,
   mergeWatch,
   readMergeWatch,
+  revertQueuedText,
   slackDeployFailedMessage,
   slackRevertSettled,
   slackWatchEndMessage
@@ -122,5 +123,21 @@ describe('slackRevertSettled', () => {
       blocks[0],
       { type: 'context', elements: [{ type: 'mrkdwn', text: 'Milo asked for a revert at 09:30.' }] }
     ]);
+  });
+});
+
+describe('revertQueuedText', () => {
+  it('says the revert went to the front of the merge queue', () => {
+    const revert = {
+      workItemId: '00000000-0000-4000-8000-000000000001',
+      repository: 'Milo-Bedini/tastebook',
+      of: 201,
+      prNumber: 210,
+      url: 'https://github.com/Milo-Bedini/tastebook/pull/210',
+      head: 'a'.repeat(40)
+    };
+    expect(revertQueuedText(revert)).toBe(
+      'Added the revert, <https://github.com/Milo-Bedini/tastebook/pull/210|PR #210>, to the front of the merge queue: it merges once its checks pass on top of main.'
+    );
   });
 });

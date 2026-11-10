@@ -187,6 +187,10 @@ export const revertOpenedText = (by: string, revert: Revert): string =>
 export const revertMergedText = (revert: Revert, identifier: string): string =>
   `✓ Reverted: <${revert.url}|PR #${revert.prNumber}> merged, so PR #${revert.of}’s change is coming out of production. ${identifier} stays Done in Linear: reopen it if the work should come back.`;
 
+// Under a merge queue the revert goes to the front of the queue; its merge is said when the PR closes merged.
+export const revertQueuedText = (revert: Revert): string =>
+  `Added the revert, <${revert.url}|PR #${revert.prNumber}>, to the front of the merge queue: it merges once its checks pass on top of main.`;
+
 export const revertRefusedText = (revert: Revert, message: string): string =>
   `I couldn’t merge the revert, <${revert.url}|PR #${revert.prNumber}>, by myself: GitHub said “${escapeSlack(message)}”. It’s yours to merge.`;
 

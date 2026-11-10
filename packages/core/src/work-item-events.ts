@@ -13,6 +13,8 @@ const repositorySchema = z.looseObject({ full_name: z.string().min(1), default_b
 
 const pullRequestEventSchema = z.looseObject({
   action: z.string(),
+  // Why a PR left the merge queue (`dequeued`), in GitHub's words.
+  reason: z.string().nullish(),
   repository: repositorySchema,
   pull_request: z.looseObject({
     number: z.int().positive(),
@@ -91,6 +93,8 @@ export type GitHubEvent =
       mergedBy: { id: number; login: string } | null;
       mergeCommitSha: string | null;
     }
+  // A PR left the merge queue: GitHub sends it when a PR merges as well as when the queue drops it.
+  | { kind: 'pr_dequeued'; repository: string; number: number; branch: string; reason: string | null }
   | ({ kind: 'dependency_pr_opened' } & DependencyPr)
   | { kind: 'human_push'; repository: string; branch: string; login: string; commits: number }
   | { kind: 'default_branch_moved'; repository: string; branch: string }
@@ -184,7 +188,7 @@ export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEve
     if (!parsed.success) {
       return undefined;
     }
-    const { action, repository, pull_request } = parsed.data;
+    const { action, reason, repository, pull_request } = parsed.data;
     // Factory PRs never come from forks; anyone can open one with a factory branch's name, so they're ignored.
     if (pull_request.head.repo?.full_name !== repository.full_name) {
       return undefined;
@@ -201,6 +205,15 @@ export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEve
             url
           }
         : undefined;
+    }
+    if (action === 'dequeued') {
+      return {
+        kind: 'pr_dequeued',
+        repository: repository.full_name,
+        number: pull_request.number,
+        branch: pull_request.head.ref,
+        reason: reason ?? null
+      };
     }
     if (action !== 'closed') {
       return undefined;

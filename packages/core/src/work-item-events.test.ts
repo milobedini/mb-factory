@@ -42,6 +42,26 @@ const push = (overrides: Record<string, unknown>) => ({
 });
 
 describe('parseGitHubEvent', () => {
+  it('reads a PR leaving the merge queue, with GitHub’s reason', () => {
+    expect(
+      parseGitHubEvent('pull_request', { ...pullRequestClosed(false), action: 'dequeued', reason: 'CI_FAILURE' })
+    ).toEqual({
+      kind: 'pr_dequeued',
+      repository: 'milobedini/tastebook',
+      number: 4,
+      branch: 'tas-7-page-not-found',
+      reason: 'CI_FAILURE'
+    });
+    expect(parseGitHubEvent('pull_request', { ...pullRequestClosed(false), action: 'dequeued' })).toMatchObject({
+      kind: 'pr_dequeued',
+      reason: null
+    });
+  });
+
+  it('ignores a PR entering the merge queue', () => {
+    expect(parseGitHubEvent('pull_request', { ...pullRequestClosed(false), action: 'enqueued' })).toBeUndefined();
+  });
+
   const deployStatus = (environment: string, production: boolean | undefined) => ({
     repository: { full_name: 'milobedini/tastebook' },
     deployment_status: { state: 'failure', log_url: 'https://vercel.com/x/logs', target_url: 'https://x.vercel.app' },

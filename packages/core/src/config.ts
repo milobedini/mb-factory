@@ -87,7 +87,11 @@ export const factoryConfigSchema = z.object({
         owner: z.string().min(1),
         name: z.string().min(1),
         // GitHub logins asked to review a pull request when it reaches Awaiting Merge.
-        reviewers: z.array(githubLogin).default([])
+        reviewers: z.array(githubLogin).default([]),
+        // GitHub's merge queue lands its PRs (docs/merge-queue.md): the console adds a PR to the queue where it would
+        // merge it, and never merges the default branch in to bring one up to date. Only an organisation's repository
+        // can have a queue.
+        mergeQueue: z.boolean().default(false)
       })
     )
     .min(1),
@@ -233,9 +237,14 @@ export const parseFactoryConfig = (source: string, shared: SharedConfig): Factor
 };
 
 // GitHub matches `owner/name` without regard to case.
-export const reviewersFor = ({ repositories }: FactoryConfig, repository: string): string[] =>
-  repositories.find(({ owner, name }) => `${owner}/${name}`.toLowerCase() === repository.toLowerCase())?.reviewers ??
-  [];
+const repositoryConfig = ({ repositories }: FactoryConfig, repository: string) =>
+  repositories.find(({ owner, name }) => `${owner}/${name}`.toLowerCase() === repository.toLowerCase());
+
+export const reviewersFor = (project: FactoryConfig, repository: string): string[] =>
+  repositoryConfig(project, repository)?.reviewers ?? [];
+
+export const usesMergeQueue = (project: FactoryConfig, repository: string): boolean =>
+  repositoryConfig(project, repository)?.mergeQueue ?? false;
 
 export type Person = FactoryConfig['people'][number];
 

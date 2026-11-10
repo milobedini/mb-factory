@@ -9,7 +9,8 @@ import {
   personForSlack,
   personName,
   reviewersFor,
-  slackMentionFor
+  slackMentionFor,
+  usesMergeQueue
 } from './config';
 import { parseProject, sharedConfig, sharedSource, tastebookSource as tastebookConfig } from './test-config';
 
@@ -17,7 +18,9 @@ describe('parseFactoryConfig', () => {
   it('parses the Tastebook factory definition', () => {
     const config = parseProject(tastebookConfig);
     expect(config.alias).toBe('Tastebook');
-    expect(config.repositories).toEqual([{ owner: 'milobedini', name: 'tastebook', reviewers: ['milobedini'] }]);
+    expect(config.repositories).toEqual([
+      { owner: 'milobedini', name: 'tastebook', reviewers: ['milobedini'], mergeQueue: false }
+    ]);
     expect(config.usage).toEqual(sharedConfig.usage);
     expect(config.concurrency).toEqual({ maxRuns: 5 });
     expect(config.mergeEffect).toBe('deploys it to production');
@@ -174,6 +177,20 @@ describe('reviewersFor', () => {
 
   it('returns none for a repository the project does not list', () => {
     expect(reviewersFor(config, 'milobedini/mb-factory')).toEqual([]);
+  });
+});
+
+describe('usesMergeQueue', () => {
+  it('is off unless the repository turns it on', () => {
+    expect(usesMergeQueue(parseProject(tastebookConfig), 'milobedini/tastebook')).toBe(false);
+  });
+
+  it('is on for the repository that says so, whatever its case', () => {
+    const config = parseProject(
+      tastebookConfig.replace('    name: tastebook\n', '    name: tastebook\n    mergeQueue: true\n')
+    );
+    expect(usesMergeQueue(config, 'MiloBedini/Tastebook')).toBe(true);
+    expect(usesMergeQueue(config, 'milobedini/mb-factory')).toBe(false);
   });
 });
 

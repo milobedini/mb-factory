@@ -68,7 +68,8 @@ export {
   reviewersFor,
   sharedConfigSchema,
   slackMentionFor,
-  usagePolicySchema
+  usagePolicySchema,
+  usesMergeQueue
 } from './config';
 export type {
   BreakdownRow,
@@ -253,6 +254,7 @@ export {
   checksUnreadText,
   closedLine,
   connectGitHubMessage,
+  dequeuedText,
   MERGE_ACTION,
   mergeButton,
   mergedLine,
@@ -263,6 +265,8 @@ export {
   mergeRouteLine,
   movedOnLine,
   notWaitingToMergeText,
+  queuedText,
+  queueRefusedText,
   readBeforeMerging,
   slackAcceptedMessage,
   slackMergeGated,
@@ -523,6 +527,7 @@ export {
   revertMergedText,
   revertMovedText,
   revertOpenedText,
+  revertQueuedText,
   revertRefusedText,
   slackDeployFailedMessage,
   slackRevertSettled,

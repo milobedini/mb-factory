@@ -316,3 +316,19 @@ export const approveRefusedText = (prNumber: number, message: string): string =>
 
 export const mergeRefusedText = (prNumber: number, message: string): string =>
   `I approved PR #${prNumber} as you, but GitHub refused the merge: “${escapeSlack(clip(oneLine(message), 200))}”. Tap again, or merge it on GitHub.`;
+
+// Under a merge queue (docs/merge-queue.md) a tap adds the PR to the queue, which merges it once the checks pass on top
+// of the base branch and the PRs ahead of it. The PR's merge webhook does the rest, as for a merge.
+export const queuedText = (prNumber: number): string =>
+  `Approved PR #${prNumber} as you and added it to the merge queue: it merges once its checks pass on top of main and the PRs ahead of it.`;
+
+export const queueRefusedText = (prNumber: number, message: string): string =>
+  `I approved PR #${prNumber} as you, but GitHub didn’t add it to the merge queue: “${escapeSlack(clip(oneLine(message), 200))}”. Tap again, or add it on GitHub.`;
+
+// GitHub's reasons read like `CI_FAILURE`; shown as words, whatever they are.
+const queueReason = (reason: string | null): string =>
+  reason ? escapeSlack(clip(oneLine(reason.replaceAll('_', ' ').toLowerCase()), 120)) : 'no reason given';
+
+// The queue dropped a PR without merging it (its group failed, a conflict, a timeout): it waits at the merge gate.
+export const dequeuedText = (prNumber: number, reason: string | null): string =>
+  `PR #${prNumber} left the merge queue without merging (GitHub said: ${queueReason(reason)}). It’s back with you: Approve and merge adds it to the queue again, or reply here to have it fixed.`;

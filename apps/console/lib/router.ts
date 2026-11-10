@@ -73,6 +73,7 @@ import {
   dependencyIssue,
   dependencyTakenText,
   deployStateOf,
+  dequeuedText,
   designAskingText,
   designDecisions,
   designFireText,
@@ -148,7 +149,9 @@ import {
   prClosedText,
   QUESTION_GONE,
   questionElicitation,
+  queuedText,
   queuedThought,
+  queueRefusedText,
   READY_HEADING,
   READY_UNREADABLE,
   RERUN_GONE,
@@ -172,6 +175,7 @@ import {
   revertMergedText,
   revertMovedText,
   revertOpenedText,
+  revertQueuedText,
   revertRefusedText,
   reviewersFor,
   reviewHolds,
@@ -215,6 +219,7 @@ import {
   trackFor,
   unblockedBy,
   unblockedHeading,
+  usesMergeQueue,
   waitsOnBlockers,
   withFindings,
   withRerunButton,
@@ -253,6 +258,7 @@ import {
   compareFiles,
   createBranch,
   defaultBranch,
+  enqueuePull,
   headChecks,
   mergeBaseIntoBranch,
   mergePull,
@@ -413,9 +419,33 @@ const acceptedMergeRoute = async (
 
 const AUTO_MERGE_EVENT = 'auto_merge';
 
+// Where the console would merge a PR, a repository with a merge queue has it added to the queue instead: GitHub merges
+// it once the checks pass on top of the base and the PRs ahead of it, recording whoever queued it as merging it, so the
+// merge webhook does the rest as before (docs/merge-queue.md).
+const landPull = (
+  project: FactoryConfig,
+  {
+    token,
+    repository,
+    prNumber,
+    sha,
+    jump = false
+  }: {
+    token: string;
+    repository: string;
+    prNumber: number;
+    sha: string;
+    jump?: boolean;
+  }
+) =>
+  usesMergeQueue(project, repository)
+    ? enqueuePull(token, repository, prNumber, sha, { jump })
+    : mergePull(token, repository, prNumber, sha);
+
 // Express's own merge: once every check passes on the head review accepted, a PR the rules leave to the factory is
-// merged as its App, with a merge commit. Tried once per head; a refusal is said in the thread, and Approve and merge
-// stays for the person. The PR's merge webhook does the rest (the card, the message, Linear).
+// merged as its App, with a merge commit (or added to the merge queue as the App). Tried once per head; a refusal is
+// said in the thread, and Approve and merge stays for the person. The PR's merge webhook does the rest (the card, the
+// message, Linear).
 const mergeByItself = async (project: FactoryConfig, workItem: WorkItem): Promise<void> => {
   const { prNumber, repository, issueIdentifier: issue } = workItem;
   // The stored track settles most check events without asking GitHub; the route reads the labels afresh.
@@ -462,23 +492,28 @@ const mergeByItself = async (project: FactoryConfig, workItem: WorkItem): Promis
     return;
   }
   // A token that can't be had (no key, or the App not installed) is refused like a merge, so the thread hears of it.
+  const queue = usesMergeQueue(project, repository);
   const merged = await appToken(repository).then(
-    (token) => mergePull(token, repository, prNumber, pull.head),
+    (token) => landPull(project, { token, repository, prNumber, sha: pull.head }),
     (error: unknown): GitHubRefusal => ({ ok: false, message: errorMessage(error) })
   );
   if (!merged.ok) {
-    log('warn', 'auto-merge refused', { issue, pr: prNumber, error: merged.message });
-    const text = `I couldn’t merge PR #${prNumber} by myself: GitHub said “${merged.message}”. It’s yours to merge.`;
+    log('warn', 'auto-merge refused', { issue, pr: prNumber, queue, error: merged.message });
+    const text = queue
+      ? `I couldn’t add PR #${prNumber} to the merge queue by myself: GitHub said “${merged.message}”. It’s yours to merge.`
+      : `I couldn’t merge PR #${prNumber} by myself: GitHub said “${merged.message}”. It’s yours to merge.`;
     await Promise.all([
       postActivity(workItem, { type: 'error', body: text }),
       replyInThread(project, workItem, askingFor(project, workItem)(text))
     ]);
     return;
   }
-  log('info', 'pr merged by itself', { issue, pr: prNumber, sha: pull.head });
+  log('info', queue ? 'pr queued by itself' : 'pr merged by itself', { issue, pr: prNumber, sha: pull.head });
   await postActivity(workItem, {
     type: 'thought',
-    body: `Merged PR #${prNumber} by itself: an express PR the merge rules leave to the factory, with every check passing.`
+    body: queue
+      ? `Added PR #${prNumber} to the merge queue by itself: an express PR the merge rules leave to the factory, with every check passing.`
+      : `Merged PR #${prNumber} by itself: an express PR the merge rules leave to the factory, with every check passing.`
   });
 };
 
@@ -714,7 +749,8 @@ const handleRevertTap = async (
 };
 
 // A revert the console opened merges as the App once every check passes on its head. It skips the merge rules: a person
-// asked for it, and it puts back what was on main before. Tried once per head.
+// asked for it, and it puts back what was on main before. Tried once per head. Under a merge queue it goes to the front
+// of the queue, and its merge is said when the PR closes (`announceRevertMerged`).
 const mergeRevertsByThemselves = async (event: Extract<GitHubEvent, { kind: 'checks_changed' }>): Promise<void> => {
   const pending = (await recentEvents(REVERT_EVENT))
     .map(({ payload }) => readRevert(payload))
@@ -764,7 +800,14 @@ const mergeRevertsByThemselves = async (event: Extract<GitHubEvent, { kind: 'che
           return;
         }
         const merged = await appToken(revert.repository).then(
-          (token) => mergePull(token, revert.repository, revert.prNumber, revert.head),
+          (token) =>
+            landPull(project, {
+              token,
+              repository: revert.repository,
+              prNumber: revert.prNumber,
+              sha: revert.head,
+              jump: true
+            }),
           (error: unknown): GitHubRefusal => ({ ok: false, message: errorMessage(error) })
         );
         if (!merged.ok) {
@@ -780,17 +823,26 @@ const mergeRevertsByThemselves = async (event: Extract<GitHubEvent, { kind: 'che
           );
           return;
         }
-        log('info', 'revert merged', { issue: workItem.issueIdentifier, pr: revert.prNumber, of: revert.of });
-        await Promise.all([
-          replyInThread(project, workItem, revertMergedText(revert, workItem.issueIdentifier)),
-          postActivity(workItem, {
-            type: 'thought',
-            body: `Reverted: PR #${revert.prNumber} merged, undoing PR #${revert.of}.`
-          })
-        ]);
+        if (usesMergeQueue(project, revert.repository)) {
+          log('info', 'revert queued', { issue: workItem.issueIdentifier, pr: revert.prNumber, of: revert.of });
+          await replyInThread(project, workItem, revertQueuedText(revert));
+          return;
+        }
+        await announceRevertMerged(project, workItem, revert);
       })
     )
   );
+};
+
+const announceRevertMerged = async (project: FactoryConfig, workItem: WorkItem, revert: Revert): Promise<void> => {
+  log('info', 'revert merged', { issue: workItem.issueIdentifier, pr: revert.prNumber, of: revert.of });
+  await Promise.all([
+    replyInThread(project, workItem, revertMergedText(revert, workItem.issueIdentifier)),
+    postActivity(workItem, {
+      type: 'thought',
+      body: `Reverted: PR #${revert.prNumber} merged, undoing PR #${revert.of}.`
+    })
+  ]);
 };
 
 // The PR's visual, from the newest implement run that has one, so a revision that changed nothing on screen keeps it.
@@ -1063,7 +1115,8 @@ const bringUpToDate = (
             .where(and(eq(runs.workItemId, workItem.id), inArray(runs.status, OPEN_STATUSES))),
           behindBy(repository, branch, base)
         ]);
-        if (!shouldBringUpToDate({ stage, openRuns: openRuns.length, mergeable, behindBy: behind })) {
+        const mergeQueue = usesMergeQueue(project, repository);
+        if (!shouldBringUpToDate({ stage, openRuns: openRuns.length, mergeable, behindBy: behind, mergeQueue })) {
           return;
         }
         // A token that can't be had (no key, or the App not installed) is refused like the merge, so the thread hears.
@@ -3218,8 +3271,9 @@ export const resumeFromSlack = withCards(async (userId: string): Promise<boolean
 const GITHUB_UNREACHABLE = 'I couldn’t reach GitHub, so nothing was merged. Try again in a minute.';
 
 // Approve and merge, from the card, review's accepted message or the Home tab: the PR is approved and merged on GitHub
-// as the person who tapped, with their own connection, and only at the commit review accepted. Anything that stops it
-// is said to them alone; the PR's merge webhook does the rest (the card, the message, Linear).
+// as the person who tapped, with their own connection, and only at the commit review accepted (or added to the merge
+// queue as them, which they hear). Anything that stops it is said to them alone; the PR's merge webhook does the rest
+// (the card, the message, Linear).
 const handleMergeTap = async (
   action: Extract<SlackAction, { kind: 'merge' }>,
   tellTapper: (message: string | SlackMessage) => Promise<void>
@@ -3251,6 +3305,7 @@ const handleMergeTap = async (
     await tellTapper(notWaitingToMergeText(issue));
     return;
   }
+  const queue = usesMergeQueue(project, repository);
   try {
     const [pull, accepted] = await Promise.all([pullForMerge(repository, prNumber), acceptedHead(workItem)]);
     // The same checks the card counts, so a tap is refused only when the card says why.
@@ -3276,10 +3331,10 @@ const handleMergeTap = async (
       await tellTapper(approveRefusedText(prNumber, approved.message));
       return;
     }
-    const merged = await mergePull(connection.token, repository, prNumber, accepted);
+    const merged = await landPull(project, { token: connection.token, repository, prNumber, sha: accepted });
     if (!merged.ok) {
-      log('warn', 'github merge refused', { issue, login: connection.login, error: merged.message });
-      await tellTapper(mergeRefusedText(prNumber, merged.message));
+      log('warn', 'github merge refused', { issue, login: connection.login, queue, error: merged.message });
+      await tellTapper(queue ? queueRefusedText(prNumber, merged.message) : mergeRefusedText(prNumber, merged.message));
       return;
     }
   } catch (error) {
@@ -3287,9 +3342,21 @@ const handleMergeTap = async (
     await tellTapper(GITHUB_UNREACHABLE);
     return;
   }
-  log('info', 'pr merged from slack', { issue, login: connection.login, pr: prNumber });
+  log('info', queue ? 'pr queued from slack' : 'pr merged from slack', {
+    issue,
+    login: connection.login,
+    pr: prNumber
+  });
   const name = await slackUserName(action.userId).catch(() => connection.login);
-  await postActivity(workItem, { type: 'thought', body: `${name} approved and merged PR #${prNumber} from Slack.` });
+  await Promise.all([
+    postActivity(workItem, {
+      type: 'thought',
+      body: queue
+        ? `${name} approved PR #${prNumber} from Slack and added it to the merge queue.`
+        : `${name} approved and merged PR #${prNumber} from Slack.`
+    }),
+    queue ? tellTapper(queuedText(prNumber)) : undefined
+  ]);
 };
 
 const FINDINGS_GONE = 'That review has moved on, so nothing changed.';
@@ -4044,7 +4111,9 @@ export const handleIssueUpdate = withCards(async (payload: unknown): Promise<voi
   }
 });
 
-const findWorkItemForPr = async (event: Extract<GitHubEvent, { kind: 'pr_closed' }>): Promise<WorkItem | undefined> => {
+const findWorkItemForPr = async (
+  event: Pick<Extract<GitHubEvent, { kind: 'pr_closed' | 'pr_dequeued' }>, 'repository' | 'number' | 'branch'>
+): Promise<WorkItem | undefined> => {
   const [workItem] = await getDb()
     .select()
     .from(workItems)
@@ -4373,6 +4442,51 @@ const handleDefaultBranchMoved = async (event: Extract<GitHubEvent, { kind: 'def
 
 // A factory PR merged or closed settles its work item; a person pushing to its branch counts against autonomy; a
 // failed check on a delivered PR, or one that stops merging, goes back to implement.
+const queuedRevert = async (repository: string, prNumber: number): Promise<Revert | undefined> =>
+  (await recentEvents(REVERT_EVENT))
+    .map(({ payload }) => readRevert(payload))
+    .find((revert) => revert?.repository === repository && revert.prNumber === prNumber);
+
+// A revert the console added to a merge queue is said merged when its PR closes merged, as the merge itself says it
+// without a queue.
+const announceQueuedRevertMerged = async (event: Extract<GitHubEvent, { kind: 'pr_closed' }>): Promise<void> => {
+  const revert = await queuedRevert(event.repository, event.number);
+  const workItem = revert && (await findWorkItemById(revert.workItemId));
+  const project = workItem && findProject(workItem.project);
+  if (revert && workItem && project && usesMergeQueue(project, revert.repository)) {
+    await announceRevertMerged(project, workItem, revert);
+  }
+};
+
+// A PR left the merge queue. GitHub sends this as a PR merges too, so only one still open counts as dropped: its group
+// failed, it conflicted with what's ahead of it, or its checks timed out. It waits at the merge gate for the person,
+// who can queue it again or reply to have it fixed; a revert is theirs to merge. Each delivery is said once.
+const handlePrDequeued = async (event: Extract<GitHubEvent, { kind: 'pr_dequeued' }>): Promise<void> => {
+  const pull = await pullForMerge(event.repository, event.number, []);
+  if (pull.merged || pull.state !== 'open') {
+    return;
+  }
+  const revert = await queuedRevert(event.repository, event.number);
+  const workItem = revert ? await findWorkItemById(revert.workItemId) : await findWorkItemForPr(event);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project || (!revert && workItem.stage !== 'awaiting_merge')) {
+    return;
+  }
+  log('warn', 'pr dequeued', {
+    issue: workItem.issueIdentifier,
+    pr: event.number,
+    reason: event.reason,
+    revert: !!revert
+  });
+  const text = revert
+    ? revertRefusedText(revert, `it left the merge queue (${event.reason ?? 'no reason given'})`)
+    : dequeuedText(event.number, event.reason);
+  await Promise.all([
+    postActivity(workItem, { type: 'thought', body: `PR #${event.number} left the merge queue without merging.` }),
+    replyInThread(project, workItem, askingFor(project, workItem)(text))
+  ]);
+};
+
 export const handleGitHubEvent = withCards(async (eventName: string, payload: unknown): Promise<void> => {
   // Any merged PR, the factory's or not, may fix or revert an earlier one.
   if (eventName === 'pull_request') {
@@ -4416,6 +4530,13 @@ export const handleGitHubEvent = withCards(async (eventName: string, payload: un
       });
     }
     return;
+  }
+  if (event.kind === 'pr_dequeued') {
+    await handlePrDequeued(event);
+    return;
+  }
+  if (event.merged) {
+    await attempt('queued revert', { pr: event.number }, () => announceQueuedRevertMerged(event));
   }
   const workItem = await findWorkItemForPr(event);
   const project = workItem && findProject(workItem.project);

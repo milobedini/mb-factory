@@ -636,6 +636,71 @@ export const approvePull = (token: string, repository: string, prNumber: number,
 export const mergePull = (token: string, repository: string, prNumber: number, sha: string) =>
   asPerson(token, 'PUT', `/repos/${repository}/pulls/${prNumber}/merge`, { merge_method: 'merge', sha });
 
+// GraphQL as the token's owner (a person or the App), with GitHub's refusal as a message rather than thrown.
+const graphqlAs = async <T>(
+  token: string,
+  query: string,
+  variables: Record<string, unknown>
+): Promise<{ ok: true; data: T } | GitHubRefusal> => {
+  const response = await fetch(`${API_URL}/graphql`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ query, variables })
+  });
+  const { data, errors, message } = (await response.json().catch(() => ({}))) as {
+    data?: T;
+    errors?: { message: string }[];
+    message?: string;
+  };
+  if (!response.ok || errors?.length || !data) {
+    return {
+      ok: false,
+      message: errors?.map((error) => error.message).join('; ') ?? message ?? `GitHub answered ${response.status}`
+    };
+  }
+  return { ok: true, data };
+};
+
+// Adds a PR to the repository's merge queue (docs/merge-queue.md) as the token's owner, who GitHub then records as
+// merging it. `sha` makes GitHub refuse if the head moved since; `jump` puts it at the front (a revert), which rebuilds
+// the groups behind it.
+export const enqueuePull = async (
+  token: string,
+  repository: string,
+  prNumber: number,
+  sha: string,
+  { jump = false }: { jump?: boolean } = {}
+): Promise<{ ok: true } | GitHubRefusal> => {
+  const [owner, name] = repository.split('/');
+  const found = await graphqlAs<{ repository: { pullRequest: { id: string } | null } | null }>(
+    token,
+    'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id } } }',
+    { owner, name, number: prNumber }
+  );
+  if (!found.ok) {
+    return found;
+  }
+  const id = found.data.repository?.pullRequest?.id;
+  if (!id) {
+    return { ok: false, message: `PR #${prNumber} wasn’t found` };
+  }
+  const queued = await graphqlAs<{ enqueuePullRequest: { mergeQueueEntry: { id: string } | null } | null }>(
+    token,
+    'mutation($id: ID!, $sha: GitObjectID!, $jump: Boolean!) { enqueuePullRequest(input: { pullRequestId: $id, expectedHeadOid: $sha, jump: $jump }) { mergeQueueEntry { id } } }',
+    { id, sha, jump }
+  );
+  if (!queued.ok) {
+    return queued;
+  }
+  return queued.data.enqueuePullRequest?.mergeQueueEntry
+    ? { ok: true }
+    : { ok: false, message: 'GitHub didn’t say it was queued' };
+};
+
 export type ProductionDeploy = { state: string; url: string | null; at: Date };
 
 // The newest production deploy of a commit, as Vercel reports it to GitHub, with its latest status; undefined when
