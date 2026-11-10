@@ -145,6 +145,10 @@ export const mergeHeldLine = (prNumber: number, state: ChecksState): string =>
     ? `A check failed on PR #${prNumber}, so Approve and merge is held. The card says which.`
     : `PR #${prNumber}’s checks are running, so Approve and merge comes back here once they pass. The card shows them live.`;
 
+// Review's message in the thread while the PR is in the merge queue: nothing to tap until it merges or is dropped.
+export const mergeQueuedHeldLine = (prNumber: number): string =>
+  `PR #${prNumber} is in the merge queue: it merges once its checks pass on top of the PRs ahead of it. The card shows where it stands.`;
+
 const heldLineText = (block: SlackBlock): string | undefined =>
   block.block_id === MERGE_HELD_BLOCK ? (block.elements as { text?: string }[] | undefined)?.[0]?.text : undefined;
 
@@ -319,8 +323,7 @@ export const mergeRefusedText = (prNumber: number, message: string): string =>
 
 // Under a merge queue (docs/merge-queue.md) a tap adds the PR to the queue, which merges it once the checks pass on top
 // of the base branch and the PRs ahead of it. The PR's merge webhook does the rest, as for a merge.
-export const queuedText = (prNumber: number): string =>
-  `Approved PR #${prNumber} as you and added it to the merge queue: it merges once its checks pass on top of main and the PRs ahead of it.`;
+export const queuedText = (prNumber: number): string => `Added PR #${prNumber} to the merge queue.`;
 
 export const queueRefusedText = (prNumber: number, message: string): string =>
   `I approved PR #${prNumber} as you, but GitHub didn’t add it to the merge queue: “${escapeSlack(clip(oneLine(message), 200))}”. Tap again, or add it on GitHub.`;

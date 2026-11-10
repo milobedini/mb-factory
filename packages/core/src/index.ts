@@ -26,7 +26,7 @@ export type { MergeRoute, MergeRules } from './auto-merge';
 export { globMatcher, majorBumps, mergeRoute, mergeRulesSchema, readHumanMerge, reviewHolds } from './auto-merge';
 export type { AskBrief, Brief, DispatchPayload, JobBrief, SizeBrief } from './brief';
 export { buildDispatchPayload, DISPATCH_EVENT, renderStagePrompt } from './brief';
-export type { CardInput, CardRun, CardStatus, NextIssue, SlackCard } from './card';
+export type { CardInput, CardRun, CardStatus, MergeQueueState, NextIssue, SlackCard } from './card';
 export { CARD_COLOURS, cardStatus, readNextIssues, workItemCard } from './card';
 export type { ChecksSummary, HeadCheck, HeadCheckState, PreviousCheck } from './checks';
 export {
@@ -260,6 +260,7 @@ export {
   mergedLine,
   mergeHeldLine,
   mergeNotSetUpText,
+  mergeQueuedHeldLine,
   mergeRefusal,
   mergeRefusedText,
   mergeRouteLine,
@@ -273,6 +274,8 @@ export {
   slackMergeSettled,
   withConnectInstead
 } from './merge';
+export type { MergeQueueRecord } from './merge-queue';
+export { MERGE_QUEUE_EVENT, mergeQueueState, prsAhead, queuedBy, readMergeQueueRecord } from './merge-queue';
 export type { ClaimCheck, StageRunClaims } from './oidc';
 export {
   checkGovernorClaims,

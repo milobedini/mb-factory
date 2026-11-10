@@ -4,6 +4,7 @@ import {
   checksAllowMerge,
   latestCanvas,
   mergeHeldLine,
+  mergeQueuedHeldLine,
   personFor,
   personName,
   readBeforeMerging,
@@ -12,6 +13,7 @@ import {
   readNextIssues,
   slackMergeGated,
   slackMessageUrl,
+  usesMergeQueue,
   workItemCard
 } from '@mb-factory/core';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
@@ -21,6 +23,7 @@ import { questions, queue, runs, workItems } from '@/db/schema';
 
 import { headChecks, pullHead } from './github-api';
 import { log } from './log';
+import { mergeQueueStateFor } from './merge-queue';
 import { findProject } from './projects';
 import { slackThreadMessage, slackWorkspaceUrl, updateSlackMessage } from './slack-api';
 
@@ -58,9 +61,13 @@ export const loadCardInput = async (
   channel: string
 ): Promise<CardInput> => {
   const db = getDb();
-  const [itemRuns, checks] = await Promise.all([
+  const [itemRuns, checks, mergeQueue] = await Promise.all([
     db.select().from(runs).where(eq(runs.workItemId, workItem.id)).orderBy(asc(runs.createdAt)),
-    gateChecks(workItem)
+    gateChecks(workItem),
+    mergeQueueStateFor(project, workItem).catch((error: unknown) => {
+      log('warn', 'card merge queue failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });
+      return null;
+    })
   ]);
   const latest = itemRuns.at(-1);
   const asked =
@@ -132,6 +139,8 @@ export const loadCardInput = async (
     questionsUrl,
     beforeMerging: workItem.stage === 'awaiting_merge' ? readBeforeMerging(review?.report) : undefined,
     checks,
+    mergeQueue,
+    throughMergeQueue: usesMergeQueue(project, workItem.repository),
     mergeEffect: project.mergeEffect,
     next: readNextIssues(workItem.nextReady),
     now: new Date(),
@@ -168,11 +177,20 @@ const gateMergeMessage = async (workItem: WorkItem, input: CardInput, channel: s
         mergeEffect: input.mergeEffect,
         findingsLeft: findingsLeft > 0 ? findingsLeft : undefined
       },
-      held: input.checks && !checksAllowMerge(input.checks) ? mergeHeldLine(prNumber, input.checks.state) : undefined
+      // Nothing to tap while the PR is in the merge queue; dropped from it, the button comes back.
+      held:
+        input.mergeQueue?.kind === 'queued'
+          ? mergeQueuedHeldLine(prNumber)
+          : input.checks && !checksAllowMerge(input.checks)
+            ? mergeHeldLine(prNumber, input.checks.state)
+            : undefined
     });
     if (blocks) {
       await updateSlackMessage({ channel, ts, text: message.text, blocks });
-      log('info', 'merge message gated', { issue: workItem.issueIdentifier, held: !checksAllowMerge(input.checks) });
+      log('info', 'merge message gated', {
+        issue: workItem.issueIdentifier,
+        held: input.mergeQueue?.kind === 'queued' || !checksAllowMerge(input.checks)
+      });
     }
   } catch (error) {
     log('warn', 'merge message gate failed', { issue: workItem.issueIdentifier, error: errorMessage(error) });

@@ -42,7 +42,7 @@ const push = (overrides: Record<string, unknown>) => ({
 });
 
 describe('parseGitHubEvent', () => {
-  it('reads a PR leaving the merge queue, with GitHub’s reason', () => {
+  it('reads a PR leaving the merge queue, with GitHub’s reason and whether it merged', () => {
     expect(
       parseGitHubEvent('pull_request', { ...pullRequestClosed(false), action: 'dequeued', reason: 'CI_FAILURE' })
     ).toEqual({
@@ -50,16 +50,34 @@ describe('parseGitHubEvent', () => {
       repository: 'milobedini/tastebook',
       number: 4,
       branch: 'tas-7-page-not-found',
-      reason: 'CI_FAILURE'
+      base: null,
+      reason: 'CI_FAILURE',
+      merged: false
     });
-    expect(parseGitHubEvent('pull_request', { ...pullRequestClosed(false), action: 'dequeued' })).toMatchObject({
+    expect(parseGitHubEvent('pull_request', { ...pullRequestClosed(true), action: 'dequeued' })).toMatchObject({
       kind: 'pr_dequeued',
-      reason: null
+      reason: null,
+      merged: true
     });
   });
 
-  it('ignores a PR entering the merge queue', () => {
-    expect(parseGitHubEvent('pull_request', { ...pullRequestClosed(false), action: 'enqueued' })).toBeUndefined();
+  it('reads a PR entering the merge queue, with who added it and its base', () => {
+    const pull = pullRequestClosed(false);
+    expect(
+      parseGitHubEvent('pull_request', {
+        ...pull,
+        action: 'enqueued',
+        sender: { id: 89992629, login: 'milobedini' },
+        pull_request: { ...pull.pull_request, base: { ref: 'main' } }
+      })
+    ).toEqual({
+      kind: 'pr_enqueued',
+      repository: 'milobedini/tastebook',
+      number: 4,
+      branch: 'tas-7-page-not-found',
+      base: 'main',
+      sender: { id: 89992629, login: 'milobedini' }
+    });
   });
 
   const deployStatus = (environment: string, production: boolean | undefined) => ({

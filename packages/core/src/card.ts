@@ -31,7 +31,24 @@ import type { Track } from './track';
 // A work item's thread starts with a card, edited in place as the work moves: a title, then a coloured attachment with
 // the stage track, what's happening now, the size and project, and a button when there's something to do from it.
 
-export type CardStatus = 'queued' | 'running' | 'waiting' | 'blocked' | 'stopped' | 'ready' | 'merged' | 'canceled';
+export type CardStatus =
+  | 'queued'
+  | 'running'
+  | 'waiting'
+  | 'blocked'
+  | 'stopped'
+  | 'ready'
+  // In the repository's merge queue (docs/merge-queue.md): nothing waits on anyone until it merges or is dropped.
+  | 'merging'
+  | 'merged'
+  | 'canceled';
+
+// Where a PR at the merge gate stands in its repository's merge queue, from the latest time the queue took it or dropped
+// it without merging. `by` is who added it (a person's name), null when the factory did; `ahead` the PRs in front of
+// it, null when GitHub couldn't be read.
+export type MergeQueueState =
+  | { kind: 'queued'; at: Date; by: string | null; base: string; ahead: number[] | null }
+  | { kind: 'dropped'; at: Date; reason: string | null };
 
 type StepState = 'done' | 'running' | 'queued' | 'waiting' | 'blocked' | 'todo' | 'skipped' | 'canceled';
 
@@ -113,6 +130,10 @@ export type CardInput = {
   mergeEffect?: string;
   // The checks on the PR's head while it waits at the merge gate; null when GitHub couldn't be read.
   checks?: ChecksSummary | null;
+  // The PR's place in the merge queue while it waits at the merge gate, for a repository that has one.
+  mergeQueue?: MergeQueueState | null;
+  // The repository lands PRs through a merge queue, which a merged card says.
+  throughMergeQueue?: boolean;
   next: NextIssue[];
   now: Date;
   timeZone: string;
@@ -129,6 +150,7 @@ export const CARD_COLOURS: Record<CardStatus, string> = {
   blocked: '#e01e5a',
   stopped: '#6b6f76',
   ready: '#2eb67d',
+  merging: '#1d9bd1',
   merged: '#6b6f76',
   canceled: '#6b6f76'
 };
@@ -140,6 +162,7 @@ export const STATUS_EMOJI: Record<CardStatus, string> = {
   blocked: 'blocked',
   stopped: 'canceled',
   ready: 'done',
+  merging: 'running',
   merged: 'merged',
   canceled: 'canceled'
 };
@@ -162,6 +185,7 @@ const STATUS_WORDS: Record<CardStatus, string> = {
   blocked: 'blocked',
   stopped: 'stopped',
   ready: 'ready to merge',
+  merging: 'in the merge queue',
   merged: 'merged',
   canceled: 'canceled'
 };
@@ -228,6 +252,7 @@ const CURRENT_STEP: Record<CardStatus, StepState> = {
   queued: 'queued',
   waiting: 'waiting',
   ready: 'waiting',
+  merging: 'running',
   blocked: 'blocked',
   stopped: 'canceled',
   merged: 'done',
@@ -356,6 +381,43 @@ const stoppedLine = (run: CardRun | undefined): string => {
   return text.startsWith('Stopped') ? `*Stopped*${text.slice('Stopped'.length)}` : `*Stopped.*${summaryOf(run)}`;
 };
 
+const ORDINALS = ['1st', '2nd', '3rd'];
+const ordinal = (n: number): string => ORDINALS[n - 1] ?? `${n}th`;
+
+// "PR #207", "PRs #207 and #209", "PRs #207, #209 and #211".
+const prList = (numbers: number[]): string => {
+  const refs = numbers.map((number) => `#${number}`);
+  return refs.length === 1 ? `PR ${refs[0]}` : `PRs ${refs.slice(0, -1).join(', ')} and ${refs.at(-1)}`;
+};
+
+const mergingText = (
+  { workItem, timeZone }: CardInput,
+  queue: Extract<MergeQueueState, { kind: 'queued' }>
+): string => {
+  const pr = `PR #${workItem.prNumber ?? '?'}`;
+  const at = clock(queue.at, timeZone);
+  const added = queue.by
+    ? `${escapeSlack(queue.by)} added ${pr} at ${at}.`
+    : `added ${pr} by itself at ${at}, with every check passing.`;
+  const { ahead, base } = queue;
+  const place =
+    ahead === null
+      ? ''
+      : ahead.length === 0
+        ? `\n1st in line. Checks are running on top of ${escapeSlack(base)}.`
+        : `\n${ordinal(ahead.length + 1)} in line, behind ${prList(ahead)}. Checks are running on top of ${escapeSlack(base)} and ${ahead.length === 1 ? `#${ahead[0]}` : 'the PRs ahead'}.`;
+  return `*In the merge queue:* ${added}${place}`;
+};
+
+// The queue dropped the PR without merging it: said under Ready to merge until it's queued again.
+const droppedText = (
+  { emojiPrefix, timeZone }: CardInput,
+  queue: Extract<MergeQueueState, { kind: 'dropped' }>
+): string => {
+  const reason = queue.reason ? `: ${escapeSlack(queue.reason.replaceAll('_', ' ').toLowerCase())}` : '';
+  return `${slackEmoji(emojiPrefix, 'warning')} *Left the merge queue* at ${clock(queue.at, timeZone)} without merging${reason}. Approve and merge adds it again.`;
+};
+
 const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | undefined): string => {
   const { workItem, now, timeZone } = input;
   const latest = currentRun(input.runs);
@@ -376,10 +438,15 @@ const statusText = (input: CardInput, status: CardStatus, entry: InboxEntry | un
       return workItem.undelegated ? NOT_DELEGATED : stoppedLine(latest);
     case 'ready': {
       const checks = input.checks ? checksLine(input.checks, input) : undefined;
-      return `*Ready to merge:* ${acceptedText(input)}${checks ? `\n${checks}` : ''}`;
+      const dropped = input.mergeQueue?.kind === 'dropped' ? droppedText(input, input.mergeQueue) : undefined;
+      return `*Ready to merge:* ${acceptedText(input)}${checks ? `\n${checks}` : ''}${dropped ? `\n${dropped}` : ''}`;
     }
+    case 'merging':
+      return input.mergeQueue?.kind === 'queued'
+        ? mergingText(input, input.mergeQueue)
+        : `*In the merge queue:* PR #${workItem.prNumber ?? '?'}`;
     case 'merged':
-      return `*Merged* at ${clock(workItem.updatedAt, timeZone)}${pr}`;
+      return `*Merged* at ${clock(workItem.updatedAt, timeZone)}${pr}${input.throughMergeQueue && workItem.prNumber ? ', through the merge queue' : ''}`;
     case 'canceled':
       return `*Canceled* at ${clock(workItem.updatedAt, timeZone)}${workItem.prNumber ? `${pr} closed` : ''}`;
   }
@@ -467,6 +534,9 @@ const cardButtons = (input: CardInput, status: CardStatus, entry: InboxEntry | u
         ]
       : [];
   }
+  if (status === 'merging') {
+    return prUrl ? [linkButton('pr_open', `Open PR #${workItem.prNumber}`, prUrl)] : [];
+  }
   if (status === 'running' || status === 'queued') {
     return [...(prUrl ? [linkButton('pr_open', `PR #${workItem.prNumber}`, prUrl)] : []), ...runLog];
   }
@@ -502,7 +572,8 @@ export const cardSummary = (input: CardInput): CardSummary => {
   const parked =
     workItem.undelegated === true && !TERMINAL_STAGES.includes(workItem.stage) && !(latest && isOpenRun(latest.status));
   const entry = parked ? undefined : inboxEntry(workItem, runs, round);
-  const status = parked ? 'stopped' : cardStatus(workItem.stage, latest, entry, input.hold !== null);
+  const base = parked ? 'stopped' : cardStatus(workItem.stage, latest, entry, input.hold !== null);
+  const status = base === 'ready' && input.mergeQueue?.kind === 'queued' ? 'merging' : base;
   return { status, entry, line: statusText(input, status, entry), buttons: cardButtons(input, status, entry) };
 };
 

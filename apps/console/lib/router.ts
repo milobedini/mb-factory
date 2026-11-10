@@ -149,6 +149,7 @@ import {
   prClosedText,
   QUESTION_GONE,
   questionElicitation,
+  queuedBy,
   queuedText,
   queuedThought,
   queueRefusedText,
@@ -299,6 +300,7 @@ import {
   setBlockedLabel
 } from './linear-api';
 import { log } from './log';
+import { recordMergeQueue } from './merge-queue';
 import { currentPause, pauseFactory, resumeFactory } from './pause';
 import { allProjects, findProject, findProjectBySlackChannel, findProjectByTeamKey, repositoryOf } from './projects';
 import { loadReadyList, postReadyMessage, readyMessage, unfinishedBlockers } from './ready';
@@ -4112,7 +4114,10 @@ export const handleIssueUpdate = withCards(async (payload: unknown): Promise<voi
 });
 
 const findWorkItemForPr = async (
-  event: Pick<Extract<GitHubEvent, { kind: 'pr_closed' | 'pr_dequeued' }>, 'repository' | 'number' | 'branch'>
+  event: Pick<
+    Extract<GitHubEvent, { kind: 'pr_closed' | 'pr_enqueued' | 'pr_dequeued' }>,
+    'repository' | 'number' | 'branch'
+  >
 ): Promise<WorkItem | undefined> => {
   const [workItem] = await getDb()
     .select()
@@ -4458,10 +4463,46 @@ const announceQueuedRevertMerged = async (event: Extract<GitHubEvent, { kind: 'p
   }
 };
 
-// A PR left the merge queue. GitHub sends this as a PR merges too, so only one still open counts as dropped: its group
-// failed, it conflicted with what's ahead of it, or its checks timed out. It waits at the merge gate for the person,
-// who can queue it again or reply to have it fixed; a revert is theirs to merge. Each delivery is said once.
+// The merge queue took a PR: its card says so, and who added it, until it merges or is dropped.
+const handlePrEnqueued = async (event: Extract<GitHubEvent, { kind: 'pr_enqueued' }>): Promise<void> => {
+  const workItem = await findWorkItemForPr(event);
+  const project = workItem && findProject(workItem.project);
+  if (!workItem || !project) {
+    return;
+  }
+  const by = queuedBy(project, event.sender);
+  await recordMergeQueue({
+    repository: event.repository,
+    prNumber: event.number,
+    kind: 'queued',
+    by,
+    base: event.base ?? (await defaultBranch(event.repository)),
+    reason: null
+  });
+  log('info', 'pr enqueued', { issue: workItem.issueIdentifier, pr: event.number, by: by ?? 'itself' });
+  touchCard(workItem.id);
+};
+
+// A PR ahead in the queue merging moves the others up: their cards are drawn again.
+const touchQueuedCards = async (repository: string): Promise<void> => {
+  if (!allProjects().some((project) => usesMergeQueue(project, repository))) {
+    return;
+  }
+  const waiting = await getDb()
+    .select({ id: workItems.id })
+    .from(workItems)
+    .where(and(eq(workItems.repository, repository), eq(workItems.stage, 'awaiting_merge')));
+  waiting.map(({ id }) => touchCard(id));
+};
+
+// A PR left the merge queue. GitHub sends this as a PR merges too (`merged`), which the close handles; only one still
+// open counts as dropped: its group failed, it conflicted with what's ahead of it, or its checks timed out. It waits at
+// the merge gate for the person, who can queue it again or reply to have it fixed; a revert is theirs to merge. Each
+// delivery is said once.
 const handlePrDequeued = async (event: Extract<GitHubEvent, { kind: 'pr_dequeued' }>): Promise<void> => {
+  if (event.merged) {
+    return;
+  }
   const pull = await pullForMerge(event.repository, event.number, []);
   if (pull.merged || pull.state !== 'open') {
     return;
@@ -4472,6 +4513,15 @@ const handlePrDequeued = async (event: Extract<GitHubEvent, { kind: 'pr_dequeued
   if (!workItem || !project || (!revert && workItem.stage !== 'awaiting_merge')) {
     return;
   }
+  await recordMergeQueue({
+    repository: event.repository,
+    prNumber: event.number,
+    kind: 'dropped',
+    by: null,
+    base: event.base ?? pull.base,
+    reason: event.reason
+  });
+  touchCard(workItem.id);
   log('warn', 'pr dequeued', {
     issue: workItem.issueIdentifier,
     pr: event.number,
@@ -4531,12 +4581,17 @@ export const handleGitHubEvent = withCards(async (eventName: string, payload: un
     }
     return;
   }
+  if (event.kind === 'pr_enqueued') {
+    await handlePrEnqueued(event);
+    return;
+  }
   if (event.kind === 'pr_dequeued') {
     await handlePrDequeued(event);
     return;
   }
   if (event.merged) {
     await attempt('queued revert', { pr: event.number }, () => announceQueuedRevertMerged(event));
+    await attempt('queued cards', { pr: event.number }, () => touchQueuedCards(event.repository));
   }
   const workItem = await findWorkItemForPr(event);
   const project = workItem && findProject(workItem.project);

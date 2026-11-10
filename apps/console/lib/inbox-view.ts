@@ -8,7 +8,8 @@ import { questions, runs, workItems } from '@/db/schema';
 
 import { headChecks, pullHead, pullMergeState } from './github-api';
 import { log } from './log';
-import { allProjects } from './projects';
+import { mergeQueueStateFor } from './merge-queue';
+import { allProjects, findProject } from './projects';
 import { recentReadyList } from './ready';
 import { releaseQueueOnActivity } from './router';
 import type { ConsoleUser } from './session';
@@ -140,19 +141,30 @@ export const loadInboxView = async (): Promise<InboxView> => {
     return entry ? [{ workItem, entry, latest }] : [];
   });
 
+  // A PR in the merge queue waits on nobody until it merges or is dropped.
+  const queued = await Promise.all(
+    waiting.map(async ({ workItem, entry }) => {
+      const project = entry.kind === 'awaiting_merge' ? findProject(workItem.project) : undefined;
+      const state = project ? await mergeQueueStateFor(project, workItem).catch(() => null) : null;
+      return state?.kind === 'queued';
+    })
+  );
+
   const withChecks = await Promise.all(
-    waiting.map(async ({ workItem, entry, latest }) => ({
-      workItem,
-      entry,
-      actionUrl: actionUrlFor(workItem, entry, latest),
-      threadUrl:
-        workspaceUrl && workItem.slackChannelId && workItem.slackThreadTs
-          ? slackMessageUrl(workspaceUrl, workItem.slackChannelId, workItem.slackThreadTs)
-          : null,
-      checks: entry.kind === 'awaiting_merge' ? await checksFor(workItem) : null,
-      conflictsWith: entry.kind === 'awaiting_merge' ? await conflictFor(workItem) : null,
-      summary: latest?.summary ?? null
-    }))
+    waiting
+      .filter((_, index) => !queued[index])
+      .map(async ({ workItem, entry, latest }) => ({
+        workItem,
+        entry,
+        actionUrl: actionUrlFor(workItem, entry, latest),
+        threadUrl:
+          workspaceUrl && workItem.slackChannelId && workItem.slackThreadTs
+            ? slackMessageUrl(workspaceUrl, workItem.slackChannelId, workItem.slackThreadTs)
+            : null,
+        checks: entry.kind === 'awaiting_merge' ? await checksFor(workItem) : null,
+        conflictsWith: entry.kind === 'awaiting_merge' ? await conflictFor(workItem) : null,
+        summary: latest?.summary ?? null
+      }))
   );
 
   return {

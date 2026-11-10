@@ -200,13 +200,16 @@ const sortRows = (input: HomeInput) => {
   const needsYou = rows
     .filter(({ summary }) => NEEDS_YOU.includes(summary.status))
     .toSorted((a, b) => waitingSince(a) - waitingSince(b));
+  // A PR in the merge queue is in flight, not waiting on anyone.
   const inFlight = rows
-    .filter(({ summary }) => summary.status === 'running' || summary.status === 'queued')
+    .filter(({ summary }) => ['running', 'queued', 'merging'].includes(summary.status))
     .toSorted((a, b) => latestRunAt(a) - latestRunAt(b));
   const queued = inFlight.filter(({ summary }) => summary.status === 'queued').length;
+  const merging = inFlight.filter(({ summary }) => summary.status === 'merging').length;
   const counts = [
-    `${inFlight.length - queued} running`,
+    `${inFlight.length - queued - merging} running`,
     ...(queued > 0 ? [`${queued} queued`] : []),
+    ...(merging > 0 ? [`${merging} in the merge queue`] : []),
     `${needsYou.length} need${needsYou.length === 1 ? 's' : ''} you`
   ];
   return { needsYou, inFlight, counts };

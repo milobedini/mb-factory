@@ -65,11 +65,11 @@ In order. "Person" steps are the user's; auto mode blocks Claude from ruleset ch
 
 ## To see live after the move
 
-- A PR that merges itself goes into the queue (`pr queued`), merges with `merged_by` the bot, and gets the watch.
-- Approve and merge queues as the tapper and merges with them as `merged_by`.
-- Two PRs at the gate together: one build each, stacked, both merged with no `main` merged into either and no second CI run on the PRs.
-- A dropped PR: the thread names the reason once.
-- No Vercel deployment and no Neon branch for a `gh-readonly-queue/…` branch.
+Seen on 10 Nov with TAS-204 and TAS-222 (#207 and #208), both queued by taps at 15:52:31: each tap queued the PR as the tapper (`pr queued from slack`), and GitHub recorded them as `merged_by`. The queue built #208 on `main` and #207 on top of #208's group at the same time (15:52:49 and 15:52:51), and merged them at 15:58 and 16:00, with no `main` merged into either PR and no second CI run on them. Vercel built only the two production deploys, nothing for `gh-readonly-queue/…`. GitHub sends `dequeued` as a PR merges too, with `pull_request.merged: true`, and the console stayed quiet.
+
+- A PR that merges itself goes into the queue (`pr queued by itself`), merges with `merged_by` the bot, and gets the watch.
+- A dropped PR: the thread names the reason once (`pr dequeued`), with GitHub's reason in words.
+- A revert queued at the front (`revert queued`), and said merged when its PR closes.
 - Cycle time from review accepted to merged for PRs that arrive together, against 4–10 Nov's.
 
 ## Rejected

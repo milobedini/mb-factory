@@ -281,6 +281,23 @@ describe('slackStatusMessage', () => {
     expect(texts(message.blocks).at(-1)).toBe(`<${hub}|Open the hub> · <https://console.test|Open the console>`);
   });
 
+  it('counts a PR in the merge queue as in flight, not as needing you', () => {
+    const merged = [run(), run({ agent: 'implement' }), run({ agent: 'review' })];
+    const message = slackStatusMessage(
+      input({
+        items: [
+          {
+            ...item('TAS-207', 'awaiting_merge', merged),
+            mergeQueue: { kind: 'queued', at: at(20), by: null, base: 'main', ahead: [] }
+          },
+          item('TAS-208', 'awaiting_merge', merged)
+        ]
+      }),
+      hub
+    );
+    expect(message.text).toBe('Tastebook: 0 running, 1 in the merge queue, 1 needs you');
+  });
+
   it('says when nothing waits, when it’s paused, and how many more are on the hub', () => {
     const quiet = texts(slackStatusMessage(input({ paused: { by: 'Milo in Slack', at: at(10) } }), hub).blocks);
     expect(quiet).toContain('Nothing is waiting on you.');

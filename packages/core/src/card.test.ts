@@ -309,6 +309,57 @@ describe('workItemCard', () => {
     ]);
   });
 
+  describe('the merge queue', () => {
+    const gate = (mergeQueue: CardInput['mergeQueue']) =>
+      workItemCard(
+        input(
+          { runs: [run(), run({ agent: 'implement' }), run({ agent: 'review' })], mergeQueue },
+          { stage: 'awaiting_merge', prNumber: 208 }
+        )
+      );
+
+    it('is blue and running once a person adds the PR, saying who, when and where it stands, with no merge button', () => {
+      const card = gate({ kind: 'queued', at: at(52), by: 'Milo Bedini', base: 'main', ahead: [207] });
+      expect(attachment(card).color).toBe(CARD_COLOURS.merging);
+      expect(card.text).toBe('TAS-38 Recipe details: in the merge queue');
+      expect(track(card)).toBe(
+        ':tb-done: Triage   :tb-skipped: ~Spec~   :tb-done: Implement   :tb-done: Review   :tb-running: *Merge*'
+      );
+      expect(status(card)).toBe(
+        ':tb-running: *In the merge queue:* Milo Bedini added PR #208 at 10:52.\n2nd in line, behind PR #207. Checks are running on top of main and #207.'
+      );
+      expect(buttons(card)).toEqual([
+        { text: 'Open PR #208', url: 'https://github.com/milobedini/tastebook/pull/208' }
+      ]);
+    });
+
+    it('says when the factory added it, first in line, or only who and when when GitHub couldn’t say', () => {
+      expect(status(gate({ kind: 'queued', at: at(2), by: null, base: 'main', ahead: [] }))).toBe(
+        ':tb-running: *In the merge queue:* added PR #208 by itself at 10:02, with every check passing.\n1st in line. Checks are running on top of main.'
+      );
+      expect(status(gate({ kind: 'queued', at: at(2), by: null, base: 'main', ahead: [201, 207] }))).toMatch(
+        /3rd in line, behind PRs #201 and #207\. Checks are running on top of main and the PRs ahead\.$/
+      );
+      expect(status(gate({ kind: 'queued', at: at(2), by: 'Milo Bedini', base: 'main', ahead: null }))).toBe(
+        ':tb-running: *In the merge queue:* Milo Bedini added PR #208 at 10:02.'
+      );
+    });
+
+    it('goes back to Ready to merge when the queue drops the PR, saying when and why, with the button back', () => {
+      const card = gate({ kind: 'dropped', at: at(1), reason: 'CI_FAILURE' });
+      expect(attachment(card).color).toBe(CARD_COLOURS.ready);
+      expect(status(card)).toBe(
+        ':tb-done: *Ready to merge:* review accepted PR #208 at 10:02.\n:tb-warning: *Left the merge queue* at 10:01 without merging: ci failure. Approve and merge adds it again.'
+      );
+      expect(buttons(card).map(({ text }) => text)).toEqual(['Approve and merge', 'Open PR #208']);
+    });
+
+    it('says a merged PR went through the queue', () => {
+      const card = workItemCard(input({ throughMergeQueue: true }, { stage: 'done', prNumber: 208 }));
+      expect(status(card)).toBe(':tb-merged: *Merged* at 10:30 · PR #208, through the merge queue');
+    });
+  });
+
   it('shows the checks under Ready to merge, and Approve and merge only once they pass', () => {
     const gate = (checks: CardInput['checks']) =>
       workItemCard(

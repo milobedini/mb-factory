@@ -636,6 +636,26 @@ export const approvePull = (token: string, repository: string, prNumber: number,
 export const mergePull = (token: string, repository: string, prNumber: number, sha: string) =>
   asPerson(token, 'PUT', `/repos/${repository}/pulls/${prNumber}/merge`, { merge_method: 'merge', sha });
 
+// The PRs in a branch's merge queue with their places, front first at 1.
+export const mergeQueueEntries = async (
+  repository: string,
+  branch: string
+): Promise<{ position: number; prNumber: number }[]> => {
+  const [owner, name] = repository.split('/');
+  const data = await githubGraphql<{
+    repository: {
+      mergeQueue: { entries: { nodes: { position: number; pullRequest: { number: number } | null }[] } } | null;
+    } | null;
+  }>(
+    'query($owner: String!, $name: String!, $branch: String!) { repository(owner: $owner, name: $name) { mergeQueue(branch: $branch) { entries(first: 50) { nodes { position pullRequest { number } } } } } }',
+    { owner, name, branch },
+    'merge queue'
+  );
+  return (data.repository?.mergeQueue?.entries.nodes ?? []).flatMap(({ position, pullRequest }) =>
+    pullRequest ? [{ position, prNumber: pullRequest.number }] : []
+  );
+};
+
 // GraphQL as the token's owner (a person or the App), with GitHub's refusal as a message rather than thrown.
 const graphqlAs = async <T>(
   token: string,
