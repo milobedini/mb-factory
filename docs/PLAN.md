@@ -368,6 +368,7 @@ Learnt the hard way; each would bite again.
 
 Built but not yet seen working; delete each line once seen. Swept 3 Nov evening: everything not listed here was seen.
 
+- **Preview databases deleted on close** (`07d63c5`, 10 Nov): the next Tastebook PR to merge or close logs `preview database deleted` with its `preview/<branch>`, and the branch is gone from Neon's list. A `preview database failed` line means the key or the API call is wrong.
 - **Fresh tokens past the hour** (TAS-206, 9 Nov): the first implement run longer than about 40 minutes logs `github token given` in the console, and pushes and edits its PR after the hour with no 401. A `github token refused` or `failed` line means the swap didn't happen (`plugin/bin/factory-github-token`).
 
 - **One scheduler:** forwarding and queued wake-ups were seen working on 4 Nov (06:48: `wake forwarded` from the old deployment, then `woke` with cause `queued wake-up` from the new one). Still to see: one governor probe per probe moment, and a `morning ready list` line beside every Ready message.
