@@ -266,7 +266,6 @@ export {
   mergeRouteLine,
   movedOnLine,
   notWaitingToMergeText,
-  queuedText,
   queueRefusedText,
   readBeforeMerging,
   slackAcceptedMessage,

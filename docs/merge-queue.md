@@ -71,7 +71,7 @@ Seen on 10 Nov with TAS-204 and TAS-222 (#207 and #208), both queued by taps at 
 - A dropped PR: the thread names the reason once (`pr dequeued`), with GitHub's reason in words.
 - A revert queued at the front (`revert queued`), and said merged when its PR closes.
 - Cycle time from review accepted to merged for PRs that arrive together, against 4–10 Nov's.
-- The card in the queue (`affc243`, [canvas](https://claude.ai/artifact/RPLVfnJqBrHjif5jPdfBBj)): blue with Merge running, who added it and its place in line (`pr enqueued`), moving up when a PR ahead merges; review's message holding its button; Home counting it "in the merge queue"; a dropped PR's card back at Ready to merge with the "Left the merge queue" line; "through the merge queue" once merged. A `merge queue read failed` line means the card fell back to saying who and when only.
+- The card in the queue (`affc243`, [canvas](https://claude.ai/artifact/RPLVfnJqBrHjif5jPdfBBj)): blue with Merge running, who added it and its place in line (`pr enqueued`), moving up when a PR ahead merges; review's message holding its button; Home counting it "in the merge queue"; a dropped PR's card back at Ready to merge with the "Left the merge queue" line; "through the merge queue" once merged. A `merge queue read failed` line means the card fell back to saying who and when only. Since 10 Nov a tap's only word to the tapper is a refusal: the card says it's queued.
 
 ## Rejected
 

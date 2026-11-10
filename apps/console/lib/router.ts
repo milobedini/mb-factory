@@ -150,7 +150,6 @@ import {
   QUESTION_GONE,
   questionElicitation,
   queuedBy,
-  queuedText,
   queuedThought,
   queueRefusedText,
   READY_HEADING,
@@ -3402,16 +3401,14 @@ const handleMergeTap = async (
     login: connection.login,
     pr: prNumber
   });
+  // The card says the PR is in the merge queue and who added it, so the tapper isn't told again.
   const name = await slackUserName(action.userId).catch(() => connection.login);
-  await Promise.all([
-    postActivity(workItem, {
-      type: 'thought',
-      body: queue
-        ? `${name} approved PR #${prNumber} from Slack and added it to the merge queue.`
-        : `${name} approved and merged PR #${prNumber} from Slack.`
-    }),
-    queue ? tellTapper(queuedText(prNumber)) : undefined
-  ]);
+  await postActivity(workItem, {
+    type: 'thought',
+    body: queue
+      ? `${name} approved PR #${prNumber} from Slack and added it to the merge queue.`
+      : `${name} approved and merged PR #${prNumber} from Slack.`
+  });
 };
 
 const FINDINGS_GONE = 'That review has moved on, so nothing changed.';

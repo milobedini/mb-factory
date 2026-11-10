@@ -321,10 +321,6 @@ export const approveRefusedText = (prNumber: number, message: string): string =>
 export const mergeRefusedText = (prNumber: number, message: string): string =>
   `I approved PR #${prNumber} as you, but GitHub refused the merge: “${escapeSlack(clip(oneLine(message), 200))}”. Tap again, or merge it on GitHub.`;
 
-// Under a merge queue (docs/merge-queue.md) a tap adds the PR to the queue, which merges it once the checks pass on top
-// of the base branch and the PRs ahead of it. The PR's merge webhook does the rest, as for a merge.
-export const queuedText = (prNumber: number): string => `Added PR #${prNumber} to the merge queue.`;
-
 export const queueRefusedText = (prNumber: number, message: string): string =>
   `I approved PR #${prNumber} as you, but GitHub didn’t add it to the merge queue: “${escapeSlack(clip(oneLine(message), 200))}”. Tap again, or add it on GitHub.`;
 

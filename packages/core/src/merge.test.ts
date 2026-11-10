@@ -14,7 +14,6 @@ import {
   mergeRefusal,
   mergeRefusedText,
   movedOnLine,
-  queuedText,
   queueRefusedText,
   readBeforeMerging,
   slackAcceptedMessage,
@@ -236,8 +235,7 @@ describe('mergeRefusal', () => {
     );
   });
 
-  it('says a tap added the PR to the merge queue, or quotes GitHub’s refusal safely', () => {
-    expect(queuedText(201)).toBe('Added PR #201 to the merge queue.');
+  it('quotes GitHub’s refusal to queue a PR safely', () => {
     expect(queueRefusedText(201, 'Pull request <x> is\nnot mergeable')).toBe(
       'I approved PR #201 as you, but GitHub didn’t add it to the merge queue: “Pull request &lt;x&gt; is not mergeable”. Tap again, or add it on GitHub.'
     );
