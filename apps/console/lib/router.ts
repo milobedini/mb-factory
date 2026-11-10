@@ -71,6 +71,7 @@ import {
   decideIssueUpdate,
   delegateFailedText,
   dependencyIssue,
+  dependencyMajors,
   dependencyTakenText,
   deployStateOf,
   dequeuedText,
@@ -98,7 +99,6 @@ import {
   governDispatch,
   isAllowedSlackUser,
   isBackToSpec,
-  isMajorBump,
   isOpenRun,
   isReadyRequest,
   keptText,
@@ -158,7 +158,6 @@ import {
   REVERT_EVENT,
   readAskReport,
   readBeforeMerging,
-  readBump,
   readCanvas,
   readDesignComponents,
   readDesignVariants,
@@ -4458,9 +4457,9 @@ const takeOnDependencyPr = async (pr: DependencyPr, work: DependencyWork): Promi
 
 // A major version needs real work; anything else waits for CI to say whether it does.
 const handleDependencyPrOpened = async (pr: DependencyPr): Promise<void> => {
-  const bump = readBump(pr.title);
-  if (bump && isMajorBump(bump)) {
-    await takeOnDependencyPr(pr, { kind: 'major', bump });
+  const [first, ...more] = dependencyMajors(pr);
+  if (first) {
+    await takeOnDependencyPr(pr, { kind: 'major', bumps: [first, ...more] });
   }
 };
 

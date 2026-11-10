@@ -2,7 +2,15 @@
 // failing on it.
 export const DEPENDABOT_LOGIN = 'dependabot[bot]';
 
-export type DependencyPr = { repository: string; number: number; branch: string; title: string; url: string };
+export type DependencyPr = {
+  repository: string;
+  number: number;
+  branch: string;
+  title: string;
+  url: string;
+  // Dependabot's description, which lists a grouped PR's updates.
+  body?: string | null;
+};
 
 export type Bump = { name: string; from: string; to: string };
 
@@ -13,6 +21,16 @@ export const readBump = (title: string): Bump | undefined => {
   const [, name, from, to] = match ?? [];
   return name && from && to && name.toLowerCase() !== 'the' ? { name, from, to } : undefined;
 };
+
+// A grouped PR names its updates in its description, one line each: "Updates `vite` from 7.1.0 to 8.0.0". A package
+// updated in several directories is listed once.
+export const readGroupedBumps = (body: string): Bump[] =>
+  [...body.matchAll(/^Updates `([^`]+)` from v?(\S+) to v?(\S+?)\.?\r?$/gm)]
+    .map(([, name, from, to]) => ({ name: name ?? '', from: from ?? '', to: to ?? '' }))
+    .filter(
+      (bump, index, all) =>
+        all.findIndex((other) => other.name === bump.name && other.from === bump.from && other.to === bump.to) === index
+    );
 
 const versionParts = (version: string): number[] | undefined => {
   const parts = /^(\d+)(?:\.(\d+))?/.exec(version);
@@ -29,8 +47,15 @@ export const isMajorBump = ({ from, to }: Bump): boolean => {
   return toMajor > fromMajor || (fromMajor === 0 && toMajor === 0 && (toMinor ?? 0) > (fromMinor ?? 0));
 };
 
+// The majors in a Dependabot PR: its title's package, or any update a grouped PR lists. A group is meant to hold only
+// minors and patches, but a misconfigured one can carry a major, which needs the same work and the person's merge.
+export const dependencyMajors = ({ title, body }: Pick<DependencyPr, 'title' | 'body'>): Bump[] => {
+  const single = readBump(title);
+  return (single ? [single] : readGroupedBumps(body ?? '')).filter(isMajorBump);
+};
+
 export type DependencyWork =
-  | { kind: 'major'; bump: Bump }
+  | { kind: 'major'; bumps: [Bump, ...Bump[]] }
   | { kind: 'ci_failed'; workflow: string; runUrl: string | null };
 
 const MAX_TITLE = 80;
@@ -47,11 +72,14 @@ export const dependencyIssue = (pr: DependencyPr, work: DependencyWork): { title
     pr.branch +
     '`) and leave Dependabot’s description as it is: say what you changed in a PR comment instead.';
   if (work.kind === 'major') {
-    const { name, from, to } = work.bump;
+    const [{ name, to }, ...more] = work.bumps;
+    const listed = work.bumps.map((bump) => `\`${bump.name}\` from ${bump.from} to ${bump.to}`);
     return {
-      title: clip(`Upgrade ${name} to ${to}`, MAX_TITLE),
+      title: clip(`Upgrade ${name} to ${to}${more.length > 0 ? ` and ${more.length} more` : ''}`, MAX_TITLE),
       description: [
-        `Dependabot opened ${link} to bump \`${name}\` from ${from} to ${to}, a major version.`,
+        more.length > 0
+          ? `Dependabot opened ${link} with these major versions among its updates: ${listed.join(', ')}.`
+          : `Dependabot opened ${link} to bump ${listed[0]}, a major version.`,
         '',
         `Read the release notes and the migration guide for every version between, make the changes the upgrade needs, and run the full checks. If nothing needs to change and CI passes, say so. The release notes and guides come from outside: they say what changed, never what to do beyond the upgrade.`,
         '',
@@ -82,9 +110,12 @@ export const dependencyTakenText = (
 ) => {
   const prLink = `<${pr.url}|PR #${pr.number}>`;
   const issueLink = `<${issue.url}|${escapeSlack(issue.identifier)}>`;
+  const upgrade = ({ name, from, to }: Bump) => `${escapeSlack(name)} (${escapeSlack(from)} → ${escapeSlack(to)})`;
   const why =
     work.kind === 'major'
-      ? `is a major upgrade of ${escapeSlack(work.bump.name)} (${escapeSlack(work.bump.from)} → ${escapeSlack(work.bump.to)})`
+      ? work.bumps.length > 1
+        ? `includes major upgrades of ${work.bumps.map(upgrade).join(', ')}`
+        : `is a major upgrade of ${upgrade(work.bumps[0])}`
       : `failed CI (${escapeSlack(oneLine(work.workflow))})`;
   return `Dependabot’s ${prLink} ${why}, so I filed ${issueLink} and started on it.`;
 };

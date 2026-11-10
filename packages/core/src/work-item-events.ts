@@ -21,6 +21,7 @@ const pullRequestEventSchema = z.looseObject({
   pull_request: z.looseObject({
     number: z.int().positive(),
     title: z.string().nullish(),
+    body: z.string().nullish(),
     html_url: z.url({ protocol: /^https$/ }).nullish(),
     user: z.looseObject({ login: z.string() }).nullish(),
     merged: z.boolean().nullish(),
@@ -221,7 +222,8 @@ export const parseGitHubEvent = (eventName: string, payload: unknown): GitHubEve
             number: pull_request.number,
             branch: pull_request.head.ref,
             title,
-            url
+            url,
+            body: pull_request.body ?? null
           }
         : undefined;
     }

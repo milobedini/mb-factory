@@ -132,6 +132,7 @@ describe('parseGitHubEvent', () => {
       pull_request: {
         number: 16,
         title: 'Bump vite from 7.1.0 to 8.0.0',
+        body: 'Bumps vite from 7.1.0 to 8.0.0.',
         html_url: 'https://github.com/milobedini/tastebook/pull/16',
         head: { ref: 'dependabot/npm_and_yarn/vite-8.0.0', repo: { full_name: 'milobedini/tastebook' } },
         user: { login: 'dependabot[bot]' }
@@ -143,7 +144,8 @@ describe('parseGitHubEvent', () => {
       number: 16,
       branch: 'dependabot/npm_and_yarn/vite-8.0.0',
       title: 'Bump vite from 7.1.0 to 8.0.0',
-      url: 'https://github.com/milobedini/tastebook/pull/16'
+      url: 'https://github.com/milobedini/tastebook/pull/16',
+      body: 'Bumps vite from 7.1.0 to 8.0.0.'
     });
     const byPerson = { ...opened, pull_request: { ...opened.pull_request, user: { login: 'milobedini' } } };
     expect(parseGitHubEvent('pull_request', byPerson)).toBeUndefined();

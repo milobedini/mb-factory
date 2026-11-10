@@ -94,7 +94,15 @@ export {
   timeInStages
 } from './dashboard';
 export type { Bump, DependencyPr, DependencyWork } from './dependencies';
-export { DEPENDABOT_LOGIN, dependencyIssue, dependencyTakenText, isMajorBump, readBump } from './dependencies';
+export {
+  DEPENDABOT_LOGIN,
+  dependencyIssue,
+  dependencyMajors,
+  dependencyTakenText,
+  isMajorBump,
+  readBump,
+  readGroupedBumps
+} from './dependencies';
 export type {
   AskedDesignQuestion,
   ComponentChange,
