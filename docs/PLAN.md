@@ -326,6 +326,7 @@ Learnt the hard way; each would bite again.
 - `chat.update` renders `text` as the body unless `blocks` are given; the coloured bar exists only as an attachment's `color`. A missing custom emoji renders as `:tb-done:` text: upload emoji before shipping code that uses them.
 - Button and checkbox text at most 75 characters (about 30 shown); `value` at most 2,000. A `confirm` dialog shows mrkdwn literally. Interactivity needs a 200 within 3 s.
 - One mention arrives as both `message` and `app_mention`: start work only on `app_mention`.
+- Claiming the work item by session id doesn't dedupe two sessions on one issue: a double tap on Delegate (TAS-217, 10 Nov, the Home tab redrawing under the second tap) opened two, each `created` took the item back from the other, and four triage runs then two implement runs started. A start now records `work-started:<item>:<latest run>` and skips while a run is open (`delegation already started`).
 
 **Vercel**
 

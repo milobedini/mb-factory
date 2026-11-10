@@ -2326,7 +2326,42 @@ const startWork = async (project: FactoryConfig, event: Extract<SessionEvent, { 
     openSlackThread(project, workItem, event.issue.title),
     attempt('next offers settle', { issue: event.issue.identifier }, () => settleNextOffers(project.name, delegated))
   ]);
+  if (!(await claimStart(workItem))) {
+    log('info', 'delegation already started', { issue: event.issue.identifier, agentSessionId: event.sessionId });
+    await postActivity(workItem, { type: 'thought', body: 'Already working on this issue: carrying on here.' });
+    return;
+  }
   await dispatchRun(project, await createRun(project, workItem, request));
+};
+
+const START_EVENT = 'work_started';
+
+// One run per delegation, however many arrive together: a double tap on Delegate opens two Linear sessions, and each
+// session's `created` takes the work item back from the other, so all four used to start a run (TAS-217, 10 Nov). An
+// open run already does the work; otherwise the start is keyed on the item's latest run, so of those that read before
+// any of them made one, only the first records it.
+const claimStart = async (workItem: WorkItem): Promise<boolean> => {
+  // The latest run is read before the open one: a run made between the two reads then shows as open, never as a new key.
+  const [latest] = await getDb()
+    .select({ id: runs.id })
+    .from(runs)
+    .where(eq(runs.workItemId, workItem.id))
+    .orderBy(desc(runs.createdAt))
+    .limit(1);
+  const [open] = await getDb()
+    .select({ id: runs.id })
+    .from(runs)
+    .where(and(eq(runs.workItemId, workItem.id), inArray(runs.status, OPEN_STATUSES)))
+    .limit(1);
+  if (open) {
+    return false;
+  }
+  return recordEvent({
+    source: 'linear',
+    deliveryId: `work-started:${workItem.id}:${latest?.id ?? 'none'}`,
+    type: START_EVENT,
+    payload: { workItemId: workItem.id, after: latest?.id ?? null }
+  });
 };
 
 const cancelRun = async (
