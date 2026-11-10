@@ -540,6 +540,25 @@ export const compareFiles = async (
     : undefined;
 };
 
+// Who made each commit on a PR, and whether GitHub verified its signature: at most 100, the first page.
+export const pullCommits = async (
+  repository: string,
+  prNumber: number
+): Promise<{ author: string | null; committer: string | null; verified: boolean }[]> => {
+  const commits = await githubGet<
+    {
+      author: { login: string } | null;
+      committer: { login: string } | null;
+      commit: { verification?: { verified: boolean } };
+    }[]
+  >(`/repos/${repository}/pulls/${prNumber}/commits?per_page=100`, 'pull request commits');
+  return commits.map(({ author, committer, commit }) => ({
+    author: author?.login ?? null,
+    committer: committer?.login ?? null,
+    verified: commit.verification?.verified === true
+  }));
+};
+
 export type PullRequestInfo = {
   author: string;
   title: string;

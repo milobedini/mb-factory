@@ -109,6 +109,7 @@ export {
   dependencyMentions,
   dependencyUpdateCard,
   dependencyUpdateFor,
+  onlyDependabotCommits,
   readDependencyUpdate,
   updatesText
 } from './dependency-updates';

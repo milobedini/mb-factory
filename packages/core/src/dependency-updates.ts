@@ -6,7 +6,7 @@ import type { ChecksSummary } from './checks';
 import { checksLine } from './checks';
 import type { FactoryConfig } from './config';
 import type { Bump, DependencyPr } from './dependencies';
-import { readBump, readGroupedBumps } from './dependencies';
+import { DEPENDABOT_LOGIN, readBump, readGroupedBumps } from './dependencies';
 import type { SlackBlock } from './slack';
 import { escapeSlack, slackEmoji } from './slack';
 
@@ -211,3 +211,14 @@ export const dependencyMentions = ({ people }: Pick<FactoryConfig, 'people'>): s
   const mentions = people.flatMap(({ slack }) => (slack ? [`<@${slack}>`] : []));
   return mentions.length > 0 ? mentions.join(' ') : undefined;
 };
+
+// Dependabot's own commits are authored by it and committed and signed by GitHub. An author can be faked by email, the
+// signature can't, so a PR merges itself only when every commit is so: a person's push makes it wait for them.
+export const onlyDependabotCommits = (
+  commits: { author: string | null; committer: string | null; verified: boolean }[]
+): boolean =>
+  commits.length > 0 &&
+  commits.length < 100 &&
+  commits.every(
+    ({ author, committer, verified }) => author === DEPENDABOT_LOGIN && committer === 'web-flow' && verified
+  );

@@ -10,8 +10,10 @@ import {
   dependencyMentions,
   dependencyUpdateCard,
   dependencyUpdateFor,
+  escapeSlack,
   mentioning,
   mergeRoute,
+  onlyDependabotCommits,
   readDependencyUpdate,
   usesMergeQueue
 } from '@mb-factory/core';
@@ -22,7 +24,15 @@ import { events, workItems } from '@/db/schema';
 
 import { recordEvent } from './events';
 import type { GitHubRefusal } from './github-api';
-import { compareFiles, defaultBranch, enqueuePull, headChecks, mergePull, pullForMerge } from './github-api';
+import {
+  compareFiles,
+  defaultBranch,
+  enqueuePull,
+  headChecks,
+  mergePull,
+  pullCommits,
+  pullForMerge
+} from './github-api';
 import { appToken } from './github-app';
 import { log } from './log';
 import { mergeQueueStateFor, recordMergeQueue } from './merge-queue';
@@ -138,7 +148,7 @@ const waitFor = async (project: FactoryConfig, update: DependencyUpdate, reasons
   });
   if (first) {
     log('info', 'dependency update waits', { pr: update.prNumber, reasons: reasons.join('; ') });
-    const text = `PR #${update.prNumber} won’t merge by itself: ${reasons.join('; ')}. Merge it on GitHub, or close it to skip these versions.`;
+    const text = `PR #${update.prNumber} won’t merge by itself: ${reasons.map(escapeSlack).join('; ')}. Merge it on GitHub, or close it to skip these versions.`;
     await replyToDependencyUpdate(update, mentioning(text, dependencyMentions(project)));
   }
 };
@@ -175,7 +185,9 @@ export const checkDependencyUpdate = async (update: DependencyUpdate): Promise<v
   const route = rules?.auto
     ? mergeRoute(rules, { files: await compareFiles(repository, pull.base, pull.head) })
     : { route: 'person' as const, reasons: ['the project doesn’t let the factory merge'] };
+  const fromDependabot = onlyDependabotCommits(await pullCommits(repository, prNumber));
   const reasons = [
+    ...(fromDependabot ? [] : ['it has commits Dependabot didn’t make']),
     ...(route.route === 'person' ? route.reasons : []),
     ...(pull.base !== mainBranch ? [`it targets ${pull.base}, not ${mainBranch}`] : []),
     ...(queue?.kind === 'dropped' ? [`it left the merge queue (${queue.reason ?? 'no reason given'})`] : []),

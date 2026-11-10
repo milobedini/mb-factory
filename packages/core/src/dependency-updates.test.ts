@@ -5,6 +5,7 @@ import {
   dependencyMentions,
   dependencyUpdateCard,
   dependencyUpdateFor,
+  onlyDependabotCommits,
   readDependencyUpdate,
   updatesText
 } from './dependency-updates';
@@ -167,5 +168,22 @@ describe('dependencyUpdateCard', () => {
     expect(lineOf({ kind: 'closed', at: new Date('2026-11-10T09:12:00Z') })).toContain(
       '*Closed* at 09:12 without merging.'
     );
+  });
+});
+
+describe('onlyDependabotCommits', () => {
+  const dependabot = { author: 'dependabot[bot]', committer: 'web-flow', verified: true };
+
+  it('trusts commits Dependabot authored and GitHub committed and signed', () => {
+    expect(onlyDependabotCommits([dependabot, dependabot])).toBe(true);
+  });
+
+  it('refuses a person’s commit, an unsigned one, one faking Dependabot as author, or none', () => {
+    expect(onlyDependabotCommits([dependabot, { author: 'milobedini', committer: 'milobedini', verified: true }])).toBe(
+      false
+    );
+    expect(onlyDependabotCommits([{ ...dependabot, verified: false }])).toBe(false);
+    expect(onlyDependabotCommits([{ ...dependabot, committer: 'milobedini' }])).toBe(false);
+    expect(onlyDependabotCommits([])).toBe(false);
   });
 });
