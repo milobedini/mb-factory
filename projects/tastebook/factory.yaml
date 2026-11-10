@@ -3,10 +3,12 @@ name: tastebook
 alias: Tastebook
 
 repositories:
-  - owner: milobedini
+  - owner: Milo-Bedini
     name: tastebook
     reviewers:
       - milobedini
+    # PRs land through GitHub's merge queue (docs/merge-queue.md).
+    mergeQueue: true
 
 # The design stage: a spec that says `Design: needed` is drawn on a claude.ai canvas by this routine before implement
 # (plugin/agents/design.md). Its token is the console's DESIGN_ROUTINE_TOKEN. Canvases draw with the Dino Design
