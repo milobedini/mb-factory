@@ -369,6 +369,7 @@ Learnt the hard way; each would bite again.
 
 Built but not yet seen working; delete each line once seen. Swept 3 Nov evening: everything not listed here was seen.
 
+- **Routine Dependabot updates** (`abf6eee`, `7ef12ee`, 10 Nov; first real case Mon 16 Nov 06:30): each patch or minor PR gets a card (`dependency update opened`) that redraws as checks report; a clean one logs `dependency update landed by itself`, shows In the merge queue, then Merged by itself with the watch and its one-line all-clear in the thread. The Actions group waits for you (`.github/` is a risky path), with one mention. Check a failing one hands to a `Fix the failing dependency update` work item and its card points there, and that no card is posted for a major.
 - **Preview databases deleted on close** (`07d63c5`, 10 Nov): the next Tastebook PR to merge or close logs `preview database deleted` with its `preview/<branch>`, and the branch is gone from Neon's list. A `preview database failed` line means the key or the API call is wrong.
 - **Fresh tokens past the hour** (TAS-206, 9 Nov): the first implement run longer than about 40 minutes logs `github token given` in the console, and pushes and edits its PR after the hour with no 401. A `github token refused` or `failed` line means the swap didn't happen (`plugin/bin/factory-github-token`).
 
